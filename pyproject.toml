@@ -1,0 +1,92 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tab_benchmark"
+version = "0.2"
+description = """**tab_benchmark** is a Python package for benchmarking tabular data classification and regression
+models. It is
+designed to be easy to use and to work with a wide variety of classical and deep learning models. It is also designed
+to be easy to extend with new models and datasets.  Besides, it also includes a hyperparameter optimization module.
+
+The advantage of using **tab_benchmark** is that all the models have the same API, so you only need to learn how
+to use one model to use all of them.
+
+We have also included a module for downloading datasets from various sources, including Kaggle, but we mainly work
+with openml."""
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [
+  { name = "Bruno Belucci", email = "bruno.belucci-teixeira@dauphine.eu" },
+]
+maintainers = [
+  { name = "Bruno Belucci", email = "bruno.belucci-teixeira@dauphine.eu" },
+]
+keywords = [
+    "tabular data",
+    "tabular",
+    "benchmark",
+    "classification",
+    "regression",
+    "machine learning",
+    "deep learning",
+    "hyperparameter",
+    "optimization",
+    "lightning",
+    "automl",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: GPU :: NVIDIA CUDA",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Education",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Unix",
+    "Programming Language :: Python :: 3",
+]
+dependencies = [
+    "torch",
+    "lightning",
+    "matplotlib",
+    "numpy",
+    "pandas",
+    "scikit-learn",
+    "scikit-posthocs",
+    "scipy",
+    "ConfigSpace",
+    "kaggle",
+    "xgboost",
+    "lightgbm",
+    "dask",
+    "catboost",
+    "einops",
+    "dehb",
+    "unlzw3",
+    "mlflow",
+    "xlrd",
+    "openpyxl",
+    "ipykernel",
+    "ipywidgets",
+    "openml"
+]
+
+[project.urls]
+"Source code" = "https://github.com/BrunoBelucci/tab_benchmark"
+
+[project.optional-dependencies]
+test = [
+  "pytest",
+]
+docs = [
+  "sphinx",
+  "sphinx-rtd-theme",
+]
+all = [
+    "tabular_benchmark[test]",
+    "tabular_benchmark[docs]",
+]
+
+

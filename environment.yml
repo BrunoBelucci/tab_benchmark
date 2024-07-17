@@ -1,0 +1,32 @@
+name: tab_benchmark
+channels:
+  - conda-forge
+  - nvidia
+dependencies:
+  - pytorch::pytorch
+  - pytorch::pytorch-cuda=12.1
+  - lightning
+  - matplotlib
+  - numpy
+  - pandas
+  - scikit-learn
+  - scikit-posthocs
+  - scipy
+  - kaggle
+  - py-xgboost
+  - lightgbm
+  - dask
+  - catboost
+  - einops
+  - mlflow
+  - postgresql
+  - psycopg2
+  - xlrd
+  - openpyxl
+  - pytest
+  - ipykernel
+  - ipywidgets
+  - pip
+  - pip:
+    - openml
+    - -e .[all]
