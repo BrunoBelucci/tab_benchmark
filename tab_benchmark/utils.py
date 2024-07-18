@@ -3,14 +3,54 @@ import warnings
 from functools import partial
 from inspect import signature
 from typing import Sequence, Optional
-
 import numpy as np
 import random
-
 import pandas as pd
 import torch
 from sklearn.metrics import mean_squared_error, root_mean_squared_error, log_loss, roc_auc_score, r2_score
 from sklearn.model_selection import train_test_split
+
+
+def sequence_to_list(sequence):
+    if isinstance(sequence, list):
+        return sequence
+    else:
+        # we assume that the sequence can be converted to a list
+        return list(sequence)
+
+
+def check_same_keys(*dicts):
+    """
+    Check if all dictionaries have exactly the same keys.
+
+    Parameters:
+    *dicts: Arbitrary number of dictionary arguments.
+
+    Returns:
+    bool: True if all dictionaries have the same keys, False otherwise.
+    """
+    # Extract the set of keys from the first dictionary
+    keys_set = set(dicts[0].keys())
+
+    # Compare the keys set with the keys of the remaining dictionaries
+    for d in dicts[1:]:
+        if set(d.keys()) != keys_set:
+            return False
+    return True
+
+
+def check_if_arg_in_args_kwargs_of_fn(fn, arg_name, *args, **kwargs):
+    # check if arg_name is provided in kwargs
+    if arg_name in kwargs:
+        return True
+    else:
+        # check if arg_name is provided in args
+        all_parameters = signature(fn).parameters
+        i_target_type = list(all_parameters).index(arg_name)
+        if len(args) > i_target_type:
+            return True
+        else:
+            return False
 
 
 def evaluate_set(model, eval_set: Sequence[pd.DataFrame], metric: str,
@@ -68,11 +108,20 @@ def get_git_revision_hash() -> str:
         return 'Not a git repository'
 
 
-def extends(fn_being_extended):
+def extends(fn_being_extended, map_default_values_change=None):
     def decorator(fn):
         fn_parameters = signature(fn, eval_str=True).parameters
         fn_being_extended_parameters = signature(fn_being_extended, eval_str=True).parameters
-        parameters = list(fn_being_extended_parameters.values())
+        if map_default_values_change is not None:
+            parameters = []
+            args_numbers = []
+            for i, (name, param) in enumerate(fn_being_extended_parameters.items()):
+                if name in map_default_values_change:
+                    param = param.replace(default=map_default_values_change[name])
+                    args_numbers.append(i)
+                parameters.append(param)
+        else:
+            parameters = list(fn_being_extended_parameters.values())
         additional_params = [param for name, param in fn_parameters.items()
                              if name not in fn_being_extended_parameters and name != 'kwargs' and name != 'args']
         parameters_var_kw = [param for param in parameters if param.kind == param.VAR_KEYWORD]
@@ -82,6 +131,10 @@ def extends(fn_being_extended):
         parameters_extended.extend(parameters_var_kw)
 
         def wrapper(*args, **kwargs):
+            if map_default_values_change is not None:
+                for i, (key, new_default_value) in enumerate(map_default_values_change.items()):
+                    if len(args) <= args_numbers[i] and key not in kwargs:
+                        kwargs[key] = new_default_value
             return fn(*args, **kwargs)
 
         wrapper.__signature__ = signature(fn_being_extended).replace(parameters=parameters_extended)
