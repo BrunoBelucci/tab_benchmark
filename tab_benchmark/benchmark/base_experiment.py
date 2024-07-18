@@ -312,9 +312,9 @@ class BaseExperiment:
         y_train = y.iloc[split_train]
         X_test = X.iloc[split_test]
         y_test = y.iloc[split_test]
-        cat_features = [i for i, value in enumerate(cat_ind) if value is True]
-        cont_features = [i for i, value in enumerate(cat_ind) if value is False]
-        model.create_preprocess_pipeline(task, cat_features, cont_features)
+        cat_features_names = [att_names[i] for i, value in enumerate(cat_ind) if value is True]
+        cont_features_names = [att_names[i] for i, value in enumerate(cat_ind) if value is False]
+        model.create_preprocess_pipeline(task, cat_features_names, cont_features_names, att_names)
         model_pipeline = model.create_model_pipeline()
         model_pipeline.fit(X_train, y_train, target_preprocess_and_estimator__cat_features=cat_features)
         if task == 'classification':

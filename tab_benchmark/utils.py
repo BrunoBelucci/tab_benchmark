@@ -39,6 +39,24 @@ def check_same_keys(*dicts):
     return True
 
 
+def check_if_arg_in_kwargs_of_fn(arg_name, **kwargs):
+    # check if arg_name is provided in kwargs
+    if arg_name in kwargs:
+        return True
+    else:
+        return False
+
+
+def check_if_arg_in_args_of_fn(fn, arg_name, *args):
+    # check if arg_name is provided in args and return index of it if it is, False otherwise
+    all_parameters = signature(fn).parameters
+    i_target_type = list(all_parameters).index(arg_name)
+    if len(args) > i_target_type:
+        return i_target_type
+    else:
+        return False
+
+
 def check_if_arg_in_args_kwargs_of_fn(fn, arg_name, *args, **kwargs):
     # check if arg_name is provided in kwargs
     if arg_name in kwargs:

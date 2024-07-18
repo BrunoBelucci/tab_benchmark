@@ -1,9 +1,12 @@
 from xgboost import XGBClassifier as OriginalXGBClassifier, XGBRegressor as OriginalXGBRegressor, XGBModel
+from catboost import CatBoost
+from lightgbm import LGBMModel
 from tab_benchmark.models.factories import SimpleSkLearnFactory
-from tab_benchmark.utils import extends, train_test_split_forced, sequence_to_list
+from tab_benchmark.utils import (extends, train_test_split_forced, sequence_to_list, check_if_arg_in_args_of_fn,
+                                 check_if_arg_in_kwargs_of_fn)
 
 
-def fn_to_run_before_fit(self, X, y, task, cat_features, *args, **kwargs):
+def fn_to_run_before_fit_for_gbdt(self, X, y, task, cat_features, *args, **kwargs):
     if self.auto_early_stopping:
         if self.task_ == 'classification' or self.task_ == 'binary_classification':
             stratify = y
@@ -19,6 +22,19 @@ def fn_to_run_before_fit(self, X, y, task, cat_features, *args, **kwargs):
         eval_set = sequence_to_list(eval_set)
         eval_set.append((X_valid, y_valid))
         kwargs['eval_set'] = eval_set
+    if isinstance(self, XGBModel):
+        if cat_features is not None:
+            self.enable_categorical = True  # Categorical type must be set in dataframe
+    elif isinstance(self, CatBoost):
+        self.cat_features = cat_features
+        self._init_params['cat_features'] = cat_features
+    elif isinstance(self, LGBMModel):
+        if cat_features is not None:
+            if not check_if_arg_in_kwargs_of_fn('categorical_feature', **kwargs):
+                i_possible_args = check_if_arg_in_args_of_fn(self.fit, 'categorical_feature', *args)
+                if i_possible_args == False:
+                    # categorical_feature is not in kwargs and not in args
+                    kwargs['categorical_feature'] = cat_features
     return X, y, task, cat_features, args, kwargs
 
 
@@ -30,6 +46,7 @@ class XGBClassifier(OriginalXGBClassifier):
     @extends(XGBModel.__init__, map_default_values_change={'objective': 'binary:logistic'})
     def __init__(self, *args, **kwargs):
         XGBModel.__init__(self, *args, **kwargs)
+
 
 class XGBRegressor(OriginalXGBRegressor):
     __doc__ = OriginalXGBRegressor.__doc__
@@ -47,7 +64,13 @@ XGBClassifier = SimpleSkLearnFactory.from_sk_cls(
         'binary_classification': {'objective': 'binary:logistic', 'eval_metric': 'logloss'},
     },
     has_auto_early_stopping=True,
-    fn_to_run_before_fit=fn_to_run_before_fit
+    fn_to_run_before_fit=fn_to_run_before_fit_for_gbdt,
+    extended_init_kwargs={
+        'categorical_encoder': None,
+        'categorical_type': 'category',
+        'data_scaler': None,
+        'continuous_target_scaler': None,
+    }
 )
 
 XGBRegressor = SimpleSkLearnFactory.from_sk_cls(
@@ -57,5 +80,11 @@ XGBRegressor = SimpleSkLearnFactory.from_sk_cls(
         'eval_metric': 'rmse'
     },
     has_auto_early_stopping=True,
-    fn_to_run_before_fit=fn_to_run_before_fit
+    fn_to_run_before_fit=fn_to_run_before_fit_for_gbdt,
+    extended_init_kwargs={
+        'categorical_encoder': None,
+        'categorical_type': 'category',
+        'data_scaler': None,
+        'continuous_target_scaler': None,
+    }
 )

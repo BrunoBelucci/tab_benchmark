@@ -10,13 +10,15 @@ class SkLearnExtension:
     def create_preprocess_pipeline(
             self,
             task: str,
-            categorical_features: Optional[Sequence[int | str]] = None,
-            continuous_features: Optional[Sequence[int | str]] = None,
+            categorical_features_names: Optional[Sequence[int | str]] = None,
+            continuous_features_names: Optional[Sequence[int | str]] = None,
+            orderly_features_names: Optional[Sequence[int | str]] = None,
     ):
         self.task_ = task
         self.data_preprocess_pipeline_ = create_data_preprocess_pipeline(
-            categorical_features=categorical_features,
-            continuous_features=continuous_features,
+            categorical_features_names=categorical_features_names,
+            continuous_features_names=continuous_features_names,
+            orderly_features_names=orderly_features_names,
             categorical_imputer=self.categorical_imputer,
             continuous_imputer=self.continuous_imputer,
             categorical_encoder=self.categorical_encoder,
@@ -40,14 +42,15 @@ class SkLearnExtension:
         if self.data_preprocess_pipeline_ is None or self.target_preprocess_pipeline_ is None:
             raise ValueError('Please run create_preprocess_pipeline first.')
         if self.task_ == 'classification':
-            target_transformer = TransformedTargetClassifier
+            target_transformer = TransformedTargetClassifier(classifier=self,
+                                                             transformer=self.target_preprocess_pipeline_)
         elif self.task_ == 'regression':
-            target_transformer = TransformedTargetRegressor
+            target_transformer = TransformedTargetRegressor(regressor=self,
+                                                            transformer=self.target_preprocess_pipeline_)
         else:
             raise ValueError(f'Unknown task: {self.task_}')
         self.model_pipeline_ = Pipeline([
             ('data_preprocess', self.data_preprocess_pipeline_),
-            ('target_preprocess_and_estimator', target_transformer(regressor=self,
-                                                                   transformer=self.target_preprocess_pipeline_)),
+            ('target_preprocess_and_estimator', target_transformer),
         ])
         return self.model_pipeline_

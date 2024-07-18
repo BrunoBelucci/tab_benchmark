@@ -54,8 +54,9 @@ def identity(X):
 
 
 def create_data_preprocess_pipeline(
-        categorical_features: Sequence[int | str],
-        continuous_features: Sequence[int | str],
+        categorical_features_names: Sequence[int | str],
+        continuous_features_names: Sequence[int | str],
+        orderly_features_names: Sequence[int | str],
         continuous_imputer: Optional[str | int | float] = 'median',
         categorical_imputer: Optional[str | int | float] = 'most_frequent',
         categorical_encoder: Optional[str] = 'ordinal',
@@ -138,13 +139,17 @@ def create_data_preprocess_pipeline(
                                             categorical_caster)
 
     # Combine continuous and categorical transformers
-    preprocess_pipeline = ColumnTransformer(
+    transformer = ColumnTransformer(
         [
-            ('continuous_transformer', continuous_transformer, continuous_features),
-            ('categorical_transformer', categorical_transformer, categorical_features)
+            ('continuous_transformer', continuous_transformer, continuous_features_names),
+            ('categorical_transformer', categorical_transformer, categorical_features_names)
         ],
         verbose_feature_names_out=False
     ).set_output(transform='pandas')
+
+    reorder_transformer = ColumnTransformer([('reorder_transformer', 'passthrough', orderly_features_names)],
+                                            verbose_feature_names_out=False).set_output(transform='pandas')
+    preprocess_pipeline = make_pipeline(transformer, reorder_transformer)
     return preprocess_pipeline
 
 

@@ -5,6 +5,7 @@ from tab_benchmark.models.base_models import SkLearnExtension
 from tab_benchmark.utils import extends
 from inspect import cleandoc
 from tab_benchmark.utils import check_same_keys
+from catboost import CatBoost
 
 
 def init_factory(
@@ -25,8 +26,8 @@ def init_factory(
         categorical_target_encoder: Optional[str] = 'ordinal',  # only used in classification
         categorical_target_min_frequency: Optional[int | float] = 10,  # only used in classification
         continuous_target_scaler: Optional[str] = 'standard',  # only used in regression
-        categorical_target_type: Optional[np.dtype] = np.float64,
-        continuous_target_type: Optional[np.dtype] = np.float64,
+        categorical_target_type: Optional[np.dtype] = np.float32,
+        continuous_target_type: Optional[np.dtype] = np.float32,
 
 ):
     map_task_to_default_values_outer = map_task_to_default_values if map_task_to_default_values else {}
@@ -144,6 +145,11 @@ def fit_factory(cls, fn_to_run_before_fit=None):
             if task in self.map_task_to_default_values:
                 for key, value in self.map_task_to_default_values[task].items():
                     setattr(self, key, value)
+                    if isinstance(self, CatBoost):
+                        # we need to cheat a bit for CatBoost, because it uses the _init_params dictionary
+                        init_params = getattr(self, '_init_params', {})
+                        init_params[key] = value
+                        setattr(self, '_init_params', init_params)
         if fn_to_run_before_fit is not None:
             X, y, task, cat_features, args, kwargs = fn_to_run_before_fit(self, X, y, task, cat_features, *args,
                                                                           **kwargs)
