@@ -57,18 +57,28 @@ def check_if_arg_in_args_of_fn(fn, arg_name, *args):
         return False
 
 
-def check_if_arg_in_args_kwargs_of_fn(fn, arg_name, *args, **kwargs):
+def check_if_arg_in_args_kwargs_of_fn(fn, arg_name, *args, return_arg=False, **kwargs):
     # check if arg_name is provided in kwargs
     if arg_name in kwargs:
-        return True
+        if return_arg:
+            return True, kwargs[arg_name]
+        else:
+            return True
     else:
         # check if arg_name is provided in args
         all_parameters = signature(fn).parameters
         i_target_type = list(all_parameters).index(arg_name)
         if len(args) > i_target_type:
-            return True
+            if return_arg:
+                return True, args[i_target_type]
+            else:
+                return True
         else:
-            return False
+            if return_arg:
+                arg = all_parameters[arg_name].default
+                return False, arg
+            else:
+                return False
 
 
 def evaluate_set(model, eval_set: Sequence[pd.DataFrame], metric: str,
