@@ -41,10 +41,10 @@ class SkLearnExtension:
     def create_model_pipeline(self):
         if self.data_preprocess_pipeline_ is None or self.target_preprocess_pipeline_ is None:
             raise ValueError('Please run create_preprocess_pipeline first.')
-        if self.task_ == 'classification':
+        if self.task_ in ('classification', 'binary_classification'):
             target_transformer = TransformedTargetClassifier(classifier=self,
                                                              transformer=self.target_preprocess_pipeline_)
-        elif self.task_ == 'regression':
+        elif self.task_ in ('regression', 'multi_regression'):
             target_transformer = TransformedTargetRegressor(regressor=self,
                                                             transformer=self.target_preprocess_pipeline_)
         else:

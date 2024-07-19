@@ -1,4 +1,3 @@
-import numpy as np
 from catboost import CatBoostRegressor as OriginalCatBoostRegressor, CatBoostClassifier as OriginalCatBoostClassifier
 from tab_benchmark.models.xgboost import fn_to_run_before_fit_for_gbdt
 from tab_benchmark.models.factories import SimpleSkLearnFactory
@@ -14,7 +13,7 @@ CatBoostRegressor = SimpleSkLearnFactory.from_sk_cls(
     fn_to_run_before_fit=fn_to_run_before_fit_for_gbdt,
     extended_init_kwargs={
         'categorical_encoder': 'ordinal',
-        'categorical_type': np.int32,
+        'categorical_type': 'int32',
         'data_scaler': None,
         'continuous_target_scaler': None,
     }
@@ -30,7 +29,7 @@ CatBoostClassifier = SimpleSkLearnFactory.from_sk_cls(
     fn_to_run_before_fit=fn_to_run_before_fit_for_gbdt,
     extended_init_kwargs={
         'categorical_encoder': 'ordinal',
-        'categorical_type': np.int32,
+        'categorical_type': 'int32',
         'data_scaler': None,
         'continuous_target_scaler': None,
     }

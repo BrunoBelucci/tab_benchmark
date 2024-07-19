@@ -1,4 +1,6 @@
 from __future__ import annotations
+
+from copy import deepcopy
 from typing import Optional, Sequence
 import numpy as np
 import pandas as pd
@@ -49,8 +51,29 @@ def cast_to_type(X, dtype):
         return X.astype(dtype)
 
 
+def reorder_columns(X, orderly_features_names):
+    orderly_features_without_dropped = deepcopy(orderly_features_names)
+    for feature in orderly_features_names:
+        if feature not in X.columns:
+            orderly_features_without_dropped.remove(feature)
+    return X[orderly_features_without_dropped]
+
+
 def identity(X):
     return X
+
+
+map_type_to_dtype = {
+    'int': int,
+    'float': float,
+    'str': str,
+    'bool': bool,
+    'category': 'category',
+    'int32': np.int32,
+    'int64': np.int64,
+    'float32': np.float32,
+    'float64': np.float64,
+}
 
 
 def create_data_preprocess_pipeline(
@@ -63,10 +86,12 @@ def create_data_preprocess_pipeline(
         handle_unknown_categories: bool = True,
         variance_threshold: Optional[float] = 0.0,
         scaler: Optional[str] = 'standard',
-        categorical_type: Optional[np.dtype | str] = 'category',
-        continuous_type: Optional[np.dtype] = np.float32,
+        categorical_type: Optional[type | str] = 'category',
+        continuous_type: Optional[type | str] = 'float32',
 
 ):
+    categorical_type = map_type_to_dtype.get(categorical_type, categorical_type)
+    continuous_type = map_type_to_dtype.get(continuous_type, continuous_type)
     # Continuous features
     if continuous_imputer:
         if continuous_imputer == 'median':
@@ -147,8 +172,9 @@ def create_data_preprocess_pipeline(
         verbose_feature_names_out=False
     ).set_output(transform='pandas')
 
-    reorder_transformer = ColumnTransformer([('reorder_transformer', 'passthrough', orderly_features_names)],
-                                            verbose_feature_names_out=False).set_output(transform='pandas')
+    reorder_transformer = FunctionTransformer(reorder_columns,
+                                              kw_args={'orderly_features_names': orderly_features_names}
+                                              ).set_output(transform='pandas')
     preprocess_pipeline = make_pipeline(transformer, reorder_transformer)
     return preprocess_pipeline
 
@@ -159,10 +185,10 @@ def create_target_preprocess_pipeline(
         categorical_encoder: Optional[str] = 'ordinal',
         categorical_min_frequency: Optional[int | float] = 10,
         continuous_scaler: Optional[str] = 'standard',
-        categorical_type: Optional[np.dtype] = np.float32,
-        continuous_type: Optional[np.dtype] = np.float32,
+        categorical_type: Optional[type | str] = 'float32',
+        continuous_type: Optional[type | str] = 'float32',
 ):
-    if task not in ['regression', 'classification']:
+    if task not in ['regression', 'multi_regression', 'classification', 'binary_classification']:
         raise ValueError(f'Unknown task: {task}')
     if imputer:
         if isinstance(imputer, (int, float)):
@@ -179,7 +205,7 @@ def create_target_preprocess_pipeline(
         imputer = FunctionTransformer(identity)
 
     if categorical_encoder:
-        if task == 'classification':
+        if task in ('classification', 'binary_classification'):
             if categorical_encoder == 'ordinal':
                 categorical_encoder = OrdinalEncoderMaxUnknownValue(min_frequency=categorical_min_frequency)
             elif categorical_encoder == 'one_hot':
@@ -193,7 +219,7 @@ def create_target_preprocess_pipeline(
         categorical_encoder = FunctionTransformer(identity)
 
     if continuous_scaler:
-        if task == 'regression':
+        if task in ('regression', 'multi_regression'):
             if continuous_scaler == 'standard':
                 continuous_scaler = StandardScaler()
             else:
@@ -203,9 +229,9 @@ def create_target_preprocess_pipeline(
     else:
         continuous_scaler = FunctionTransformer(identity)
 
-    if task == 'classification' and categorical_type:
+    if task in ('classification', 'binary_classification') and categorical_type:
         dtype = categorical_type
-    elif task == 'regression' and continuous_type:
+    elif task in ('regression', 'multi_regression') and continuous_type:
         dtype = continuous_type
     else:
         dtype = None
@@ -234,14 +260,14 @@ def preprocess_dataset(
         handle_unknown_categories: bool = True,
         variance_threshold: Optional[float] = 0.0,
         data_scaler: Optional[str] = None,
-        categorical_type: Optional[np.dtype] = np.float32,
-        continuous_type: Optional[np.dtype] = np.float32,
+        categorical_type: Optional[type | str] = 'float32',
+        continuous_type: Optional[type | str] = 'float32',
         target_imputer: Optional[str | int | float] = None,
         categorical_target_encoder: Optional[str] = 'ordinal',  # only used in classification
         categorical_target_min_frequency: Optional[int | float] = 10,  # only used in classification
         continuous_target_scaler: Optional[str] = None,  # only used in regression
-        categorical_target_type: Optional[np.dtype] = np.float32,
-        continuous_target_type: Optional[np.dtype] = np.float32,
+        categorical_target_type: Optional[type | str] = 'float32',
+        continuous_target_type: Optional[type | str] = 'float32',
         *,
         # if is_train is False, must provide the fitted data_preprocess_pipeline and target_preprocess_pipeline
         data_preprocess_pipeline: Optional[Pipeline] = None,

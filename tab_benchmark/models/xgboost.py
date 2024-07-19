@@ -1,3 +1,5 @@
+from copy import deepcopy
+
 from xgboost import XGBClassifier as OriginalXGBClassifier, XGBRegressor as OriginalXGBRegressor, XGBModel
 from catboost import CatBoost
 from lightgbm import LGBMModel
@@ -7,6 +9,15 @@ from tab_benchmark.utils import (extends, train_test_split_forced, sequence_to_l
 
 
 def fn_to_run_before_fit_for_gbdt(self, X, y, task, cat_features, *args, **kwargs):
+    if cat_features:
+        # if we pass cat_features as column names, we can ensure that they are in the dataframe (and not dropped during
+        # preprocessing)
+        if isinstance(cat_features[0], str):
+            cat_features_without_dropped = deepcopy(cat_features)
+            for feature in cat_features:
+                if feature not in X.columns:
+                    cat_features_without_dropped.remove(feature)
+            cat_features = cat_features_without_dropped
     if self.auto_early_stopping:
         if self.task_ == 'classification' or self.task_ == 'binary_classification':
             stratify = y
@@ -24,10 +35,9 @@ def fn_to_run_before_fit_for_gbdt(self, X, y, task, cat_features, *args, **kwarg
         kwargs['eval_set'] = eval_set
     if isinstance(self, XGBModel):
         if cat_features is not None:
-            self.enable_categorical = True  # Categorical type must be set in dataframe
+            self.set_params(**{'enable_categorical': True})
     elif isinstance(self, CatBoost):
-        self.cat_features = cat_features
-        self._init_params['cat_features'] = cat_features
+        self.set_params(**{'cat_features': cat_features})
     elif isinstance(self, LGBMModel):
         if cat_features is not None:
             if not check_if_arg_in_kwargs_of_fn('categorical_feature', **kwargs):

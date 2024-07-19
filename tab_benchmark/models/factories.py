@@ -20,17 +20,17 @@ def init_factory(
         handle_unknown_categories: bool = True,
         variance_threshold: Optional[float] = 0.0,
         data_scaler: Optional[str] = 'standard',
-        categorical_type: Optional[np.dtype | str] = np.float32,
-        continuous_type: Optional[np.dtype] = np.float32,
+        categorical_type: Optional[type | str] = 'float32',
+        continuous_type: Optional[type | str] = 'float32',
         target_imputer: Optional[str | int | float] = None,
         categorical_target_encoder: Optional[str] = 'ordinal',  # only used in classification
         categorical_target_min_frequency: Optional[int | float] = 10,  # only used in classification
         continuous_target_scaler: Optional[str] = 'standard',  # only used in regression
-        categorical_target_type: Optional[np.dtype] = np.float32,
-        continuous_target_type: Optional[np.dtype] = np.float32,
+        categorical_target_type: Optional[type | str] = 'float32',
+        continuous_target_type: Optional[type | str] = 'float32',
 
 ):
-    map_task_to_default_values_outer = map_task_to_default_values if map_task_to_default_values else {}
+    map_task_to_default_values_outer = map_task_to_default_values
 
     @extends(cls.__init__, map_default_values_change=map_default_values_change)
     def init_fn_base(
@@ -55,9 +55,8 @@ def init_factory(
             **kwargs
     ):
         cls.__init__(self, *args, **kwargs)
-        map_task_to_default_values = map_task_to_default_values if map_task_to_default_values else \
+        self.map_task_to_default_values = map_task_to_default_values if map_task_to_default_values else \
             map_task_to_default_values_outer
-        self.map_task_to_default_values = map_task_to_default_values
         self.categorical_imputer = categorical_imputer
         self.continuous_imputer = continuous_imputer
         self.categorical_encoder = categorical_encoder
@@ -144,12 +143,7 @@ def fit_factory(cls, fn_to_run_before_fit=None):
         if self.map_task_to_default_values is not None and task is not None:
             if task in self.map_task_to_default_values:
                 for key, value in self.map_task_to_default_values[task].items():
-                    setattr(self, key, value)
-                    if isinstance(self, CatBoost):
-                        # we need to cheat a bit for CatBoost, because it uses the _init_params dictionary
-                        init_params = getattr(self, '_init_params', {})
-                        init_params[key] = value
-                        setattr(self, '_init_params', init_params)
+                    self.set_params(**{key: value})
         if fn_to_run_before_fit is not None:
             X, y, task, cat_features, args, kwargs = fn_to_run_before_fit(self, X, y, task, cat_features, *args,
                                                                           **kwargs)

@@ -312,6 +312,7 @@ class BaseExperiment:
         y_train = y.iloc[split_train]
         X_test = X.iloc[split_test]
         y_test = y.iloc[split_test]
+        cat_features_idx = [i for i, value in enumerate(cat_ind) if value is True]
         cat_features_names = [att_names[i] for i, value in enumerate(cat_ind) if value is True]
         cont_features_names = [att_names[i] for i, value in enumerate(cat_ind) if value is False]
         model.create_preprocess_pipeline(task, cat_features_names, cont_features_names, att_names)

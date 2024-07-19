@@ -202,7 +202,8 @@ class TransformedTargetClassifier(
         self : object
         """
         # Check that X and y have correct shape
-        X, y = check_X_y(X, y)
+        # X, y = check_X_y(X, y)  We won't do this here to not convert from pd.DataFrame to np.array,
+        # hopefully, each model will handle this conversion by itself
 
         if isinstance(y, pd.DataFrame) or isinstance(y, pd.Series):
             y = y.values
@@ -279,6 +280,25 @@ class TransformedTargetClassifier(
             pred_trans = pred_trans.squeeze(axis=1)
 
         return pred_trans
+
+    def predict_proba(self, X):
+        """Predict class probabilities for X.
+
+        The predicted class probabilities of an input sample are computed.
+
+        Parameters
+        ----------
+        X : {array-like, sparse matrix} of shape (n_samples, n_features)
+            Samples.
+
+        Returns
+        -------
+        p : ndarray of shape (n_samples, n_classes)
+            The class probabilities of the input samples. Classes are ordered
+            by lexicographic order.
+        """
+        check_is_fitted(self)
+        return self.classifier_.predict_proba(X)
 
     def _more_tags(self):
         return {"poor_score": True, "no_validation": True}

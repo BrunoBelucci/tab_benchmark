@@ -132,12 +132,16 @@ def extends(fn_being_extended, map_default_values_change=None):
         fn_being_extended_parameters = signature(fn_being_extended, eval_str=True).parameters
         if map_default_values_change is not None:
             parameters = []
-            args_numbers = []
             for i, (name, param) in enumerate(fn_being_extended_parameters.items()):
                 if name in map_default_values_change:
                     param = param.replace(default=map_default_values_change[name])
-                    args_numbers.append(i)
                 parameters.append(param)
+            args_numbers = []
+            for param_name, value in map_default_values_change.items():
+                if param_name in fn_being_extended_parameters:
+                    args_numbers.append(list(fn_being_extended_parameters.keys()).index(param_name))
+                else:
+                    args_numbers.append(99999)
         else:
             parameters = list(fn_being_extended_parameters.values())
         additional_params = [param for name, param in fn_parameters.items()
