@@ -1,0 +1,270 @@
+from __future__ import annotations
+from pathlib import Path
+from shutil import rmtree
+from typing import Optional, Callable, Sequence
+from warnings import warn
+import pandas as pd
+import torch
+import lightning as L
+from lightning import Callback
+from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
+from lightning.pytorch.loggers import MLFlowLogger
+from scipy.special import softmax
+from sklearn.base import BaseEstimator, ClassifierMixin, RegressorMixin
+from torch import nn
+import mlflow
+from torch.utils.data import DataLoader
+from tab_benchmark.dnns.callbacks import DefaultLogs
+from tab_benchmark.dnns.datasets import TabularDataModule, TabularDataset
+from tab_benchmark.dnns.modules import TabularModule
+from tab_benchmark.utils import sequence_to_list
+
+
+def get_early_stopping_callback(eval_sets, early_stopping_patience) -> list[tuple[type[Callback], dict]]:
+    if early_stopping_patience > 0:
+        if eval_sets is None or len(eval_sets) < 1:
+            return [
+                (EarlyStopping, dict(monitor='train_loss_0', patience=early_stopping_patience,
+                                     min_delta=0)),
+                (ModelCheckpoint, dict(monitor='train_loss_0', every_n_epochs=1, save_last=True)),
+            ]
+        else:
+            n_validation_set = len(eval_sets) - 1  # last eval_set is used for early stopping
+            return [
+                (EarlyStopping, dict(monitor=f'validation_loss_{n_validation_set}',
+                                     patience=early_stopping_patience,
+                                     min_delta=0)),
+                (ModelCheckpoint, dict(monitor=f'validation_loss_{n_validation_set}',
+                                       every_n_epochs=1, save_last=True)),
+            ]
+    else:
+        return []
+
+
+class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
+    def __init__(
+            self,
+            max_epochs: Optional[int] = 300,  # will add max_epochs to lit_trainer_kwargs, None to disable,
+            batch_size: int = 1024,
+            log_losses: bool = True,  # will automatically create DefaultLogs callback, False to disable
+            add_default_root_dir_to_lit_trainer_kwargs: bool = True,
+            n_jobs: int = 0,  # will add num_workers to lit_datamodule_kwargs
+            early_stopping_patience: int = 40,  # will add EarlyStopping callback, 0 to disable
+            use_best_model: bool = True,  # will load the best model if True, False to load the last model
+            log_to_mlflow_if_running: bool = True,
+            output_dir: Optional[Path | str] = None,
+            dnn_architecture_class: type[nn.Module] = None,
+            architecture_kwargs: Optional[dict] = None,
+            architecture_kwargs_not_from_dataset: Optional[dict] = None,
+            torch_optimizer_tuple: Optional[tuple[Callable, dict]] = None,
+            torch_scheduler_tuple: Optional[tuple[Callable, dict, dict]] = None,
+            lit_module_class: type[TabularModule] = TabularModule,
+            lit_datamodule_class: type[TabularDataModule] = TabularDataModule,
+            lit_callbacks_tuples: Optional[list[tuple[type[Callback], dict]]] = None,
+            lit_trainer_kwargs: Optional[dict] = None,
+            continuous_type: Optional[type | str] = 'float32',
+            categorical_type: Optional[type | str] = 'int64'
+    ):
+        self.max_epochs = max_epochs
+        self.batch_size = batch_size
+        self.log_losses = log_losses
+        self.add_default_root_dir_to_lit_trainer_kwargs = add_default_root_dir_to_lit_trainer_kwargs
+        self.n_jobs = n_jobs
+        self.early_stopping_patience = early_stopping_patience
+        self.use_best_model = use_best_model
+        self.log_to_mlflow_if_running = log_to_mlflow_if_running
+        self.output_dir = output_dir if output_dir else Path.cwd() / 'dnn_model_output'
+        self.dnn_architecture_class = dnn_architecture_class
+        self.architecture_kwargs = architecture_kwargs if architecture_kwargs else {}
+        self.architecture_kwargs_not_from_dataset = architecture_kwargs_not_from_dataset if (
+            architecture_kwargs_not_from_dataset) else {}
+        self.torch_optimizer_tuple = torch_optimizer_tuple if torch_optimizer_tuple else (torch.optim.AdamW, {})
+        self.torch_scheduler_tuple = torch_scheduler_tuple if torch_scheduler_tuple else (None, {}, {})
+        self.lit_module_class = lit_module_class
+        self.lit_datamodule_class = lit_datamodule_class
+        self.continuous_type = continuous_type
+        self.categorical_type = categorical_type
+        self.lit_callbacks_tuples = lit_callbacks_tuples if lit_callbacks_tuples else []
+        self.lit_trainer_kwargs = lit_trainer_kwargs if lit_trainer_kwargs else {}
+        self.lit_datamodule_ = None
+        self.lit_module_ = None
+        self.lit_callbacks_ = None
+        self.lit_trainer_ = None
+        self.task_ = None
+        self.cat_features_idx_ = None
+        self.cat_dims_ = None
+
+    def __post_init__(self):
+        if self.architecture_kwargs is None and self.architecture_kwargs_not_from_dataset is None:
+            raise ValueError(
+                'Either architecture_kwargs or architecture_kwargs_not_from_dataset must be specified, even if is'
+                'an empty dictionary.')
+
+    def fit(
+            self,
+            X,
+            y,
+            task: str,
+            cat_features: Optional[list[int | str]] = None,
+            cat_dims: Optional[list[int]] = None,
+            loss_fn: Optional[Callable] = torch.nn.functional.mse_loss,
+            delete_checkpoints: bool = True,
+            eval_sets: Optional[Sequence[tuple[pd.DataFrame, pd.DataFrame]]] = None,
+            eval_names: Optional[Sequence[str]] = None,
+            eval_metrics: Optional[Sequence[str]] = None,
+    ):
+        # we will consider that the last set of eval_set will be used as validation
+        # eval_name are the names of each set
+        # we will consider that the last metric of eval_metric will be used as validation
+        eval_sets = sequence_to_list(eval_sets) if eval_sets is not None else []
+        eval_names = sequence_to_list(eval_names) if eval_names is not None else []
+        if eval_sets and not eval_names:
+            eval_names = [f'eval_{i}' for i in range(len(eval_sets))]
+        if len(eval_sets) != len(eval_names):
+            raise AttributeError('eval_sets and eval_names should have the same length')
+
+        eval_metrics = sequence_to_list(eval_metrics) if eval_metrics is not None else []
+
+        cat_features = sequence_to_list(cat_features) if cat_features is not None else []
+        if cat_features:
+            if isinstance(cat_features[0], str):
+                cat_features_idx = [X.columns.get_loc(col) for col in cat_features]
+            else:
+                cat_features_idx = cat_features
+        else:
+            cat_features_idx = []
+
+        # initialize model
+
+        # initialize datamodule
+        self.lit_datamodule_ = self.lit_datamodule_class(
+            x_train=X,
+            y_train=y,
+            task=task,
+            categorical_features_idx=cat_features_idx,
+            categorical_dims=cat_dims,
+            eval_sets=eval_sets,
+            num_workers=self.n_jobs,
+            batch_size=self.batch_size,
+            store_as_tensor=True,
+            continuous_type=self.continuous_type,
+            categorical_type=self.categorical_type
+        )
+
+        # initialize module
+        if self.architecture_kwargs_not_from_dataset is not None:
+            self.lit_datamodule_.setup('fit')
+            train_dataset = self.lit_datamodule_.train_dataset
+            self.lit_module_ = self.lit_module_class.from_tabular_dataset(
+                dnn_architecture_class=self.dnn_architecture_class,
+                architecture_kwargs_not_from_dataset=self.architecture_kwargs_not_from_dataset,
+                dataset=train_dataset,
+                torch_optimizer_fn=self.torch_optimizer_tuple[0],
+                torch_optimizer_kwargs=self.torch_optimizer_tuple[1],
+                loss_fn=loss_fn,
+                torch_scheduler_fn=self.torch_scheduler_tuple[0],
+                torch_scheduler_kwargs=self.torch_scheduler_tuple[1],
+                lit_scheduler_config=self.torch_scheduler_tuple[2]
+            )
+        else:  # we have ensured that architecture_kwargs is not None in __post_init__
+            self.lit_module_ = self.lit_module_class(
+                dnn_architecture_class=self.dnn_architecture_class, architecture_kwargs=self.architecture_kwargs,
+                torch_optimizer_fn=self.torch_optimizer_tuple[0], torch_optimizer_kwargs=self.torch_optimizer_tuple[1],
+                loss_fn=loss_fn,
+                torch_scheduler_fn=self.torch_scheduler_tuple[0], torch_scheduler_kwargs=self.torch_scheduler_tuple[1],
+                lit_scheduler_config=self.torch_scheduler_tuple[2])
+
+        # initialize callbacks
+        callbacks_tuples = get_early_stopping_callback(eval_sets, self.early_stopping_patience)
+        if self.log_losses:
+            callbacks_tuples.append((DefaultLogs, {}))
+        callbacks_tuples.extend(self.lit_callbacks_tuples)
+        self.lit_callbacks_ = [fn(**kwargs) for fn, kwargs in callbacks_tuples]
+
+        # initialize trainer
+        trainer_kwargs = self.lit_trainer_kwargs
+        if self.max_epochs is not None:
+            trainer_kwargs['max_epochs'] = self.max_epochs
+        if self.add_default_root_dir_to_lit_trainer_kwargs:
+            trainer_kwargs['default_root_dir'] = self.output_dir
+        if self.log_to_mlflow_if_running:
+            run = mlflow.active_run()
+            if run:
+                trainer_kwargs['logger'] = MLFlowLogger(run_id=run.info.run_id)
+        trainer_kwargs.update(self.lit_trainer_kwargs)
+        self.lit_trainer_ = L.Trainer(**trainer_kwargs, callbacks=self.lit_callbacks_)
+
+        # fit
+        self.lit_trainer_.fit(self.lit_module_, self.lit_datamodule_)
+
+        # delete checkpoints
+        if self.use_best_model:
+            if len(self.lit_trainer_.checkpoint_callbacks) > 1:
+                warn('More than one checkpoint callback found, using the one in trainer.checkpoint_callback')
+            if self.lit_trainer_.checkpoint_callback and self.lit_trainer_.checkpoint_callback.best_model_path != '':
+                self.lit_module_ = self.lit_module_class.load_from_checkpoint(
+                    self.lit_trainer_.checkpoint_callback.best_model_path)
+                if self.lit_trainer_.early_stopping_callback:
+                    self.lit_module_.best_iteration_ = (self.lit_trainer_.early_stopping_callback.stopped_epoch
+                                                        - self.early_stopping_patience)
+                else:
+                    self.lit_module_.best_iteration_ = self.lit_trainer_.current_epoch
+            else:
+                warn('No checkpoint callback found, cannot load best model, using last model instead.')
+                self.lit_module_.best_iteration_ = self.lit_trainer_.current_epoch
+        if delete_checkpoints:
+            for checkpoint_callback in self.lit_trainer_.checkpoint_callbacks:
+                dirpath = checkpoint_callback.dirpath
+                if Path(dirpath).is_dir():
+                    rmtree(dirpath)
+
+        # needed for predict
+        self.task_ = task
+        self.cat_features_idx_ = cat_features_idx
+        self.cat_dims_ = cat_dims
+
+        return self
+
+    def predict(self, X: pd.DataFrame, logits: bool = False):
+        """Predict the target of the data X.
+        Args:
+            X:
+                Data to predict.
+            logits:
+                True if we want the logits (for the classification task), False if we want the class.
+
+        Returns:
+            Predictions.
+        """
+        dataset_kwargs = {
+            'x': X,
+            'y': None,
+            'task': self.task_,
+            'categorical_features_idx': self.cat_features_idx_,
+            'categorical_dims': self.cat_dims_,
+            'store_as_tensor': True,
+            'continuous_type': self.continuous_type,
+            'categorical_type': self.categorical_type,
+        }
+        dataset = TabularDataset(**dataset_kwargs)
+        dataloader = DataLoader(dataset, batch_size=self.batch_size, num_workers=self.n_jobs)
+        preds = self.lit_trainer_.predict(self.lit_datamodule_, dataloaders=dataloader)
+        y_pred = [pred['y_pred'] for pred in preds]
+        y_pred = torch.vstack(y_pred)
+        if self.task_ == 'classification' and not logits:
+            y_pred = torch.argmax(y_pred, dim=1)
+        return pd.DataFrame(y_pred.numpy())
+
+    def predict_proba(self, X: pd.DataFrame):
+        """Predict the probabilities of the data X.
+        Args:
+            X:
+                Data to predict.
+
+        Returns:
+            Predictions.
+        """
+        if self.task_ not in ('classification', 'binary_classification'):
+            raise ValueError('Not trained for a classification task!')
+        logits = self.predict(X, logits=True)
+        return pd.DataFrame(softmax(logits, axis=1))
