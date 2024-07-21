@@ -82,15 +82,89 @@ class ResNet(BaseArchitecture):
     for Tabular Data.” arXiv, November 10, 2021. https://doi.org/10.48550/arXiv.2106.11959 and
     on fastai's implementation (lesson 18 of the 2023 fastai course).
 
-    """
+    Parameters
+    ----------
+    categorical_features_idx:
+        A list of integers representing the indices of the categorical features.
 
+    continuous_features_idx:
+        A list of integers representing the indices of the continuous features.
+
+    output_dim:
+        The dimension of the output data, typically the number of classes for classification tasks or
+        the number of target variables for regression tasks.
+
+    categorical_dims:
+        A list of integers representing the number of unique values for each categorical feature.
+
+    blocks_dims:
+        A list of integers representing the number of neurons for each residual block.
+
+    activation_fns_1:
+        The activation functions to use for the first linear layer in each block. If a single activation
+        function is provided, it will be used for all blocks. Defaults to nn.ReLU().
+
+    initialization_fns_1:
+        The initialization functions for the first linear layer in each block. If a single initialization
+        function is provided, it will be used for all blocks. Defaults to None.
+
+    norms_modules_class_1:
+        The normalization functions for the first linear layer in each block. If a single normalization function
+        is provided, it will be used for all blocks. Defaults to nn.BatchNorm1d.
+
+    dropouts_1:
+        The dropout rates for the first linear layer in each block. If a single dropout rate is provided, it will
+        be used for all blocks. Defaults to 0.5.
+
+    dropouts_modules_class_1:
+        The dropout functions for the first linear layer in each block. If a single dropout function is provided,
+        it will be used for all blocks. Defaults to nn.Dropout.
+
+    activation_fns_2:
+        The activation functions to use for the second linear layer in each block. If a single activation function
+        is provided, it will be used for all blocks. Defaults to nn.ReLU().
+
+    initialization_fns_2:
+        The initialization functions for the second linear layer in each block. If a single initialization
+        function is provided, it will be used for all blocks. Defaults to None.
+
+    norms_modules_class_2:
+        The normalization functions for the second linear layer in each block. If a single normalization function
+        is provided, it will be used for all blocks. Defaults to nn.BatchNorm1d.
+
+    dropouts_2:
+        The dropout rates for the second linear layer in each block. If a single dropout rate is provided, it will
+        be used for all blocks. Defaults to 0.5.
+
+    dropouts_modules_class_2:
+        The dropout functions for the second linear layer in each block. If a single dropout function is provided,
+        it will be used for all blocks. Defaults to nn.Dropout.
+
+    output_activation_fn:
+        The activation function to use for the output layer. Defaults to nn.Identity().
+
+    output_initialization_fn:
+        The initialization function for the output layer. Defaults to None.
+
+    categorical_embedding_dim:
+        The dimension of the embedding for categorical features. Defaults to 256.
+
+    continuous_embedding_dim:
+        The dimension of the embedding for continuous features. Defaults to 1.
+
+    embedding_initialization_fn:
+        The initialization function for the embeddings. Defaults to None.
+    """
+    params_defined_from_dataset = ['continuous_features_idx', 'categorical_features_idx', 'categorical_dims',
+                                   'output_dim']
     def __init__(
             self,
             continuous_features_idx: list[int],
             categorical_features_idx: list[int],
             output_dim: int,
             categorical_dims: list[int],
-            blocks_dims: int | list[int],
+            n_blocks: Optional[int] = 2,
+            blocks_dims: int | list[int] = 256,
 
             activation_fns_1: nn.Module = nn.ReLU(),
             initialization_fns_1: Optional[Callable | list[Callable]] = nn.init.kaiming_normal_,
@@ -111,88 +185,25 @@ class ResNet(BaseArchitecture):
             continuous_embedding_dim: Optional[int] = 1,
             embedding_initialization_fn: Optional[Callable] = nn.init.normal_,
     ):
-        """
-        Initialize the ResNet architecture.
-
-        Args:
-            categorical_features_idx:
-                A list of integers representing the indices of the categorical features.
-
-            continuous_features_idx:
-                A list of integers representing the indices of the continuous features.
-
-            output_dim:
-                The dimension of the output data, typically the number of classes for classification tasks or
-                the number of target variables for regression tasks.
-
-            categorical_dims:
-                A list of integers representing the number of unique values for each categorical feature.
-
-            blocks_dims:
-                A list of integers representing the number of neurons for each residual block.
-
-            activation_fns_1:
-                The activation functions to use for the first linear layer in each block. If a single activation
-                function is provided, it will be used for all blocks. Defaults to nn.ReLU().
-
-            initialization_fns_1:
-                The initialization functions for the first linear layer in each block. If a single initialization
-                function is provided, it will be used for all blocks. Defaults to None.
-
-            norms_modules_class_1:
-                The normalization functions for the first linear layer in each block. If a single normalization function
-                is provided, it will be used for all blocks. Defaults to nn.BatchNorm1d.
-
-            dropouts_1:
-                The dropout rates for the first linear layer in each block. If a single dropout rate is provided, it will
-                be used for all blocks. Defaults to 0.5.
-
-            dropouts_modules_class_1:
-                The dropout functions for the first linear layer in each block. If a single dropout function is provided,
-                it will be used for all blocks. Defaults to nn.Dropout.
-
-            activation_fns_2:
-                The activation functions to use for the second linear layer in each block. If a single activation function
-                is provided, it will be used for all blocks. Defaults to nn.ReLU().
-
-            initialization_fns_2:
-                The initialization functions for the second linear layer in each block. If a single initialization
-                function is provided, it will be used for all blocks. Defaults to None.
-
-            norms_modules_class_2:
-                The normalization functions for the second linear layer in each block. If a single normalization function
-                is provided, it will be used for all blocks. Defaults to nn.BatchNorm1d.
-
-            dropouts_2:
-                The dropout rates for the second linear layer in each block. If a single dropout rate is provided, it will
-                be used for all blocks. Defaults to 0.5.
-
-            dropouts_modules_class_2:
-                The dropout functions for the second linear layer in each block. If a single dropout function is provided,
-                it will be used for all blocks. Defaults to nn.Dropout.
-
-            output_activation_fn:
-                The activation function to use for the output layer. Defaults to nn.Identity().
-
-            output_initialization_fn:
-                The initialization function for the output layer. Defaults to None.
-
-            categorical_embedding_dim:
-                The dimension of the embedding for categorical features. Defaults to 256.
-
-            continuous_embedding_dim:
-                The dimension of the embedding for continuous features. Defaults to 1.
-
-            embedding_initialization_fn:
-                The initialization function for the embeddings. Defaults to None.
-        """
         super().__init__()
-        (blocks_dims, activation_fns_1, dropouts_1, dropouts_modules_class_1, initialization_fns_1,
-         norms_modules_class_1, activation_fns_2, dropouts_2, dropouts_modules_class_2, initialization_fns_2,
-         norms_modules_class_2) = broadcast_to_list(
-            blocks_dims, activation_fns_1, dropouts_1, dropouts_modules_class_1, initialization_fns_1,
-            norms_modules_class_1, activation_fns_2, dropouts_2, dropouts_modules_class_2, initialization_fns_2,
-            norms_modules_class_2)
+        if n_blocks is None:
+            (blocks_dims, activation_fns_1, dropouts_1, dropouts_modules_class_1, initialization_fns_1,
+             norms_modules_class_1, activation_fns_2, dropouts_2, dropouts_modules_class_2, initialization_fns_2,
+             norms_modules_class_2) = broadcast_to_list(
+                blocks_dims, activation_fns_1, dropouts_1, dropouts_modules_class_1, initialization_fns_1,
+                norms_modules_class_1, activation_fns_2, dropouts_2, dropouts_modules_class_2, initialization_fns_2,
+                norms_modules_class_2)
+        else:
+            if isinstance(blocks_dims, int):
+                blocks_dims = [blocks_dims] * n_blocks
+                (blocks_dims, activation_fns_1, dropouts_1, dropouts_modules_class_1, initialization_fns_1,
+                 norms_modules_class_1, activation_fns_2, dropouts_2, dropouts_modules_class_2, initialization_fns_2,
+                 norms_modules_class_2) = broadcast_to_list(
+                    blocks_dims, activation_fns_1, dropouts_1, dropouts_modules_class_1, initialization_fns_1,
+                    norms_modules_class_1, activation_fns_2, dropouts_2, dropouts_modules_class_2, initialization_fns_2,
+                    norms_modules_class_2)
+            else:
+                raise ValueError('blocks_dims must be an integer if n_blocks is not None.')
         input_dim = (len(continuous_features_idx) * continuous_embedding_dim
                      + len(categorical_features_idx) * categorical_embedding_dim)
         resnet_block_dims = [input_dim] + blocks_dims
@@ -236,7 +247,7 @@ class ResNet(BaseArchitecture):
 
     @staticmethod
     def tabular_dataset_to_architecture_kwargs(dataset: TabularDataset):
-        if dataset.task == 'classification':
+        if dataset.task in ('classification', 'binary_classification'):
             output_dim = len(torch.unique(dataset.y))
         else:
             if len(dataset.y.shape) == 1:

@@ -121,19 +121,88 @@ class TabularSelfAttentionEncoder(nn.Module):
 
 
 class Transformer(BaseArchitecture):
-    """Adaptation of the Transformer architecture for tabular data."""
+    """Adaptation of the Transformer architecture for tabular data.
 
+    Parameters
+    ----------
+    categorical_features_idx:
+        A list of integers representing the indices of the categorical features.
+
+    continuous_features_idx:
+        A list of integers representing the indices of the continuous features.
+
+    output_dim:
+        The dimension of the output data, typically the number of classes for classification tasks or
+        the number of target variables for regression tasks.
+
+    categorical_dims:
+        A list of integers representing the number of unique values for each categorical feature.
+
+    n_heads:
+        The number of attention heads.
+
+    feedforward_dims:
+        The dimensions of the feedforward layers.
+
+    dropouts_attn:
+        The dropout rates for the attention layers.
+
+    dropouts_ff:
+        The dropout rates for the feedforward layers.
+
+    dropouts_module_class_ff:
+        The dropout module class for the feedforward layers.
+
+    activation_fns_1:
+        The activation functions for the first feedforward layers.
+
+    activation_fns_2:
+        The activation functions for the second feedforward layers.
+
+    initialization_fns_1:
+        The initialization functions for the first feedforward layers.
+
+    initialization_fns_2:
+        The initialization functions for the second feedforward layers.
+
+    norms_module_class_1:
+        The normalization module class for the first feedforward layers.
+
+    norms_module_class_2:
+        The normalization module class for the second feedforward layers.
+
+    output_activation_fn:
+        The activation function to use for the output layer. Defaults to nn.Identity().
+
+    output_initialization_fn:
+        The initialization function for the output layer. Defaults to None.
+
+    embedding_dim:
+        The dimension of the embedding for all features. Defaults to 256.
+
+    embedding_initialization_fn:
+        The initialization function for the embeddings. Defaults to None.
+
+    use_cls_token:
+        Whether to use a cls token. Defaults to True.
+
+    norm_first:
+        Whether to normalize the input before the self attention layer. Defaults to True.
+    """
+    params_defined_from_dataset = ['continuous_features_idx', 'categorical_features_idx', 'categorical_dims',
+                                   'output_dim']
     def __init__(
             self,
             continuous_features_idx: list[int],
             categorical_features_idx: list[int],
             output_dim: int,
             categorical_dims: list[int],
-            n_heads: int,
-            feedforward_dims: int | list[int],
-            dropouts_attn: float | list[float],
-            dropouts_ff: float | list[float],
-            dropouts_module_class_ff: type[nn.Module] | list[type[nn.Module]],
+            n_encoders: Optional[int] = 3,
+            n_heads: int = 8,
+            feedforward_dims: int | list[int] = 512,
+            dropouts_attn: float | list[float] = 0.1,
+            dropouts_ff: float | list[float] = 0.5,
+            dropouts_module_class_ff: type[nn.Module] | list[type[nn.Module]] = nn.Dropout,
             activation_fns_1: nn.Module | list[nn.Module] = nn.ReLU(),
             activation_fns_2: nn.Module | list[nn.Module] = nn.ReLU(),
             initialization_fns_1: Optional[Callable] = nn.init.kaiming_normal_,
@@ -150,79 +219,28 @@ class Transformer(BaseArchitecture):
         """
         Initialize the Transformer architecture.
 
-        Args:
-            categorical_features_idx:
-                A list of integers representing the indices of the categorical features.
 
-            continuous_features_idx:
-                A list of integers representing the indices of the continuous features.
-
-            output_dim:
-                The dimension of the output data, typically the number of classes for classification tasks or
-                the number of target variables for regression tasks.
-
-            categorical_dims:
-                A list of integers representing the number of unique values for each categorical feature.
-
-            n_heads:
-                The number of attention heads.
-
-            feedforward_dims:
-                The dimensions of the feedforward layers.
-
-            dropouts_attn:
-                The dropout rates for the attention layers.
-
-            dropouts_ff:
-                The dropout rates for the feedforward layers.
-
-            dropouts_module_class_ff:
-                The dropout module class for the feedforward layers.
-
-            activation_fns_1:
-                The activation functions for the first feedforward layers.
-
-            activation_fns_2:
-                The activation functions for the second feedforward layers.
-
-            initialization_fns_1:
-                The initialization functions for the first feedforward layers.
-
-            initialization_fns_2:
-                The initialization functions for the second feedforward layers.
-
-            norms_module_class_1:
-                The normalization module class for the first feedforward layers.
-
-            norms_module_class_2:
-                The normalization module class for the second feedforward layers.
-
-            output_activation_fn:
-                The activation function to use for the output layer. Defaults to nn.Identity().
-
-            output_initialization_fn:
-                The initialization function for the output layer. Defaults to None.
-
-            embedding_dim:
-                The dimension of the embedding for all features. Defaults to 256.
-
-            embedding_initialization_fn:
-                The initialization function for the embeddings. Defaults to None.
-
-            use_cls_token:
-                Whether to use a cls token. Defaults to True.
-
-            norm_first:
-                Whether to normalize the input before the self attention layer. Defaults to True.
 
         """
         super().__init__()
+        if n_encoders is not None:
+            feedforward_dims, dropouts_attn, dropouts_ff, dropouts_module_class_ff, activation_fns_1, activation_fns_2, \
+                norms_module_class_1, norms_module_class_2, initialization_fns_1, initialization_fns_2 = broadcast_to_list(
+                feedforward_dims, dropouts_attn, dropouts_ff, dropouts_module_class_ff,
+                activation_fns_1, activation_fns_2, norms_module_class_1,
+                norms_module_class_2, initialization_fns_1, initialization_fns_2)
+        else:
+            if isinstance(feedforward_dims, int):
+                feedforward_dims = [feedforward_dims] * self.n_encoders
+                feedforward_dims, dropouts_attn, dropouts_ff, dropouts_module_class_ff, activation_fns_1, activation_fns_2, \
+                    norms_module_class_1, norms_module_class_2, initialization_fns_1, initialization_fns_2 = broadcast_to_list(
+                    feedforward_dims, dropouts_attn, dropouts_ff, dropouts_module_class_ff,
+                    activation_fns_1, activation_fns_2, norms_module_class_1,
+                    norms_module_class_2, initialization_fns_1, initialization_fns_2)
+            else:
+                raise ValueError('n_encoders must be provided if feedforward_dims is not an int')
         self.use_cls_token = use_cls_token
-        feedforward_dims, dropouts_attn, dropouts_ff, dropouts_module_class_ff, activation_fns_1, activation_fns_2, \
-            norms_module_class_1, norms_module_class_2, initialization_fns_1, initialization_fns_2 = broadcast_to_list(
-            feedforward_dims, dropouts_attn, dropouts_ff, dropouts_module_class_ff,
-            activation_fns_1, activation_fns_2, norms_module_class_1,
-            norms_module_class_2, initialization_fns_1, initialization_fns_2)
+
         if embedding_dim % n_heads != 0:
             extra_embeddings = n_heads - embedding_dim % n_heads
             warn(
@@ -293,7 +311,7 @@ class Transformer(BaseArchitecture):
 
     @staticmethod
     def tabular_dataset_to_architecture_kwargs(dataset: TabularDataset):
-        if dataset.task == 'classification':
+        if dataset.task in ('classification', 'binary_classification'):
             output_dim = len(torch.unique(dataset.y))
         else:
             if len(dataset.y.shape) == 1:

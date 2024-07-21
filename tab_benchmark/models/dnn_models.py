@@ -1,5 +1,4 @@
 from copy import deepcopy
-
 import torch
 from tab_benchmark.dnns.architectures import Node, Saint, TabTransformer, TabNet
 from tab_benchmark.dnns.architectures.mlp import MLP

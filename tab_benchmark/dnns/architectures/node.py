@@ -21,7 +21,30 @@ class Node(BaseArchitecture):
     Popov, Sergei, Stanislav Morozov, and Artem Babenko. “Neural Oblivious Decision Ensembles for Deep Learning on
     Tabular Data.” arXiv, September 19, 2019. https://doi.org/10.48550/arXiv.1909.06312.
 
+    Parameters
+    ----------
+    input_dim:
+        Dimension of input data (typically the number of features).
+    tree_dim:
+        Number of response channels in the response of an individual tree (typically the number of outputs).
+    output_layer:
+        Function that aggregate response of last trees.
+    num_trees:
+        Number of trees by layer.
+    num_NODE_layers:
+        Number of NODE layers.
+    depth:
+        Number of splits in every tree.
+    choice_function:
+        Computes feature weights s.t. f(tensor, dim).sum(dim) == 1.
+    bin_function:
+        Computes tree leaf weights.
+    flatten_output:
+        Whether to flatten the outputs of the model.
+    extra_tree_dim:
+        Number of extra channels in the response of an individual tree.
     """
+    params_defined_from_dataset = ['input_dim', 'tree_dim', 'output_layer']
     def __init__(
             self,
             input_dim: int,
@@ -35,30 +58,6 @@ class Node(BaseArchitecture):
             flatten_output: bool = False,
             extra_tree_dim: int = 1,
     ):
-        """Initialize NODE architecture.
-
-        Args:
-            input_dim:
-                Dimension of input data (typically the number of features).
-            tree_dim:
-                Number of response channels in the response of an individual tree (typically the number of outputs).
-            output_layer:
-                Function that aggregate response of last trees.
-            num_trees:
-                Number of trees by layer.
-            num_NODE_layers:
-                Number of NODE layers.
-            depth:
-                Number of splits in every tree.
-            choice_function:
-                Computes feature weights s.t. f(tensor, dim).sum(dim) == 1.
-            bin_function:
-                Computes tree leaf weights.
-            flatten_output:
-                Whether to flatten the outputs of the model.
-            extra_tree_dim:
-                Number of extra channels in the response of an individual tree.
-        """
         super().__init__()
         kwargs = {
             'depth': depth,
@@ -80,7 +79,7 @@ class Node(BaseArchitecture):
 
     @staticmethod
     def tabular_dataset_to_architecture_kwargs(dataset: TabularDataset):
-        if dataset.task == 'classification':
+        if dataset.task in ('classification', 'binary_classification'):
             tree_dim = len(torch.unique(dataset.y))
             output_layer = partial(output_layer_classification, n_classes=tree_dim)
         else:

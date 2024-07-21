@@ -11,7 +11,107 @@ class TabTransformer(TabTransformer_, BaseArchitecture):
 
     Huang, Xin, Ashish Khetan, Milan Cvitkovic, and Zohar Karnin. “TabTransformer: Tabular Data Modeling Using
     Contextual Embeddings.” arXiv, December 11, 2020. https://doi.org/10.48550/arXiv.2012.06678.
+
+    Parameters
+    ----------
+    categorical_features_idx:
+        List of indices of the categorical features.
+    continuous_features_idx:
+        List of indices of the continuous features.
+    categorical_dims:
+        List of the number of categories in each categorical feature.
+    output_dim:
+        Dimension of output data (typically the number of outputs).
+    with_cls_token:
+        Whether to use a cls token.
+    cat_embed_dropout:
+        Dropout for the categorical embeddings.
+    use_cat_bias:
+        Whether to use a bias in the categorical embeddings.
+    cat_embed_activation:
+        Activation function for the categorical embeddings, if any. _'tanh'_,
+        _'relu'_, _'leaky_relu'_ and _'gelu'_ are supported.
+    full_embed_dropout:
+        Boolean indicating if an entire embedding (i.e. the representation of
+        one column) will be dropped in the batch. See:
+        `pytorch_widedeep.models.transformers._layers.FullEmbeddingDropout`.
+        If `full_embed_dropout = True`, `cat_embed_dropout` is ignored.
+    shared_embed:
+        The idea behind `shared_embed` is described in the Appendix A in the
+        [TabTransformer paper](https://arxiv.org/abs/2012.06678): the
+        goal of having column embedding is to enable the model to distinguish
+        the classes in one column from those in the other columns. In other
+        words, the idea is to let the model learn which column is embedded
+        at the time.
+    add_shared_embed:
+        The two embedding sharing strategies are: 1) add the shared embeddings
+        to the column embeddings or 2) to replace the first
+        `frac_shared_embed` with the shared embeddings.
+        See `pytorch_widedeep.models.transformers._layers.SharedEmbeddings`
+    frac_shared_embed:
+        The fraction of embeddings that will be shared (if `add_shared_embed
+        = False`) by all the different categories for one particular
+        column.
+    cont_norm_layer:
+        Type of normalization layer applied to the continuous features. Options
+        are: _'layernorm'_, _'batchnorm'_ or None.
+    embed_continuous:
+        Whether to embed the continuous features.
+    cont_embed_dropout:
+        Dropout for the continuous embeddings.
+    use_cont_bias:
+        Whether to use a bias in the continuous embeddings.
+    cont_embed_activation:
+        Activation function to be applied to the continuous embeddings, if
+        any. _'tanh'_, _'relu'_, _'leaky_relu'_ and _'gelu'_ are supported.
+    embedding_dim:
+        Dimension of the embeddings for the categorical AND continuous columns.
+    n_heads:
+        Number of heads in the multi-head attention. (Number of attention heads per Transformer block).
+    use_qkv_bias:
+        Whether to use a bias in the query, key, and value projections.
+    n_blocks:
+        Number of SAINT-Transformer blocks.
+    attn_dropout:
+        Dropout that will be applied to the Multi-Head Attention column and
+        row layers
+    ff_dropout:
+        Dropout for the feed-forward layer.
+    ff_factor:
+        Multiplicative factor applied to the first layer of the FF network in
+        each Transformer block, This is normally set to 4.
+    transformer_activation:
+        Transformer Encoder activation function. _'tanh'_, _'relu'_,
+        _'leaky_relu'_, _'gelu'_, _'geglu'_ and _'reglu'_ are supported.
+    use_linear_attention:
+        Whether to use linear attention. If `True` the attention mechanism is linear.
+    use_flash_attention:
+        Whether to use flash attention. If `True` the attention mechanism is flash.
+    mlp_hidden_dims:
+        List of hidden dimensions in the MLP.
+    mlp_hidden_mult_1:
+        Multiplier for the first hidden layer in the MLP.
+        If mlp_hidden_dims is not provided it will default to $[l, mlp_hidden_mult_1
+        \times l, mlp_hidden_mult_2 \times l]$ where $l$ is the MLP's input dimension.
+    mlp_hidden_mult_2:
+        Multiplier for the second hidden layer in the MLP.
+         If mlp_hidden_dims is not provided it will default to $[l, mlp_hidden_mult_1
+        \times l, mlp_hidden_mult_2 \times l]$ where $l$ is the MLP's input dimension.
+    mlp_activation:
+        MLP activation function. _'tanh'_, _'relu'_, _'leaky_relu'_ and
+        _'gelu'_ are supported
+    mlp_dropout:
+        Dropout for the final MLP.
+    mlp_batchnorm:
+        Whether to use batch normalization in the MLP.
+    mlp_batchnorm_last:
+        Whether to use batch normalization in the last layer of the MLP.
+    mlp_linear_first:
+        Whether to use a linear layer first in the MLP. If `True: [LIN -> ACT -> BN -> DP]`.
+        If `False: [BN -> DP -> LIN -> ACT]`
     """
+    params_defined_from_dataset = ['continuous_features_idx', 'categorical_features_idx', 'categorical_dims',
+                                   'output_dim']
     def __init__(
             self,
             categorical_features_idx: list[int],
@@ -50,105 +150,6 @@ class TabTransformer(TabTransformer_, BaseArchitecture):
             mlp_batchnorm_last: bool = False,
             mlp_linear_first: bool = True,
     ):
-        """Initialze TabTransformer architecture.
-
-        Args:
-            categorical_features_idx:
-                List of indices of the categorical features.
-            continuous_features_idx:
-                List of indices of the continuous features.
-            categorical_dims:
-                List of the number of categories in each categorical feature.
-            output_dim:
-                Dimension of output data (typically the number of outputs).
-            with_cls_token:
-                Whether to use a cls token.
-            cat_embed_dropout:
-                Dropout for the categorical embeddings.
-            use_cat_bias:
-                Whether to use a bias in the categorical embeddings.
-            cat_embed_activation:
-                Activation function for the categorical embeddings, if any. _'tanh'_,
-                _'relu'_, _'leaky_relu'_ and _'gelu'_ are supported.
-            full_embed_dropout:
-                Boolean indicating if an entire embedding (i.e. the representation of
-                one column) will be dropped in the batch. See:
-                `pytorch_widedeep.models.transformers._layers.FullEmbeddingDropout`.
-                If `full_embed_dropout = True`, `cat_embed_dropout` is ignored.
-            shared_embed:
-                The idea behind `shared_embed` is described in the Appendix A in the
-                [TabTransformer paper](https://arxiv.org/abs/2012.06678): the
-                goal of having column embedding is to enable the model to distinguish
-                the classes in one column from those in the other columns. In other
-                words, the idea is to let the model learn which column is embedded
-                at the time.
-            add_shared_embed:
-                The two embedding sharing strategies are: 1) add the shared embeddings
-                to the column embeddings or 2) to replace the first
-                `frac_shared_embed` with the shared embeddings.
-                See `pytorch_widedeep.models.transformers._layers.SharedEmbeddings`
-            frac_shared_embed:
-                The fraction of embeddings that will be shared (if `add_shared_embed
-                = False`) by all the different categories for one particular
-                column.
-            cont_norm_layer:
-                Type of normalization layer applied to the continuous features. Options
-                are: _'layernorm'_, _'batchnorm'_ or None.
-            embed_continuous:
-                Whether to embed the continuous features.
-            cont_embed_dropout:
-                Dropout for the continuous embeddings.
-            use_cont_bias:
-                Whether to use a bias in the continuous embeddings.
-            cont_embed_activation:
-                Activation function to be applied to the continuous embeddings, if
-                any. _'tanh'_, _'relu'_, _'leaky_relu'_ and _'gelu'_ are supported.
-            embedding_dim:
-                Dimension of the embeddings for the categorical AND continuous columns.
-            n_heads:
-                Number of heads in the multi-head attention. (Number of attention heads per Transformer block).
-            use_qkv_bias:
-                Whether to use a bias in the query, key, and value projections.
-            n_blocks:
-                Number of SAINT-Transformer blocks.
-            attn_dropout:
-                Dropout that will be applied to the Multi-Head Attention column and
-                row layers
-            ff_dropout:
-                Dropout for the feed-forward layer.
-            ff_factor:
-                Multiplicative factor applied to the first layer of the FF network in
-                each Transformer block, This is normally set to 4.
-            transformer_activation:
-                Transformer Encoder activation function. _'tanh'_, _'relu'_,
-                _'leaky_relu'_, _'gelu'_, _'geglu'_ and _'reglu'_ are supported.
-            use_linear_attention:
-                Whether to use linear attention. If `True` the attention mechanism is linear.
-            use_flash_attention:
-                Whether to use flash attention. If `True` the attention mechanism is flash.
-            mlp_hidden_dims:
-                List of hidden dimensions in the MLP.
-            mlp_hidden_mult_1:
-                Multiplier for the first hidden layer in the MLP.
-                If mlp_hidden_dims is not provided it will default to $[l, mlp_hidden_mult_1
-                \times l, mlp_hidden_mult_2 \times l]$ where $l$ is the MLP's input dimension.
-            mlp_hidden_mult_2:
-                Multiplier for the second hidden layer in the MLP.
-                 If mlp_hidden_dims is not provided it will default to $[l, mlp_hidden_mult_1
-                \times l, mlp_hidden_mult_2 \times l]$ where $l$ is the MLP's input dimension.
-            mlp_activation:
-                MLP activation function. _'tanh'_, _'relu'_, _'leaky_relu'_ and
-                _'gelu'_ are supported
-            mlp_dropout:
-                Dropout for the final MLP.
-            mlp_batchnorm:
-                Whether to use batch normalization in the MLP.
-            mlp_batchnorm_last:
-                Whether to use batch normalization in the last layer of the MLP.
-            mlp_linear_first:
-                Whether to use a linear layer first in the MLP. If `True: [LIN -> ACT -> BN -> DP]`.
-                If `False: [BN -> DP -> LIN -> ACT]`
-        """
         if with_cls_token:
             categorical_dims = [1] + categorical_dims
             categorical_features_idx = [0] + [i + 1 for i in categorical_features_idx]
@@ -222,7 +223,7 @@ class TabTransformer(TabTransformer_, BaseArchitecture):
     def tabular_dataset_to_architecture_kwargs(dataset: TabularDataset):
         categorical_features_idx = dataset.categorical_features_idx
         continuous_features_idx = dataset.continuous_features_idx
-        if dataset.task == 'classification':
+        if dataset.task in ('classification', 'binary_classification'):
             dim_out = len(torch.unique(dataset.y))
         else:
             if len(dataset.y.shape) == 1:

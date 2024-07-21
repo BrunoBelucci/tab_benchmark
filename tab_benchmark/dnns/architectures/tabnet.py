@@ -10,7 +10,44 @@ class TabNet(TabNet_, BaseArchitecture):
 
     Arik, Sercan O., and Tomas Pfister. “TabNet: Attentive Interpretable Tabular Learning.” arXiv, December 9,
     2020. https://doi.org/10.48550/arXiv.1908.07442.
+
+    Parameters
+    ----------
+    input_dim:
+        Dimension of input data (typically the number of features).
+    output_dim:
+        Dimension of output data (typically the number of outputs).
+    n_d:
+        Dimension of the prediction layer (usually between 4 and 64).
+    n_a:
+        Dimension of the attention mechanism (usually between 4 and 64).
+    n_steps:
+        Number of steps in the architecture (usually between 3 and 10).
+    gamma:
+        Float above 1, scaling factor for attention updates (usually between 1.0 to 2.0)
+    categorical_features_idx:
+        List of indices of categorical features.
+    categorical_dims:
+        List of number of unique values for each categorical feature.
+    cat_emb_dim:
+        Dimension of the embedding for categorical features.
+    n_independent:
+        Number of independent GLU layer in each GLU block (default 2).
+    n_shared:
+        Number of shared GLU layer in each GLU block (default 2).
+    epsilon:
+        Value for numerical stability. Avoid log(0), this should be kept very low.
+    virtual_batch_size:
+        Size of the virtual batch (Ghost Batch Normalization).
+    momentum:
+        Float value between 0 and 1 which will be used for momentum in all batch norm.
+    mask_type:
+        Either "sparsemax" or "entmax" : this is the masking function to use.
+    lambda_sparse:
+        Sparse loss coefficient.
     """
+    params_defined_from_dataset = ['input_dim', 'categorical_features_idx', 'categorical_dims',
+                                   'output_dim']
     def __init__(
             self,
             input_dim: int,
@@ -30,42 +67,6 @@ class TabNet(TabNet_, BaseArchitecture):
             mask_type: str = "sparsemax",
             lambda_sparse: float = 1e-3,
     ):
-        """Initialize TabNet architecture.
-
-        Args:
-            input_dim:
-                Dimension of input data (typically the number of features).
-            output_dim:
-                Dimension of output data (typically the number of outputs).
-            n_d:
-                Dimension of the prediction layer (usually between 4 and 64).
-            n_a:
-                Dimension of the attention mechanism (usually between 4 and 64).
-            n_steps:
-                Number of steps in the architecture (usually between 3 and 10).
-            gamma:
-                Float above 1, scaling factor for attention updates (usually between 1.0 to 2.0)
-            categorical_features_idx:
-                List of indices of categorical features.
-            categorical_dims:
-                List of number of unique values for each categorical feature.
-            cat_emb_dim:
-                Dimension of the embedding for categorical features.
-            n_independent:
-                Number of independent GLU layer in each GLU block (default 2).
-            n_shared:
-                Number of shared GLU layer in each GLU block (default 2).
-            epsilon:
-                Value for numerical stability. Avoid log(0), this should be kept very low.
-            virtual_batch_size:
-                Size of the virtual batch (Ghost Batch Normalization).
-            momentum:
-                Float value between 0 and 1 which will be used for momentum in all batch norm.
-            mask_type:
-                Either "sparsemax" or "entmax" : this is the masking function to use.
-            lambda_sparse:
-                Sparse loss coefficient.
-        """
         if categorical_features_idx is None:
             categorical_features_idx = []
         if categorical_dims is None:
@@ -90,7 +91,7 @@ class TabNet(TabNet_, BaseArchitecture):
 
     @staticmethod
     def tabular_dataset_to_architecture_kwargs(dataset: TabularDataset):
-        if dataset.task == 'classification':
+        if dataset.task in ('classification', 'binary_classification'):
             output_dim = len(torch.unique(dataset.y))
         else:
             if len(dataset.y.shape) == 1:
