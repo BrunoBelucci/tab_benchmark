@@ -1,8 +1,9 @@
 from __future__ import annotations
 from typing import Optional
 import numpy as np
-from tab_benchmark.models.base_models import SkLearnExtension
+from tab_benchmark.models.sk_lean_extension import SkLearnExtension
 from tab_benchmark.utils import extends
+from tab_benchmark.models.dnn_model import DNNModel
 from inspect import cleandoc, signature
 from tab_benchmark.utils import check_same_keys
 
@@ -217,6 +218,9 @@ def fit_factory(cls, fn_to_run_before_fit=None):
         if fn_to_run_before_fit is not None:
             X, y, task, cat_features, args, kwargs = fn_to_run_before_fit(self, X, y, task, cat_features, *args,
                                                                           **kwargs)
+        if isinstance(self, DNNModel):
+            kwargs['task'] = task
+            kwargs['cat_features'] = cat_features
         return cls.fit(self, X, y, *args, **kwargs)
 
     doc = cleandoc("""Wrapper around the fit method of the scikit-learn class.

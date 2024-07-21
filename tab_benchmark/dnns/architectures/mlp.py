@@ -138,7 +138,7 @@ class MLP(BaseArchitecture):
 
     @staticmethod
     def tabular_dataset_to_architecture_kwargs(dataset: TabularDataset):
-        if dataset.task == 'classification':
+        if dataset.task in ('classification', 'binary_classification'):
             output_dim = len(torch.unique(dataset.y))
         else:
             if len(dataset.y.shape) == 1:

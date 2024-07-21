@@ -5,7 +5,7 @@ from typing import Optional
 import lightning as L
 from torch.utils.data import DataLoader, Dataset
 
-numpy_to_torch_type_dict = {
+numpy_and_str_to_torch_type_dict = {
         np.bool_      : torch.bool,
         np.uint8      : torch.uint8,
         np.int8       : torch.int8,
@@ -16,7 +16,18 @@ numpy_to_torch_type_dict = {
         np.float32    : torch.float32,
         np.float64    : torch.float64,
         np.complex64  : torch.complex64,
-        np.complex128 : torch.complex128
+        np.complex128 : torch.complex128,
+        'bool'        : torch.bool,
+        'uint8'       : torch.uint8,
+        'int8'        : torch.int8,
+        'int16'       : torch.int16,
+        'int32'       : torch.int32,
+        'int64'       : torch.int64,
+        'float16'     : torch.float16,
+        'float32'     : torch.float32,
+        'float64'     : torch.float64,
+        'complex64'   : torch.complex64,
+        'complex128'  : torch.complex128,
     }
 
 
@@ -72,8 +83,8 @@ class TabularDataset(Dataset):
         self.categorical_features_idx = categorical_features_idx
         self.categorical_dims = categorical_dims
         if store_as_tensor:
-            categorical_type = numpy_to_torch_type_dict[categorical_type]
-            continuous_type = numpy_to_torch_type_dict[continuous_type]
+            categorical_type = numpy_and_str_to_torch_type_dict[categorical_type]
+            continuous_type = numpy_and_str_to_torch_type_dict[continuous_type]
             self.x_continuous = torch.as_tensor(x.iloc[:, continuous_features_idx].to_numpy(),
                                                 dtype=continuous_type)
             self.x_categorical = torch.as_tensor(x.iloc[:, categorical_features_idx].to_numpy(),
@@ -189,7 +200,7 @@ class TabularDataModule(L.LightningDataModule):
         super().__init__()
         self.save_hyperparameters(ignore=['x_train', 'y_train', 'eval_sets'])
         assert isinstance(x_train, pd.DataFrame)
-        assert isinstance(y_train, pd.DataFrame)
+        assert isinstance(y_train, pd.DataFrame) or isinstance(y_train, pd.Series)
         self.x_train = x_train
         self.y_train = y_train
         self.task = task

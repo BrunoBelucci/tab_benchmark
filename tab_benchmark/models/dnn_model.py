@@ -1,5 +1,6 @@
 from __future__ import annotations
 from pathlib import Path
+import copy
 from shutil import rmtree
 from typing import Optional, Callable, Sequence
 from warnings import warn
@@ -10,11 +11,10 @@ from lightning import Callback
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 from lightning.pytorch.loggers import MLFlowLogger
 from scipy.special import softmax
-from sklearn.base import BaseEstimator, ClassifierMixin, RegressorMixin
+from sklearn.base import BaseEstimator, ClassifierMixin, RegressorMixin, clone
 from torch import nn
 import mlflow
 from torch.utils.data import DataLoader
-from tab_benchmark.dnns.architectures.mlp import MLP
 from tab_benchmark.dnns.callbacks import DefaultLogs
 from tab_benchmark.dnns.datasets import TabularDataModule, TabularDataset
 from tab_benchmark.dnns.modules import TabularModule
@@ -69,6 +69,8 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
         Directory to save the model.
     dnn_architecture_class:
         Class of the DNN architecture.
+    loss_fn:
+        Loss function. Default is torch.nn.functional.mse_loss.
     architecture_params:
         Parameters for the architecture class.
     architecture_params_not_from_dataset:
@@ -98,6 +100,9 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
         Type of continuous features. Default is 'float32'.
     categorical_type:
         Type of categorical features. Default is 'int64'.
+    min_occurrences_to_add_category:
+        We will add one more category to cat_dims if the least frequent category has less than
+        min_occurrences_to_add_category occurrences
     """
     def __init__(
             self,
@@ -111,6 +116,7 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
             log_to_mlflow_if_running: bool = True,
             output_dir: Optional[Path | str] = None,
             dnn_architecture_class: type[nn.Module] = None,
+            loss_fn: Optional[Callable] = torch.nn.functional.mse_loss,
             architecture_params: Optional[dict] = None,
             architecture_params_not_from_dataset: Optional[dict] = None,
             torch_optimizer_tuple: Optional[tuple[Callable, dict]] = None,
@@ -120,7 +126,8 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
             lit_callbacks_tuples: Optional[list[tuple[type[Callback], dict]]] = None,
             lit_trainer_params: Optional[dict] = None,
             continuous_type: Optional[type | str] = 'float32',
-            categorical_type: Optional[type | str] = 'int64'
+            categorical_type: Optional[type | str] = 'int64',
+            min_occurrences_to_add_category: int = 10
     ):
         self.max_epochs = max_epochs
         self.batch_size = batch_size
@@ -132,6 +139,7 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
         self.log_to_mlflow_if_running = log_to_mlflow_if_running
         self.output_dir = output_dir if output_dir else Path.cwd() / 'dnn_model_output'
         self.dnn_architecture_class = dnn_architecture_class
+        self.loss_fn = loss_fn
         self.architecture_params = architecture_params if architecture_params else {}
         self.architecture_params_not_from_dataset = architecture_params_not_from_dataset if (
             architecture_params_not_from_dataset) else {}
@@ -141,6 +149,7 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
         self.lit_datamodule_class = lit_datamodule_class
         self.continuous_type = continuous_type
         self.categorical_type = categorical_type
+        self.min_occurrences_to_add_category = min_occurrences_to_add_category
         self.lit_callbacks_tuples = lit_callbacks_tuples if lit_callbacks_tuples else []
         self.lit_trainer_params = lit_trainer_params if lit_trainer_params else {}
         self.lit_datamodule_ = None
@@ -164,7 +173,6 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
             task: str,
             cat_features: Optional[list[int | str]] = None,
             cat_dims: Optional[list[int]] = None,
-            loss_fn: Optional[Callable] = torch.nn.functional.mse_loss,
             delete_checkpoints: bool = True,
             eval_sets: Optional[Sequence[tuple[pd.DataFrame, pd.DataFrame]]] = None,
             eval_names: Optional[Sequence[str]] = None,
@@ -181,11 +189,9 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
         task:
             Task to solve. Can be 'classification', 'binary_classification', 'regression' or 'multi_regression'.
         cat_features:
-            Categorical features. If None, it will be inferred from the dataset.
+            Categorical features.
         cat_dims:
             Number of categories for each categorical feature. If None, it will be inferred from the dataset.
-        loss_fn:
-            Loss function. Default is torch.nn.functional.mse_loss.
         delete_checkpoints:
             If True, it will delete the checkpoints after training. Default is True.
         eval_sets:
@@ -216,6 +222,13 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
         else:
             cat_features_idx = []
 
+        if cat_dims is None:
+            cat_dims = [X.iloc[:, idx].nunique() for idx in cat_features_idx]
+
+        for i, col_index in enumerate(cat_features_idx):
+            if X[X.columns[col_index]].value_counts().min() < self.min_occurrences_to_add_category:
+                cat_dims[i] += 1
+
         # initialize model
 
         # initialize datamodule
@@ -243,7 +256,7 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
                 dataset=train_dataset,
                 torch_optimizer_fn=self.torch_optimizer_tuple[0],
                 torch_optimizer_kwargs=self.torch_optimizer_tuple[1],
-                loss_fn=loss_fn,
+                loss_fn=self.loss_fn,
                 torch_scheduler_fn=self.torch_scheduler_tuple[0],
                 torch_scheduler_kwargs=self.torch_scheduler_tuple[1],
                 lit_scheduler_config=self.torch_scheduler_tuple[2]
@@ -252,7 +265,7 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
             self.lit_module_ = self.lit_module_class(
                 dnn_architecture_class=self.dnn_architecture_class, architecture_kwargs=self.architecture_params,
                 torch_optimizer_fn=self.torch_optimizer_tuple[0], torch_optimizer_kwargs=self.torch_optimizer_tuple[1],
-                loss_fn=loss_fn,
+                loss_fn=self.loss_fn,
                 torch_scheduler_fn=self.torch_scheduler_tuple[0], torch_scheduler_kwargs=self.torch_scheduler_tuple[1],
                 lit_scheduler_config=self.torch_scheduler_tuple[2])
 
@@ -330,10 +343,10 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
         }
         dataset = TabularDataset(**dataset_kwargs)
         dataloader = DataLoader(dataset, batch_size=self.batch_size, num_workers=self.n_jobs)
-        preds = self.lit_trainer_.predict(self.lit_datamodule_, dataloaders=dataloader)
+        preds = self.lit_trainer_.predict(self.lit_module_, dataloaders=dataloader)
         y_pred = [pred['y_pred'] for pred in preds]
         y_pred = torch.vstack(y_pred)
-        if self.task_ == 'classification' and not logits:
+        if self.task_ in ('classification', 'binary_classification') and not logits:
             y_pred = torch.argmax(y_pred, dim=1)
         return pd.DataFrame(y_pred.numpy())
 
@@ -350,3 +363,61 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
             raise ValueError('Not trained for a classification task!')
         logits = self.predict(X, logits=True)
         return pd.DataFrame(softmax(logits, axis=1))
+
+    def __sklearn_clone__(self):
+        """Default implementation of clone. See :func:`sklearn.base.clone` for details."""
+        estimator = self
+        safe = True
+        estimator_type = type(estimator)
+        if estimator_type is dict:
+            return {k: clone(v, safe=safe) for k, v in estimator.items()}
+        elif estimator_type in (list, tuple, set, frozenset):
+            return estimator_type([clone(e, safe=safe) for e in estimator])
+        elif not hasattr(estimator, "get_params") or isinstance(estimator, type):
+            if not safe:
+                return copy.deepcopy(estimator)
+            else:
+                if isinstance(estimator, type):
+                    raise TypeError(
+                        "Cannot clone object. "
+                        + "You should provide an instance of "
+                        + "scikit-learn estimator instead of a class."
+                    )
+                else:
+                    raise TypeError(
+                        "Cannot clone object '%s' (type %s): "
+                        "it does not seem to be a scikit-learn "
+                        "estimator as it does not implement a "
+                        "'get_params' method." % (repr(estimator), type(estimator))
+                    )
+
+        klass = estimator.__class__
+        new_object_params = estimator.get_params(deep=False)
+        for name, param in new_object_params.items():
+            new_object_params[name] = clone(param, safe=False)
+
+        new_object = klass(**new_object_params)
+        try:
+            new_object._metadata_request = copy.deepcopy(estimator._metadata_request)
+        except AttributeError:
+            pass
+
+        params_set = new_object.get_params(deep=False)
+
+        # quick sanity check of the parameters of the clone
+        for name in new_object_params:
+            param1 = new_object_params[name]
+            param2 = params_set[name]
+            if param1 is not param2 and param1 != param2:
+                raise RuntimeError(
+                    "Cannot clone object %s, as the constructor "
+                    "either does not set or modifies parameter %s" % (estimator, name)
+                )
+
+        # _sklearn_output_config is used by `set_output` to configure the output
+        # container of an estimator.
+        if hasattr(estimator, "_sklearn_output_config"):
+            new_object._sklearn_output_config = copy.deepcopy(
+                estimator._sklearn_output_config
+            )
+        return new_object
