@@ -3,9 +3,8 @@ from typing import Optional
 import numpy as np
 from tab_benchmark.models.base_models import SkLearnExtension
 from tab_benchmark.utils import extends
-from inspect import cleandoc
+from inspect import cleandoc, signature
 from tab_benchmark.utils import check_same_keys
-from catboost import CatBoost
 
 
 def init_factory(
@@ -28,12 +27,15 @@ def init_factory(
         continuous_target_scaler: Optional[str] = 'standard',  # only used in regression
         categorical_target_type: Optional[type | str] = 'float32',
         continuous_target_type: Optional[type | str] = 'float32',
+        # dnn architecture
+        dnn_architecture_cls=None,
+        add_lr_and_weight_decay_params=False
 
 ):
     map_task_to_default_values_outer = map_task_to_default_values
 
     @extends(cls.__init__, map_default_values_change=map_default_values_change)
-    def init_fn_base(
+    def init_fn_step_1(
             self,
             *args,
             map_task_to_default_values=None,
@@ -63,8 +65,10 @@ def init_factory(
         self.handle_unknown_categories = handle_unknown_categories
         self.variance_threshold = variance_threshold
         self.data_scaler = data_scaler
-        self.categorical_type = categorical_type
-        self.continuous_type = continuous_type
+        if not hasattr(self, 'categorical_type'):
+            self.categorical_type = categorical_type
+        if not hasattr(self, 'continuous_type'):
+            self.continuous_type = continuous_type
         self.target_imputer = target_imputer
         self.categorical_target_encoder = categorical_target_encoder
         self.categorical_target_min_frequency = categorical_target_min_frequency
@@ -114,10 +118,10 @@ def init_factory(
         """)
 
     if has_auto_early_stopping:
-        @extends(init_fn_base)
-        def init_fn_with_es(self, *args, auto_early_stopping: bool = False, early_stopping_validation_size=0.1,
-                            **kwargs):
-            init_fn_base(self, *args, **kwargs)
+        @extends(init_fn_step_1)
+        def init_fn_step_2(self, *args, auto_early_stopping: bool = False, early_stopping_validation_size=0.1,
+                           **kwargs):
+            init_fn_step_1(self, *args, **kwargs)
             self.auto_early_stopping = auto_early_stopping
             self.early_stopping_validation_size = early_stopping_validation_size
 
@@ -129,10 +133,76 @@ def init_factory(
         """)
 
     else:
-        init_fn_with_es = init_fn_base
+        init_fn_step_2 = init_fn_step_1
 
-    init_doc += "\n\nOriginal documentation:\n\n"
-    return init_fn_with_es, init_doc
+    if dnn_architecture_cls is not None:
+        params_defined_from_dataset = dnn_architecture_cls.params_defined_from_dataset
+        parameters = signature(dnn_architecture_cls.__init__).parameters
+        additional_params = {}
+        for name, param in parameters.items():
+            if name not in params_defined_from_dataset and name != 'self':
+                param = param.replace(kind=param.KEYWORD_ONLY)
+                additional_params[name] = param
+        exclude_params = ['architecture_params', 'architecture_params_not_from_dataset', 'dnn_architecture_class',
+                          'lit_module_class', 'lit_datamodule_class']
+        if add_lr_and_weight_decay_params:
+            @extends(init_fn_step_2, additional_params=additional_params.values(), exclude_params=exclude_params)
+            def init_fn_step_3(
+                    self,
+                    *args,
+                    lr: Optional[float] = None,
+                    weight_decay: Optional[float] = None,
+                    **kwargs
+            ):
+                architecture_params_not_from_dataset = {}
+                for key, value in kwargs.copy().items():
+                    if key in additional_params:
+                        setattr(self, key, value)
+                        architecture_params_not_from_dataset[key] = value
+                        del kwargs[key]
+                init_fn_step_2(self, *args, **kwargs)
+                self.lr = lr
+                self.weight_decay = weight_decay
+                self.architecture_params_not_from_dataset = architecture_params_not_from_dataset
+                self.dnn_architecture_class = dnn_architecture_cls
+
+            init_doc += (f"\n\nArchitecture documentation:\n\nParameters that can be defined from the dataset are "
+                         f"automatically set, they are: {params_defined_from_dataset}\n\n")
+            init_doc += cleandoc(dnn_architecture_cls.__doc__)
+            init_doc += "\n"
+            init_doc += cleandoc("""
+            lr:
+                Learning rate.
+            weight_decay:
+                Weight decay.
+            """)
+        else:
+            @extends(dnn_architecture_cls.__init__, exclude_params=exclude_params)
+            def init_fn_step_3(self, *args, **kwargs):
+                init_fn_step_2(self, *args, **kwargs)
+                # hopefully this will only set parameters that are not defined from the dataset
+                fn_being_extended_parameters = signature(dnn_architecture_cls.__init__, eval_str=True).parameters
+                parameters = []
+                for i, (name, param) in enumerate(fn_being_extended_parameters.items()):
+                    if name in map_default_values_change:
+                        param = param.replace(default=map_default_values_change[name])
+                    if name not in exclude_params:
+                        parameters.append(param)
+                new_signature = signature(cls.__init__).replace(parameters=parameters)
+                bound_args = new_signature.bind(*args, **kwargs)
+                bound_args.apply_defaults()
+                self.architecture_params_not_from_dataset = bound_args.arguments
+                self.set_params(**bound_args.arguments)
+
+            init_doc += (f"\n\n Architecture documentation:\n\nParameters that can be defined from the dataset are "
+                         f"automatically set, they are: {exclude_params}\n\n")
+            init_doc += cleandoc(dnn_architecture_cls.__doc__)
+
+    else:
+        init_fn_step_3 = init_fn_step_2
+
+    init_doc += "\n\nOriginal documentation:\n\n" + cleandoc(cls.__doc__)
+    return init_fn_step_3, init_doc
 
 
 def fit_factory(cls, fn_to_run_before_fit=None):
@@ -163,11 +233,13 @@ def fit_factory(cls, fn_to_run_before_fit=None):
     return fit_fn
 
 
-class SimpleSkLearnFactory(type):
+class TabBenchmarkModelFactory(type):
     @classmethod  # to be cleaner (not change the signature of __new__)
     def from_sk_cls(cls, sk_cls, extended_init_kwargs=None, map_default_values_change=None,
-                    has_auto_early_stopping=False, map_task_to_default_values=None, fn_to_run_before_fit=None):
+                    has_auto_early_stopping=False, map_task_to_default_values=None, fn_to_run_before_fit=None,
+                    dnn_architecture_cls=None, add_lr_and_weight_decay_params=False):
         extended_init_kwargs = extended_init_kwargs if extended_init_kwargs else {}
+
         if map_task_to_default_values:
             map_default_values_change = map_default_values_change if map_default_values_change else {}
             dicts = list(map_task_to_default_values.values())
@@ -176,43 +248,25 @@ class SimpleSkLearnFactory(type):
             keys = dicts[0].keys()
             for key in keys:
                 map_default_values_change[key] = 'default'
-        name = sk_cls.__name__
+
         init_fn, init_doc = init_factory(
             sk_cls,
             map_default_values_change=map_default_values_change,
             has_auto_early_stopping=has_auto_early_stopping,
             map_task_to_default_values=map_task_to_default_values,
+            dnn_architecture_cls=dnn_architecture_cls,
+            add_lr_and_weight_decay_params=add_lr_and_weight_decay_params,
             **extended_init_kwargs
         )
+        if dnn_architecture_cls is not None:
+            name = dnn_architecture_cls.__name__ + 'Model'
+            doc = init_doc
+        else:
+            name = sk_cls.__name__
+            doc = init_doc
         dct = {
             '__init__': init_fn,
             'fit': fit_factory(sk_cls, fn_to_run_before_fit),
-            '__doc__': init_doc + sk_cls.__doc__
+            '__doc__': doc
         }
         return type(name, (sk_cls, SkLearnExtension), dct)
-
-# maybe not good idea, because we lost documentation, annotation etc...
-# class TaskDependentSkLearnFactory(type):
-#     @classmethod
-#     def from_multiple_sk_cls(cls, name, map_task_to_sk_cls, extended_init_kwargs=None):
-#         extended_init_kwargs = extended_init_kwargs if extended_init_kwargs else {}
-#         return cls(name, (), {'extended_init_kwargs': extended_init_kwargs, 'map_task_to_sk_cls': map_task_to_sk_cls})
-#
-#     @classmethod
-#     def from_multiple_sk_cls_and_init_kwargs(cls, name, map_task_to_sk_cls_and_kwargs, extended_init_kwargs):
-#         extended_init_kwargs = extended_init_kwargs if extended_init_kwargs else {}
-#         return cls(name, (), {'extended_init_kwargs': extended_init_kwargs, 'map_task_to_sk_cls_and_kwargs': map_task_to_sk_cls_and_kwargs})
-#
-#     def __call__(cls, task, *args, **kwargs):
-#         if hasattr(cls, 'map_task_to_sk_cls'):
-#             if task not in cls.map_task_to_sk_cls:
-#                 raise ValueError(f"Task '{task}' not registered. Available tasks: {list(cls.map_task_to_sk_cls.keys())}")
-#             sk_cls = cls.map_task_to_sk_cls[task]
-#         elif hasattr(cls, 'map_task_to_sk_cls_and_kwargs'):
-#             if task not in cls.map_task_to_sk_cls_and_kwargs:
-#                 raise ValueError(f"Task '{task}' not registered. Available tasks: {list(cls.map_task_to_sk_cls_and_kwargs.keys())}")
-#             sk_cls, sk_cls_kwargs = cls.map_task_to_sk_cls_and_kwargs[task]
-#             for key, value in sk_cls_kwargs.items():
-#                 if not check_if_arg_in_args_kwargs_of_fn(sk_cls.__init__, key, *args, **kwargs):
-#                     kwargs[key] = value
-#         return SimpleSkLearnFactory.from_sk_cls(sk_cls, cls.extended_init_kwargs)(*args, **kwargs)

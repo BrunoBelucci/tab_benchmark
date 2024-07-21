@@ -136,40 +136,43 @@ def get_git_revision_hash() -> str:
         return 'Not a git repository'
 
 
-def extends(fn_being_extended, map_default_values_change=None):
+def extends(fn_being_extended, map_default_values_change=None, additional_params=None, exclude_params=None):
+    exclude_params = exclude_params if exclude_params is not None else []
+
     def decorator(fn):
         fn_parameters = signature(fn, eval_str=True).parameters
         fn_being_extended_parameters = signature(fn_being_extended, eval_str=True).parameters
+
+        # If we want to change the default values of some parameters, this takes care of documentation
         if map_default_values_change is not None:
             parameters = []
             for i, (name, param) in enumerate(fn_being_extended_parameters.items()):
                 if name in map_default_values_change:
                     param = param.replace(default=map_default_values_change[name])
-                parameters.append(param)
-            args_numbers = []
-            for param_name, value in map_default_values_change.items():
-                if param_name in fn_being_extended_parameters:
-                    args_numbers.append(list(fn_being_extended_parameters.keys()).index(param_name))
-                else:
-                    args_numbers.append(99999)
+                if name not in exclude_params:
+                    parameters.append(param)
         else:
-            parameters = list(fn_being_extended_parameters.values())
-        additional_params = [param for name, param in fn_parameters.items()
-                             if name not in fn_being_extended_parameters and name != 'kwargs' and name != 'args']
+            parameters = [param for name, param in fn_being_extended_parameters.items() if name not in exclude_params]
+
+        # Order the parameters of the function being extended to respect python arguments order
+        parameters_being_added = [param for name, param in fn_parameters.items()
+                                  if name not in fn_being_extended_parameters and name != 'kwargs' and name != 'args']
+        if additional_params is not None:
+            parameters_being_added.extend(additional_params)
         parameters_var_kw = [param for param in parameters if param.kind == param.VAR_KEYWORD]
         parameters_others = [param for param in parameters if param.kind != param.VAR_KEYWORD]
         parameters_extended = parameters_others
-        parameters_extended.extend(additional_params)
+        parameters_extended.extend(parameters_being_added)
         parameters_extended.extend(parameters_var_kw)
 
-        def wrapper(*args, **kwargs):
-            if map_default_values_change is not None:
-                for i, (key, new_default_value) in enumerate(map_default_values_change.items()):
-                    if len(args) <= args_numbers[i] and key not in kwargs:
-                        kwargs[key] = new_default_value
-            return fn(*args, **kwargs)
+        new_signature = signature(fn_being_extended).replace(parameters=parameters_extended)
 
-        wrapper.__signature__ = signature(fn_being_extended).replace(parameters=parameters_extended)
+        def wrapper(*args, **kwargs):
+            bound_args = new_signature.bind(*args, **kwargs)
+            bound_args.apply_defaults()
+            return fn(**bound_args.arguments)
+
+        wrapper.__signature__ = new_signature
         doc = ''
         if fn_being_extended.__doc__ is not None:
             doc = fn_being_extended.__doc__

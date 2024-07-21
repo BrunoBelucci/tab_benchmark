@@ -2,7 +2,7 @@ from torch import nn
 
 from typing import List, Union, Optional
 from torch import Tensor
-from tabular_benchmark.utils.pytorch_widedeep._get_activation_fn import get_activation_fn
+from tab_benchmark.dnns.utils.external.pytorch_widedeep._get_activation_fn import get_activation_fn
 
 
 def dense_layer(

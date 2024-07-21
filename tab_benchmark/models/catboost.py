@@ -1,9 +1,9 @@
 from catboost import CatBoostRegressor as OriginalCatBoostRegressor, CatBoostClassifier as OriginalCatBoostClassifier
 from tab_benchmark.models.xgboost import fn_to_run_before_fit_for_gbdt
-from tab_benchmark.models.factories import SimpleSkLearnFactory
+from tab_benchmark.models.factories import TabBenchmarkModelFactory
 
 
-CatBoostRegressor = SimpleSkLearnFactory.from_sk_cls(
+CatBoostRegressor = TabBenchmarkModelFactory.from_sk_cls(
     OriginalCatBoostRegressor,
     map_task_to_default_values={
         'regression': {'loss_function': 'RMSE', 'eval_metric': 'RMSE'},
@@ -19,7 +19,7 @@ CatBoostRegressor = SimpleSkLearnFactory.from_sk_cls(
     }
 )
 
-CatBoostClassifier = SimpleSkLearnFactory.from_sk_cls(
+CatBoostClassifier = TabBenchmarkModelFactory.from_sk_cls(
     OriginalCatBoostClassifier,
     map_task_to_default_values={
         'classification': {'loss_function': 'MultiClass', 'eval_metric': 'MultiClass'},

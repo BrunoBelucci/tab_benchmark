@@ -1,11 +1,11 @@
 import torch
 from torch import Tensor
 from typing import Dict, List, Tuple, Optional
-from tabular_benchmark.utils.pytorch_widedeep._get_activation_fn import get_activation_fn
-from tabular_benchmark.utils.pytorch_widedeep._base_wd_model_component import (
+from tab_benchmark.dnns.utils.external.pytorch_widedeep._get_activation_fn import get_activation_fn
+from tab_benchmark.dnns.utils.external.pytorch_widedeep._base_wd_model_component import (
     BaseWDModelComponent,
 )
-from tabular_benchmark.utils.pytorch_widedeep.tabular.embeddings_layers import (
+from tab_benchmark.dnns.utils.external.pytorch_widedeep.tabular.embeddings_layers import (
     DiffSizeCatAndContEmbeddings,
     SameSizeCatAndContEmbeddings,
 )

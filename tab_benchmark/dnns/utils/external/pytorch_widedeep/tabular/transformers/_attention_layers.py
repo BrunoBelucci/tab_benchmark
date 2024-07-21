@@ -11,7 +11,7 @@ import torch.nn.functional as F
 from torch import nn, einsum, Tensor
 
 from typing import Tuple, Optional
-from tabular_benchmark.utils.pytorch_widedeep._get_activation_fn import get_activation_fn
+from tab_benchmark.dnns.utils.external.pytorch_widedeep._get_activation_fn import get_activation_fn
 
 
 class FeedForward(nn.Module):

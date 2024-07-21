@@ -2,7 +2,7 @@ import einops
 from torch import nn, Tensor
 
 from typing import Optional
-from tabular_benchmark.utils.pytorch_widedeep.tabular.transformers._attention_layers import (
+from tab_benchmark.dnns.utils.external.pytorch_widedeep.tabular.transformers._attention_layers import (
     AddNorm,
     NormAdd,
     FeedForward,

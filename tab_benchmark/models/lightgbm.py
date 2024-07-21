@@ -3,7 +3,7 @@ from typing import Optional, Dict, Any
 from lightgbm import LGBMRegressor as OriginalLGBMRegressor, LGBMClassifier as OriginalLGBMClassifier
 from lightgbm.basic import _is_numpy_1d_array, _to_string, _NUMERIC_TYPES, _is_numeric
 from tab_benchmark.models.xgboost import fn_to_run_before_fit_for_gbdt
-from tab_benchmark.models.factories import SimpleSkLearnFactory
+from tab_benchmark.models.factories import TabBenchmarkModelFactory
 import lightgbm.basic
 
 
@@ -28,7 +28,7 @@ def my_param_dict_to_str(data: Optional[Dict[str, Any]]) -> str:
 lightgbm.basic._param_dict_to_str = my_param_dict_to_str
 
 
-LGBMRegressor = SimpleSkLearnFactory.from_sk_cls(
+LGBMRegressor = TabBenchmarkModelFactory.from_sk_cls(
     OriginalLGBMRegressor,
     map_default_values_change={
         'objective': 'regression',
@@ -45,7 +45,7 @@ LGBMRegressor = SimpleSkLearnFactory.from_sk_cls(
 )
 
 
-LGBMClassifier = SimpleSkLearnFactory.from_sk_cls(
+LGBMClassifier = TabBenchmarkModelFactory.from_sk_cls(
     OriginalLGBMClassifier,
     map_task_to_default_values={
         'binary_classification': {'objective': 'binary', 'metric': 'binary_logloss'},

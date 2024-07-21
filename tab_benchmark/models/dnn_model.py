@@ -14,6 +14,7 @@ from sklearn.base import BaseEstimator, ClassifierMixin, RegressorMixin
 from torch import nn
 import mlflow
 from torch.utils.data import DataLoader
+from tab_benchmark.dnns.architectures.mlp import MLP
 from tab_benchmark.dnns.callbacks import DefaultLogs
 from tab_benchmark.dnns.datasets import TabularDataModule, TabularDataset
 from tab_benchmark.dnns.modules import TabularModule
@@ -42,9 +43,65 @@ def get_early_stopping_callback(eval_sets, early_stopping_patience) -> list[tupl
 
 
 class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
+    """A class to train a DNN model using PyTorch and PyTorch Lightning.
+
+    Parameters
+    ----------
+    max_epochs:
+        Number of epochs to train the model. It adds max_epochs to lit_trainer_params. If None, it will not be added.
+    batch_size:
+        Batch size for training. Default is 1024.
+    log_losses:
+        If True, it will automatically create DefaultLogs callback. Default is True.
+    add_default_root_dir_to_lit_trainer_kwargs:
+        If True, it will add default_root_dir to lit_trainer_params. Default is True.
+    n_jobs:
+        Number of workers for the DataLoader. Default is 0 (no parallelism).
+    early_stopping_patience:
+        Number of epochs to wait before stopping the training if the validation loss does not improve. Default is 40.
+        It adds EarlyStopping callback. If 0, it will not be added.
+    use_best_model:
+        If True, it will load the best model. Default is True.
+    log_to_mlflow_if_running:
+        If True, it will log to MLFlow if running. It adds a MLFlowLogger as the logger to lit_trainer_params.
+        Default is True.
+    output_dir:
+        Directory to save the model.
+    dnn_architecture_class:
+        Class of the DNN architecture.
+    architecture_params:
+        Parameters for the architecture class.
+    architecture_params_not_from_dataset:
+        Parameters for the architecture class that are not from the dataset.
+    torch_optimizer_tuple:
+        Tuple with the optimizer function and its parameters. Default is (torch.optim.AdamW, {}).
+    torch_scheduler_tuple:
+        Tuple with the scheduler function, its parameters and configuration of the scheduler. Format of the
+        configuration of the scheduler is defined on
+         https://lightning.ai/docs/pytorch/stable/common/lightning_module.html#configure-optimizers.
+         Default is (None, {}, {}).
+    lit_module_class:
+        LightningModule class to be used. More information about lightning modules can be found at:
+        https://lightning.ai/docs/pytorch/stable/common/lightning_module.html
+    lit_datamodule_class:
+        LightningDataModule class to be used. More information about lightning modules can be found at:
+        https://lightning.ai/docs/pytorch/stable/common/lightning_module.html#
+    lit_callbacks_tuples:
+        List of tuples with the callback function and its arguments. More information about lightning callbacks can
+        be found at: https://lightning.ai/docs/pytorch/stable/extensions/callbacks.html#. A list of the entry points
+        for the callbacks can be found at:
+        https://lightning.ai/docs/pytorch/stable/common/lightning_module.html#hooks. Defaults to an empty list.
+    lit_trainer_params:
+        Dictionary with the arguments to be passed to the trainer. More information about the trainer can be found
+        at: https://lightning.ai/docs/pytorch/stable/common/trainer.html. Defaults to an empty dictionary.
+    continuous_type:
+        Type of continuous features. Default is 'float32'.
+    categorical_type:
+        Type of categorical features. Default is 'int64'.
+    """
     def __init__(
             self,
-            max_epochs: Optional[int] = 300,  # will add max_epochs to lit_trainer_kwargs, None to disable,
+            max_epochs: Optional[int] = 300,  # will add max_epochs to lit_trainer_params, None to disable,
             batch_size: int = 1024,
             log_losses: bool = True,  # will automatically create DefaultLogs callback, False to disable
             add_default_root_dir_to_lit_trainer_kwargs: bool = True,
@@ -54,14 +111,14 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
             log_to_mlflow_if_running: bool = True,
             output_dir: Optional[Path | str] = None,
             dnn_architecture_class: type[nn.Module] = None,
-            architecture_kwargs: Optional[dict] = None,
-            architecture_kwargs_not_from_dataset: Optional[dict] = None,
+            architecture_params: Optional[dict] = None,
+            architecture_params_not_from_dataset: Optional[dict] = None,
             torch_optimizer_tuple: Optional[tuple[Callable, dict]] = None,
             torch_scheduler_tuple: Optional[tuple[Callable, dict, dict]] = None,
             lit_module_class: type[TabularModule] = TabularModule,
             lit_datamodule_class: type[TabularDataModule] = TabularDataModule,
             lit_callbacks_tuples: Optional[list[tuple[type[Callback], dict]]] = None,
-            lit_trainer_kwargs: Optional[dict] = None,
+            lit_trainer_params: Optional[dict] = None,
             continuous_type: Optional[type | str] = 'float32',
             categorical_type: Optional[type | str] = 'int64'
     ):
@@ -75,9 +132,9 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
         self.log_to_mlflow_if_running = log_to_mlflow_if_running
         self.output_dir = output_dir if output_dir else Path.cwd() / 'dnn_model_output'
         self.dnn_architecture_class = dnn_architecture_class
-        self.architecture_kwargs = architecture_kwargs if architecture_kwargs else {}
-        self.architecture_kwargs_not_from_dataset = architecture_kwargs_not_from_dataset if (
-            architecture_kwargs_not_from_dataset) else {}
+        self.architecture_params = architecture_params if architecture_params else {}
+        self.architecture_params_not_from_dataset = architecture_params_not_from_dataset if (
+            architecture_params_not_from_dataset) else {}
         self.torch_optimizer_tuple = torch_optimizer_tuple if torch_optimizer_tuple else (torch.optim.AdamW, {})
         self.torch_scheduler_tuple = torch_scheduler_tuple if torch_scheduler_tuple else (None, {}, {})
         self.lit_module_class = lit_module_class
@@ -85,7 +142,7 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
         self.continuous_type = continuous_type
         self.categorical_type = categorical_type
         self.lit_callbacks_tuples = lit_callbacks_tuples if lit_callbacks_tuples else []
-        self.lit_trainer_kwargs = lit_trainer_kwargs if lit_trainer_kwargs else {}
+        self.lit_trainer_params = lit_trainer_params if lit_trainer_params else {}
         self.lit_datamodule_ = None
         self.lit_module_ = None
         self.lit_callbacks_ = None
@@ -95,9 +152,9 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
         self.cat_dims_ = None
 
     def __post_init__(self):
-        if self.architecture_kwargs is None and self.architecture_kwargs_not_from_dataset is None:
+        if self.architecture_params is None and self.architecture_params_not_from_dataset is None:
             raise ValueError(
-                'Either architecture_kwargs or architecture_kwargs_not_from_dataset must be specified, even if is'
+                'Either architecture_params or architecture_params_not_from_dataset must be specified, even if is'
                 'an empty dictionary.')
 
     def fit(
@@ -113,6 +170,31 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
             eval_names: Optional[Sequence[str]] = None,
             eval_metrics: Optional[Sequence[str]] = None,
     ):
+        """Fit the model.
+
+        Parameters
+        ----------
+        X:
+            Features.
+        y:
+            Target.
+        task:
+            Task to solve. Can be 'classification', 'binary_classification', 'regression' or 'multi_regression'.
+        cat_features:
+            Categorical features. If None, it will be inferred from the dataset.
+        cat_dims:
+            Number of categories for each categorical feature. If None, it will be inferred from the dataset.
+        loss_fn:
+            Loss function. Default is torch.nn.functional.mse_loss.
+        delete_checkpoints:
+            If True, it will delete the checkpoints after training. Default is True.
+        eval_sets:
+            Evaluation sets. The last set will be used as validation for early stopping.
+        eval_names:
+            Names of the evaluation sets. If None, they will be named as 'eval_i', where i is the index of the set.
+        eval_metrics:
+            Metrics to be evaluated. If None, the loss_fn will be used.
+        """
         # we will consider that the last set of eval_set will be used as validation
         # eval_name are the names of each set
         # we will consider that the last metric of eval_metric will be used as validation
@@ -152,12 +234,12 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
         )
 
         # initialize module
-        if self.architecture_kwargs_not_from_dataset is not None:
+        if self.architecture_params_not_from_dataset is not None:
             self.lit_datamodule_.setup('fit')
             train_dataset = self.lit_datamodule_.train_dataset
             self.lit_module_ = self.lit_module_class.from_tabular_dataset(
                 dnn_architecture_class=self.dnn_architecture_class,
-                architecture_kwargs_not_from_dataset=self.architecture_kwargs_not_from_dataset,
+                architecture_kwargs_not_from_dataset=self.architecture_params_not_from_dataset,
                 dataset=train_dataset,
                 torch_optimizer_fn=self.torch_optimizer_tuple[0],
                 torch_optimizer_kwargs=self.torch_optimizer_tuple[1],
@@ -166,9 +248,9 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
                 torch_scheduler_kwargs=self.torch_scheduler_tuple[1],
                 lit_scheduler_config=self.torch_scheduler_tuple[2]
             )
-        else:  # we have ensured that architecture_kwargs is not None in __post_init__
+        else:  # we have ensured that architecture_params is not None in __post_init__
             self.lit_module_ = self.lit_module_class(
-                dnn_architecture_class=self.dnn_architecture_class, architecture_kwargs=self.architecture_kwargs,
+                dnn_architecture_class=self.dnn_architecture_class, architecture_kwargs=self.architecture_params,
                 torch_optimizer_fn=self.torch_optimizer_tuple[0], torch_optimizer_kwargs=self.torch_optimizer_tuple[1],
                 loss_fn=loss_fn,
                 torch_scheduler_fn=self.torch_scheduler_tuple[0], torch_scheduler_kwargs=self.torch_scheduler_tuple[1],
@@ -182,7 +264,7 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
         self.lit_callbacks_ = [fn(**kwargs) for fn, kwargs in callbacks_tuples]
 
         # initialize trainer
-        trainer_kwargs = self.lit_trainer_kwargs
+        trainer_kwargs = self.lit_trainer_params
         if self.max_epochs is not None:
             trainer_kwargs['max_epochs'] = self.max_epochs
         if self.add_default_root_dir_to_lit_trainer_kwargs:
@@ -191,7 +273,7 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
             run = mlflow.active_run()
             if run:
                 trainer_kwargs['logger'] = MLFlowLogger(run_id=run.info.run_id)
-        trainer_kwargs.update(self.lit_trainer_kwargs)
+        trainer_kwargs.update(self.lit_trainer_params)
         self.lit_trainer_ = L.Trainer(**trainer_kwargs, callbacks=self.lit_callbacks_)
 
         # fit

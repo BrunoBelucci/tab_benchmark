@@ -1,11 +1,11 @@
 from torch import nn, Tensor
 
 from typing import Dict, List, Tuple, Optional
-from tabular_benchmark.utils.pytorch_widedeep.tabular.mlp._layers import MLP
-from tabular_benchmark.utils.pytorch_widedeep.tabular._base_tabular_model import (
+from tab_benchmark.dnns.utils.external.pytorch_widedeep.tabular.mlp._layers import MLP
+from tab_benchmark.dnns.utils.external.pytorch_widedeep.tabular._base_tabular_model import (
     BaseTabularModelWithAttention,
 )
-from tabular_benchmark.utils.pytorch_widedeep.tabular.transformers._encoders import SaintEncoder
+from tab_benchmark.dnns.utils.external.pytorch_widedeep.tabular.transformers._encoders import SaintEncoder
 
 
 class SAINT(BaseTabularModelWithAttention):

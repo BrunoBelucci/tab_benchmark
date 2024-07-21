@@ -3,7 +3,7 @@ from copy import deepcopy
 from xgboost import XGBClassifier as OriginalXGBClassifier, XGBRegressor as OriginalXGBRegressor, XGBModel
 from catboost import CatBoost
 from lightgbm import LGBMModel
-from tab_benchmark.models.factories import SimpleSkLearnFactory
+from tab_benchmark.models.factories import TabBenchmarkModelFactory
 from tab_benchmark.utils import (extends, train_test_split_forced, sequence_to_list, check_if_arg_in_args_of_fn,
                                  check_if_arg_in_kwargs_of_fn)
 
@@ -67,7 +67,7 @@ class XGBRegressor(OriginalXGBRegressor):
 
 
 # Now we wrap them with our API
-XGBClassifier = SimpleSkLearnFactory.from_sk_cls(
+XGBClassifier = TabBenchmarkModelFactory.from_sk_cls(
     XGBClassifier,
     map_task_to_default_values={
         'classification': {'objective': 'multi:softmax', 'eval_metric': 'mlogloss'},
@@ -83,7 +83,7 @@ XGBClassifier = SimpleSkLearnFactory.from_sk_cls(
     }
 )
 
-XGBRegressor = SimpleSkLearnFactory.from_sk_cls(
+XGBRegressor = TabBenchmarkModelFactory.from_sk_cls(
     XGBRegressor,
     map_default_values_change={
         'objective': 'reg:squarederror',
