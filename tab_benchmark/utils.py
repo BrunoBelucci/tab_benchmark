@@ -137,7 +137,9 @@ def get_git_revision_hash() -> str:
 
 
 def extends(fn_being_extended, map_default_values_change=None, additional_params=None, exclude_params=None):
+
     exclude_params = exclude_params if exclude_params is not None else []
+    additional_params = additional_params if additional_params is not None else []
 
     def decorator(fn):
         fn_parameters = signature(fn, eval_str=True).parameters
@@ -155,17 +157,78 @@ def extends(fn_being_extended, map_default_values_change=None, additional_params
             parameters = [param for name, param in fn_being_extended_parameters.items() if name not in exclude_params]
 
         # Order the parameters of the function being extended to respect python arguments order
+        # Order will be: *args_fn_being_extended_parameters, *args_fn_parameters, *args_additional_params,
+        # **kwargs_fn_being_extended_parameters, **kwargs_fn_parameters, **kwargs_additional_params
         parameters_being_added = [param for name, param in fn_parameters.items()
                                   if name not in fn_being_extended_parameters and name != 'kwargs' and name != 'args']
-        if additional_params is not None:
-            parameters_being_added.extend(additional_params)
-        parameters_var_kw = [param for param in parameters if param.kind == param.VAR_KEYWORD]
-        parameters_others = [param for param in parameters if param.kind != param.VAR_KEYWORD]
-        parameters_extended = parameters_others
-        parameters_extended.extend(parameters_being_added)
-        parameters_extended.extend(parameters_var_kw)
 
-        new_signature = signature(fn_being_extended).replace(parameters=parameters_extended)
+        parameters_pos_only = [param for param in parameters if param.kind == param.POSITIONAL_ONLY]
+        parameters_pos_or_kw_without_default = [param for param in parameters if
+                                                param.kind == param.POSITIONAL_OR_KEYWORD and
+                                                param.default == param.empty]
+        parameters_pos_or_kw_with_default = [param for param in parameters if
+                                             param.kind == param.POSITIONAL_OR_KEYWORD and
+                                             param.default != param.empty]
+        parameters_var_pos = [param for param in parameters if param.kind == param.VAR_POSITIONAL]
+        parameters_kw_only = [param for param in parameters if param.kind == param.KEYWORD_ONLY]
+        parameters_var_kw = [param for param in parameters if param.kind == param.VAR_KEYWORD]
+
+        parameters_being_added_pos_only = [param for param in parameters_being_added
+                                           if param.kind == param.POSITIONAL_ONLY]
+        parameters_being_added_pos_or_kw_without_default = [param for param in parameters_being_added if
+                                                            param.kind == param.POSITIONAL_OR_KEYWORD and
+                                                            param.default == param.empty]
+        parameters_being_added_var_pos = [param for param in parameters_being_added
+                                          if param.kind == param.VAR_POSITIONAL]
+        parameters_being_added_kw_only = []
+        for param in parameters_being_added:
+            if param.kind == param.POSITIONAL_OR_KEYWORD and param.default != param.empty:
+                param = param.replace(kind=param.KEYWORD_ONLY)
+                parameters_being_added_kw_only.append(param)
+        for param in parameters_being_added:
+            if param.kind == param.KEYWORD_ONLY:
+                parameters_being_added_kw_only.append(param)
+        parameters_being_added_var_kw = [param for param in parameters_being_added if param.kind == param.VAR_KEYWORD]
+
+        additional_params_pos_only = [param for param in additional_params if param.kind == param.POSITIONAL_ONLY]
+        additional_params_pos_or_kw_without_default = [param for param in additional_params if
+                                                       param.kind == param.POSITIONAL_OR_KEYWORD
+                                                       and param.default == param.empty]
+        additional_params_var_pos = [param for param in additional_params if param.kind == param.VAR_POSITIONAL]
+        additional_params_kw_only = []
+        for param in additional_params:
+            if param.kind == param.POSITIONAL_OR_KEYWORD and param.default != param.empty:
+                param = param.replace(kind=param.KEYWORD_ONLY)
+                additional_params_kw_only.append(param)
+        for param in additional_params:
+            if param.kind == param.KEYWORD_ONLY:
+                additional_params_kw_only.append(param)
+        additional_params_var_kw = [param for param in additional_params if param.kind == param.VAR_KEYWORD]
+
+        if parameters_var_pos:
+            var_pos = parameters_var_pos
+        elif parameters_being_added_var_pos:
+            var_pos = parameters_being_added_var_pos
+        elif additional_params_var_pos:
+            var_pos = additional_params_var_pos
+        else:
+            var_pos = []
+
+        if parameters_var_kw:
+            var_kw = parameters_var_kw
+        elif parameters_being_added_var_kw:
+            var_kw = parameters_being_added_var_kw
+        elif additional_params_var_kw:
+            var_kw = additional_params_var_kw
+        else:
+            var_kw = []
+
+        new_parameters = (parameters_pos_only + parameters_being_added_pos_only + additional_params_pos_only
+                          + parameters_pos_or_kw_without_default + parameters_being_added_pos_or_kw_without_default
+                          + additional_params_pos_or_kw_without_default + parameters_pos_or_kw_with_default + var_pos
+                          + parameters_kw_only + parameters_being_added_kw_only + additional_params_kw_only + var_kw)
+
+        new_signature = signature(fn_being_extended).replace(parameters=new_parameters)
 
         def wrapper(*args, **kwargs):
             bound_args = new_signature.bind(*args, **kwargs)

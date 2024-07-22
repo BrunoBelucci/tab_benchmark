@@ -137,13 +137,10 @@ def init_factory(
         init_fn_step_2 = init_fn_step_1
 
     if dnn_architecture_cls is not None:
-        params_defined_from_dataset = dnn_architecture_cls.params_defined_from_dataset
+        do_not_include_params = dnn_architecture_cls.params_defined_from_dataset
+        do_not_include_params = do_not_include_params + ['self']
         parameters = signature(dnn_architecture_cls.__init__).parameters
-        additional_params = {}
-        for name, param in parameters.items():
-            if name not in params_defined_from_dataset and name != 'self':
-                param = param.replace(kind=param.KEYWORD_ONLY)
-                additional_params[name] = param
+        additional_params = {name: param for name, param in parameters.items() if name not in do_not_include_params}
         exclude_params = ['architecture_params', 'architecture_params_not_from_dataset', 'dnn_architecture_class',
                           'lit_module_class', 'lit_datamodule_class']
         if add_lr_and_weight_decay_params:
@@ -168,7 +165,7 @@ def init_factory(
                 self.dnn_architecture_class = dnn_architecture_cls
 
             init_doc += (f"\n\nArchitecture documentation:\n\nParameters that can be defined from the dataset are "
-                         f"automatically set, they are: {params_defined_from_dataset}\n\n")
+                         f"automatically set, they are: {dnn_architecture_cls.params_defined_from_dataset}\n\n")
             init_doc += cleandoc(dnn_architecture_cls.__doc__)
             init_doc += "\n"
             init_doc += cleandoc("""
@@ -241,7 +238,7 @@ class TabBenchmarkModelFactory(type):
     @classmethod  # to be cleaner (not change the signature of __new__)
     def from_sk_cls(cls, sk_cls, extended_init_kwargs=None, map_default_values_change=None,
                     has_auto_early_stopping=False, map_task_to_default_values=None, fn_to_run_before_fit=None,
-                    dnn_architecture_cls=None, add_lr_and_weight_decay_params=False):
+                    dnn_architecture_cls=None, add_lr_and_weight_decay_params=False, extra_dct=None):
         extended_init_kwargs = extended_init_kwargs if extended_init_kwargs else {}
 
         if map_task_to_default_values:
@@ -273,4 +270,6 @@ class TabBenchmarkModelFactory(type):
             'fit': fit_factory(sk_cls, fn_to_run_before_fit),
             '__doc__': doc
         }
+        if extra_dct:
+            dct.update(extra_dct)
         return type(name, (sk_cls, SkLearnExtension), dct)
