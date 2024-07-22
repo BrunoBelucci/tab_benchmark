@@ -122,6 +122,7 @@ class BaseExperiment:
         self.check_if_exists = not args.do_not_check_if_exists
         self.retry_on_oom = not args.do_not_retry_on_oom
         self.raise_on_fit_error = args.raise_on_fit_error
+        return args
 
     def treat_parser(self):
         if self.parser is not None:
@@ -229,9 +230,9 @@ class BaseExperiment:
         X, y, cat_ind, att_names = dataset.get_data(target=target)
         if self.resample_strategy == 'hold_out':
             test_size = int(self.pct_test * len(dataset.qualities['NumberOfInstances']))
-            if task == 'classification':
+            if task in ('classification', 'binary_classification'):
                 stratify = y
-            elif task == 'regression':
+            elif task in ('regression', 'multi_regression'):
                 stratify = None
             else:
                 raise NotImplementedError
@@ -312,12 +313,11 @@ class BaseExperiment:
         y_train = y.iloc[split_train]
         X_test = X.iloc[split_test]
         y_test = y.iloc[split_test]
-        cat_features_idx = [i for i, value in enumerate(cat_ind) if value is True]
         cat_features_names = [att_names[i] for i, value in enumerate(cat_ind) if value is True]
         cont_features_names = [att_names[i] for i, value in enumerate(cat_ind) if value is False]
         model.create_preprocess_pipeline(task, cat_features_names, cont_features_names, att_names)
         model_pipeline = model.create_model_pipeline()
-        model_pipeline.fit(X_train, y_train, target_preprocess_and_estimator__cat_features=cat_features)
+        model_pipeline.fit(X_train, y_train, target_preprocess_and_estimator__cat_features=cat_features_names)
         if task == 'classification':
             metrics = ['logloss', 'auc']
             n_classes = len(y_train.unique())

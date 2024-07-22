@@ -230,6 +230,7 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
         if len(eval_sets) != len(eval_names):
             raise AttributeError('eval_sets and eval_names should have the same length')
 
+        # not using for the moment...
         eval_metrics = sequence_to_list(eval_metrics) if eval_metrics is not None else []
 
         cat_features = sequence_to_list(cat_features) if cat_features is not None else []

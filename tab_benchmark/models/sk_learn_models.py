@@ -38,3 +38,8 @@ KernelRidge = TabBenchmarkModelFactory.from_sk_cls(KernelRidge, {})
 # SVM models
 NuSVC = TabBenchmarkModelFactory.from_sk_cls(NuSVC, {})
 NuSVR = TabBenchmarkModelFactory.from_sk_cls(NuSVR, {})
+
+all_models = [LinearRegression, LogisticRegressionCV, RidgeCV, RidgeClassifierCV, LassoCV, MultiTaskLassoCV,
+              ElasticNetCV, MultiTaskElasticNetCV, DecisionTreeClassifier, DecisionTreeRegressor, ExtraTreeClassifier,
+              ExtraTreeRegressor, ExtraTreesRegressor, ExtraTreesClassifier, GradientBoostingRegressor,
+              GradientBoostingClassifier, RandomForestRegressor, RandomForestClassifier, KernelRidge, NuSVC, NuSVR]

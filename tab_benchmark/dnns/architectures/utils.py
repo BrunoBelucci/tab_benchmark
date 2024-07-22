@@ -1,6 +1,43 @@
+from functools import partial
+import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from copy import deepcopy
+
+
+init_snn = partial(nn.init.kaiming_normal_, nonlinearity='linear')  # SNN initialization, check pytorch docs SELU
+
+
+# adapted from tabnet
+def initialize_glu_(weight, input_dim, output_dim):
+    gain_value = np.sqrt((input_dim + output_dim) / np.sqrt(input_dim))
+    torch.nn.init.xavier_normal_(weight, gain=gain_value)
+
+
+class GeneralReLU(nn.Module):
+    def __init__(self, leak=None, sub=None, maxv=None):
+        super().__init__()
+        self.leak, self.sub, self.maxv = leak, sub, maxv
+
+    def forward(self, x):
+        x = F.leaky_relu(x, self.leak) if self.leak is not None else F.relu(x)
+        if self.sub is not None:
+            x -= self.sub
+        if self.maxv is not None:
+            x.clamp_max_(self.maxv)
+        return x
+
+
+class GLU(nn.Module):
+    def __init__(self, input_dim):
+        super().__init__()
+        self.input_dim = input_dim
+        self.gate = nn.Linear(input_dim, 2 * input_dim)
+
+    def forward(self, x):
+        x = self.gate(x)
+        return x[:, :self.input_dim] * torch.sigmoid(x[:, self.input_dim:])
 
 
 class EmbeddingLayer(nn.Module):
