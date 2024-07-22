@@ -107,8 +107,7 @@ def fit_model(model_class, model_kwargs, X_train, y_train, cat_features_names, c
         model = model_class(**model_kwargs)
         model.create_preprocess_pipeline(task, cat_features_names, cont_features_names, orderly_features_names)
         model_pipeline = model.create_model_pipeline()
-        model_pipeline.fit(X_train, y_train, target_preprocess_and_estimator__cat_features=cat_features_names,
-                           target_preprocess_and_estimator__task=task)
+        model_pipeline.fit(X_train, y_train, )
         return model_pipeline
     else:
         pytest.skip('Model class and task do not match')

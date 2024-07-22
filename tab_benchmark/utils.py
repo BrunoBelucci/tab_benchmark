@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import subprocess
 import warnings
 from functools import partial
@@ -81,46 +83,66 @@ def check_if_arg_in_args_kwargs_of_fn(fn, arg_name, *args, return_arg=False, **k
                 return False
 
 
-def evaluate_set(model, eval_set: Sequence[pd.DataFrame], metric: str,
-                 n_classes: Optional[int] = None) -> float:
+def evaluate_set(model, eval_set: Sequence[pd.DataFrame], metrics: str | list[str], n_classes: Optional[int] = None) \
+        -> list[float]:
     """Given an eval_set, consisting of a tuple-like (X, y), evaluate the metric on the given set.
 
     Args:
+        model:
+            Model to be evaluated.
         eval_set:
             Evaluation set to be evaluated with metric.
-        metric:
-            Metric to be evaluated on evaluation set.
+        metrics:
+            Metrics to be evaluated on evaluation set.
+        n_classes:
+            Number of classes in the classification problem. If None, it is inferred from the evaluation set.
 
     Returns:
         The value of the metric evaluated on the evaluation set.
     """
+    labels = list(range(n_classes))
+    # map_metric_to_func[metric] = (function, need_proba)
+    map_metric_to_func = {
+        'mse': (mean_squared_error, False),
+        'rmse': (root_mean_squared_error, False),
+        'logloss': (partial(log_loss, labels=labels), True),
+        'r2_score': (r2_score, False),
+        'auc': (partial(roc_auc_score, multi_class='ovr', labels=labels), True)
+    }
     X = eval_set[0]
     y = eval_set[1]
-    if metric == 'mse':
-        y_pred = model.predict(X)
-        metric = mean_squared_error
-    elif metric == 'rmse':
-        y_pred = model.predict(X)
-        metric = root_mean_squared_error
-    elif metric == 'logloss':
-        y_pred = model.predict_proba(X)
-        labels = list(range(n_classes))
-        return log_loss(y, y_pred, labels=labels)
-    elif metric == 'r2_score':
-        y_pred = model.predict(X)
-        metric = r2_score
-    elif metric == 'auc':
-        y_pred = model.predict_proba(X)
-        labels = list(range(n_classes))
-        if y.shape[1] == 1:
-            y = y.to_numpy().reshape(-1)
-        if n_classes == 2:
-            y_pred = y_pred[:, 1]
-        metric = partial(roc_auc_score, multi_class='ovr', labels=labels)
-    else:
-        msg = 'metric {} not implemented'.format(metric)
-        raise NotImplementedError(msg)
-    return metric(y, y_pred)
+    y_pred = None
+    y_pred_proba = None
+    scores = []
+    for metric in metrics:
+        if metric not in map_metric_to_func:
+            msg = f'metric {metric} not implemented'
+            raise NotImplementedError(msg)
+        func, need_proba = map_metric_to_func[metric]
+        if need_proba:
+            if y_pred_proba is None:
+                y_pred_proba = model.predict_proba(X)
+        else:
+            if y_pred is None:
+                y_pred = model.predict(X)
+        if metric == 'auc':
+            if y.shape[1] == 1:
+                y_ = y.to_numpy().reshape(-1)
+            else:
+                y_ = y
+            if n_classes == 2:
+                y_pred_proba_ = y_pred_proba[:, 1]
+            else:
+                y_pred_proba_ = y_pred_proba
+        else:
+            y_ = y
+            y_pred_proba_ = y_pred_proba
+        try:
+            score = func(y_, y_pred_proba_ if need_proba else y_pred)
+        except ValueError as e:
+            score = np.nan
+        scores.append(score)
+    return scores
 
 
 def set_seeds(seed):

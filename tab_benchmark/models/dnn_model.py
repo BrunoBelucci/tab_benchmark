@@ -168,14 +168,14 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
                 'Either architecture_params or architecture_params_not_from_dataset must be specified, even if is'
                 'an empty dictionary.')
 
-    def initialize_datamodule(self, X, y, task, cat_features_idx, cat_dims, eval_sets):
+    def initialize_datamodule(self, X, y, task, cat_features_idx, cat_dims, eval_set):
         self.lit_datamodule_ = self.lit_datamodule_class(
             x_train=X,
             y_train=y,
             task=task,
             categorical_features_idx=cat_features_idx,
             categorical_dims=cat_dims,
-            eval_sets=eval_sets,
+            eval_sets=eval_set,
             num_workers=self.n_jobs,
             batch_size=self.batch_size,
             store_as_tensor=True,
@@ -191,9 +191,9 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
             cat_features: Optional[list[int | str]] = None,
             cat_dims: Optional[list[int]] = None,
             delete_checkpoints: bool = True,
-            eval_sets: Optional[Sequence[tuple[pd.DataFrame, pd.DataFrame]]] = None,
-            eval_names: Optional[Sequence[str]] = None,
-            eval_metrics: Optional[Sequence[str]] = None,
+            eval_set: Optional[Sequence[tuple[pd.DataFrame, pd.DataFrame]]] = None,
+            eval_name: Optional[Sequence[str]] = None,
+            eval_metric: Optional[Sequence[str]] = None,
     ):
         """Fit the model.
 
@@ -211,11 +211,11 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
             Number of categories for each categorical feature. If None, it will be inferred from the dataset.
         delete_checkpoints:
             If True, it will delete the checkpoints after training. Default is True.
-        eval_sets:
+        eval_set:
             Evaluation sets. The last set will be used as validation for early stopping.
-        eval_names:
+        eval_name:
             Names of the evaluation sets. If None, they will be named as 'eval_i', where i is the index of the set.
-        eval_metrics:
+        eval_metric:
             Metrics to be evaluated. If None, the loss_fn will be used.
         """
         if isinstance(y, pd.Series):
@@ -223,15 +223,15 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
         # we will consider that the last set of eval_set will be used as validation
         # eval_name are the names of each set
         # we will consider that the last metric of eval_metric will be used as validation
-        eval_sets = sequence_to_list(eval_sets) if eval_sets is not None else []
-        eval_names = sequence_to_list(eval_names) if eval_names is not None else []
-        if eval_sets and not eval_names:
-            eval_names = [f'eval_{i}' for i in range(len(eval_sets))]
-        if len(eval_sets) != len(eval_names):
+        eval_set = sequence_to_list(eval_set) if eval_set is not None else []
+        eval_name = sequence_to_list(eval_name) if eval_name is not None else []
+        if eval_set and not eval_name:
+            eval_name = [f'eval_{i}' for i in range(len(eval_set))]
+        if len(eval_set) != len(eval_name):
             raise AttributeError('eval_sets and eval_names should have the same length')
 
         # not using for the moment...
-        eval_metrics = sequence_to_list(eval_metrics) if eval_metrics is not None else []
+        eval_metric = sequence_to_list(eval_metric) if eval_metric is not None else []
 
         cat_features = sequence_to_list(cat_features) if cat_features is not None else []
         if cat_features:
@@ -252,7 +252,7 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
         # initialize model
 
         # initialize datamodule
-        self.initialize_datamodule(X, y, task, cat_features_idx, cat_dims, eval_sets)
+        self.initialize_datamodule(X, y, task, cat_features_idx, cat_dims, eval_set)
 
         # initialize module
         if self.architecture_params_not_from_dataset is not None:
@@ -278,7 +278,7 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
                 lit_scheduler_config=self.torch_scheduler_tuple[2])
 
         # initialize callbacks
-        callbacks_tuples = get_early_stopping_callback(eval_sets, self.early_stopping_patience)
+        callbacks_tuples = get_early_stopping_callback(eval_set, self.early_stopping_patience)
         if self.log_losses:
             callbacks_tuples.append((DefaultLogs, {}))
         callbacks_tuples.extend(self.lit_callbacks_tuples)
@@ -293,7 +293,7 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
         if self.log_to_mlflow_if_running:
             run = mlflow.active_run()
             if run:
-                trainer_kwargs['logger'] = MLFlowLogger(run_id=run.info.run_id)
+                trainer_kwargs['logger'] = MLFlowLogger(run_id=run.info.run_id, tracking_uri=mlflow.get_tracking_uri())
         trainer_kwargs.update(self.lit_trainer_params)
         self.lit_trainer_ = L.Trainer(**trainer_kwargs, callbacks=self.lit_callbacks_)
 

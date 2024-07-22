@@ -425,7 +425,7 @@ def fetch_CLICK(path, valid_size=100_000, validation_seed=None):
         X_train, y_train, test_size=valid_size, random_state=validation_seed)
 
     cat_encoder = LeaveOneOutEncoder()
-    cat_encoder.fit(X_train[cat_features], y_train)
+    cat_encoder.fit(X_train[cat_features], y_train, )
     X_train[cat_features] = cat_encoder.transform(X_train[cat_features])
     X_val[cat_features] = cat_encoder.transform(X_val[cat_features])
     X_test[cat_features] = cat_encoder.transform(X_test[cat_features])

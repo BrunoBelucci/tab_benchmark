@@ -225,7 +225,7 @@ def fit_factory(cls, fn_to_run_before_fit=None):
         if isinstance(self, DNNModel):
             kwargs['task'] = task
             kwargs['cat_features'] = cat_features
-        return cls.fit(self, X, y, *args, **kwargs)
+        return cls.fit(self, X, y, **kwargs)
 
     doc = cleandoc("""Wrapper around the fit method of the scikit-learn class.
 

@@ -7,6 +7,7 @@ import warnings
 from openml.tasks import get_task
 from sklearn.model_selection import StratifiedKFold, KFold
 from tab_benchmark.datasets import get_dataset
+from tab_benchmark.models.dnn_model import DNNModel
 from tab_benchmark.utils import get_git_revision_hash, set_seeds, train_test_split_forced, evaluate_set
 from tab_benchmark.benchmark.benchmarked_models import models_dict
 
@@ -36,7 +37,8 @@ class BaseExperiment:
             # parameters of experiment
             experiment_name='base_experiment',
             models_dict=models_dict,
-            log_dir=Path.cwd() / 'logs', local_tmp_dir=Path('/tmp'),
+            log_dir=Path.cwd() / 'logs',
+            local_tmp_dir=Path('/tmp'),
             mlflow_tracking_uri='sqlite:///ts_benchmark.db', check_if_exists=True, retry_on_oom=True,
             raise_on_fit_error=False, parser=None
     ):
@@ -255,7 +257,7 @@ class BaseExperiment:
 
     def start_mlflow_openml(self, task_id, task_repeat, task_sample, seed_model, task_fold):
         mlflow.set_experiment(self.experiment_name)
-        run_name = (f"{self.model_nickname}_{seed_model:04d}_{task_id}__{task_repeat:02d}_{task_sample:02d}_"
+        run_name = (f"{self.model_nickname}_{seed_model:04d}_{task_id}_{task_repeat:02d}_{task_sample:02d}_"
                     f"{task_fold:02d}")
         mlflow.start_run(run_name=run_name)
         task = get_task(task_id)
@@ -302,12 +304,16 @@ class BaseExperiment:
         if callable(model_kwargs):
             model_kwargs = model_kwargs(model_class)
         model = model_class(**model_kwargs)
-        mlflow.log_params(vars(model))
+        if hasattr(model, 'n_jobs'):
+            setattr(model, 'n_jobs', self.n_jobs)
+        model_params = vars(model).copy()
+        if issubclass(model_class, DNNModel):
+            # will be logged after
+            del model_params['loss_fn']
+        mlflow.log_params(model_params)
         return model
 
     def run_combination(self, seed_model, dataset, split_train, split_test, target, task):
-        set_seeds(seed_model)
-        model = self.get_model()
         X, y, cat_ind, att_names = dataset.get_data(target=target)
         X_train = X.iloc[split_train]
         y_train = y.iloc[split_train]
@@ -315,19 +321,12 @@ class BaseExperiment:
         y_test = y.iloc[split_test]
         cat_features_names = [att_names[i] for i, value in enumerate(cat_ind) if value is True]
         cont_features_names = [att_names[i] for i, value in enumerate(cat_ind) if value is False]
-        model.create_preprocess_pipeline(task, cat_features_names, cont_features_names, att_names)
-        model_pipeline = model.create_model_pipeline()
-        # safer to preprocess and fit the model separately
-        data_preprocess_pipeline_ = model.data_preprocess_pipeline_
-        target_preprocess_pipeline_ = model.target_preprocess_pipeline_
-        X_train = data_preprocess_pipeline_.fit_transform(X_train)
-        y_train = target_preprocess_pipeline_.fit_transform(y_train.to_frame())
-        X_test = data_preprocess_pipeline_.transform(X_test)
-        y_test = target_preprocess_pipeline_.transform(y_test.to_frame())
-        model.fit(X_train, y_train, cat_features=cat_features_names, task=task)
+        model, X_train, y_train, X_test, y_test = self.preprocess_and_fit_model(seed_model, X_train, y_train, X_test,
+                                                                                y_test, cat_features_names,
+                                                                                cont_features_names, att_names, task)
         if task in ('classification', 'binary_classification'):
             metrics = ['logloss', 'auc']
-            n_classes = len(y_train.unique())
+            n_classes = len(y_train.iloc[:, 0].unique())
         elif task == 'regression':
             metrics = ['rmse', 'r2_score']
             n_classes = None
@@ -335,11 +334,31 @@ class BaseExperiment:
             raise NotImplementedError
         self.evaluate_model(model, X_test, y_test, metrics, n_classes)
 
-    @staticmethod
-    def evaluate_model(model_pipeline, X_test, y_test, metrics, n_classes):
-        for metric in metrics:
-            test_result = evaluate_set(model_pipeline, [X_test, y_test], metric, n_classes)
+    # can be overridden
+    def evaluate_model(self, model, X_test_preprocessed, y_test_preprocessed, metrics, n_classes):
+        test_results = evaluate_set(model, [X_test_preprocessed, y_test_preprocessed], metrics, n_classes)
+        for metric, test_result in zip(metrics, test_results):
             mlflow.log_metric(f'test_{metric}', test_result)
+
+    # can be overridden
+    def preprocess_and_fit_model(self, seed_model, X_train, y_train, X_test, y_test, cat_features_names,
+                                 cont_features_names, att_names, task):
+        set_seeds(seed_model)
+        model = self.get_model()
+        if not (('classifier' in model._estimator_type and task in ('classification', 'binary_classification')) or (
+                'regressor' in model._estimator_type and task in ('regression', 'multi_regression'))):
+            raise ValueError('Model class and task do not match')
+        # safer to preprocess and fit the model separately
+        model.create_preprocess_pipeline(task, cat_features_names, cont_features_names, att_names)
+        model.create_model_pipeline()
+        data_preprocess_pipeline_ = model.data_preprocess_pipeline_
+        target_preprocess_pipeline_ = model.target_preprocess_pipeline_
+        X_train = data_preprocess_pipeline_.fit_transform(X_train)
+        y_train = target_preprocess_pipeline_.fit_transform(y_train.to_frame())
+        X_test = data_preprocess_pipeline_.transform(X_test)
+        y_test = target_preprocess_pipeline_.transform(y_test.to_frame())
+        model.fit(X_train, y_train, task=task, cat_features=cat_features_names)
+        return model, X_train, y_train, X_test, y_test
 
     def run_experiment(self):
         if self.using_own_resampling:
@@ -398,7 +417,8 @@ class BaseExperiment:
                                     )
                                     print(msg)
                                     logging.info(msg)
-                                    self.run_openml_combination(task_id, task_repeat, task_sample, seed_model, task_fold)
+                                    self.run_openml_combination(task_id, task_repeat, task_sample, seed_model,
+                                                                task_fold)
                                 except Exception as exception:
                                     if self.raise_on_fit_error:
                                         mlflow.end_run('FAILED')

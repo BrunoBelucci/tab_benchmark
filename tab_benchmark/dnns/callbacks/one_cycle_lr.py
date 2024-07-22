@@ -2,9 +2,9 @@ from typing import Optional
 from lightning.pytorch.callbacks import Callback, LearningRateFinder
 import lightning as L
 import torch
-from tabular_benchmark.dnns.modules import TabularModule
+from tab_benchmark.dnns.modules import TabularModule
 from lightning.pytorch.utilities.seed import isolate_rng
-from tabular_benchmark.dnns.tunner.lr_finder import lr_find, LRFinderEnhanced
+from tab_benchmark.dnns.tunner.lr_finder import lr_find, LRFinderEnhanced
 from lightning.pytorch.utilities.exceptions import _TunerExitException
 
 
