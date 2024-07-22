@@ -10,28 +10,15 @@ kwargs = dict(max_epochs=2, batch_size=10)
 
 @pytest.mark.parametrize("n_features, n_cat_features, samples, n_classes, max_cat_dim, task",
                          generate_data_interesting_parameters)
-def test_fit_classifier(n_features, n_cat_features, samples, n_classes, max_cat_dim, task, tmp_path):
+def test_fit(n_features, n_cat_features, samples, n_classes, max_cat_dim, task, tmp_path):
     kwargs['output_dir'] = tmp_path
     _test_fit_fn(classifier, kwargs, n_features, n_cat_features, samples, n_classes, max_cat_dim, task)
 
 
-@pytest.mark.parametrize("n_features, n_cat_features, samples, n_classes, max_cat_dim, task",
-                         generate_data_interesting_parameters)
-def test_fit_regressor(n_features, n_cat_features, samples, n_classes, max_cat_dim, task, tmp_path):
-    kwargs['output_dir'] = tmp_path
-    _test_fit_fn(regressor, kwargs, n_features, n_cat_features, samples, n_classes, max_cat_dim, task)
-
-
 @pytest.mark.parametrize("task", ['classification', 'binary_classification', 'regression', 'multi_regression'])
-def test_predict_regressor(task, tmp_path):
+def test_predict(task, tmp_path):
     kwargs['output_dir'] = tmp_path
     _test_predict_fn(regressor, kwargs, task)
-
-
-@pytest.mark.parametrize("task", ['classification', 'binary_classification', 'regression', 'multi_regression'])
-def test_predict_classifier(task, tmp_path):
-    kwargs['output_dir'] = tmp_path
-    _test_predict_fn(classifier, kwargs, task)
 
 
 @pytest.mark.parametrize("task", ['classification', 'binary_classification'])

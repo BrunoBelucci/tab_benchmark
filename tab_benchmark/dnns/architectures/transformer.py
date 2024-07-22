@@ -216,14 +216,8 @@ class Transformer(BaseArchitecture):
             use_cls_token: bool = True,
             norm_first: bool = True,
     ):
-        """
-        Initialize the Transformer architecture.
-
-
-
-        """
         super().__init__()
-        if n_encoders is not None:
+        if n_encoders is None:
             feedforward_dims, dropouts_attn, dropouts_ff, dropouts_module_class_ff, activation_fns_1, activation_fns_2, \
                 norms_module_class_1, norms_module_class_2, initialization_fns_1, initialization_fns_2 = broadcast_to_list(
                 feedforward_dims, dropouts_attn, dropouts_ff, dropouts_module_class_ff,
@@ -231,7 +225,7 @@ class Transformer(BaseArchitecture):
                 norms_module_class_2, initialization_fns_1, initialization_fns_2)
         else:
             if isinstance(feedforward_dims, int):
-                feedforward_dims = [feedforward_dims] * self.n_encoders
+                feedforward_dims = [feedforward_dims] * n_encoders
                 feedforward_dims, dropouts_attn, dropouts_ff, dropouts_module_class_ff, activation_fns_1, activation_fns_2, \
                     norms_module_class_1, norms_module_class_2, initialization_fns_1, initialization_fns_2 = broadcast_to_list(
                     feedforward_dims, dropouts_attn, dropouts_ff, dropouts_module_class_ff,

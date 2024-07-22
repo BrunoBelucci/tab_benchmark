@@ -104,6 +104,8 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
         We will add one more category to cat_dims if the least frequent category has less than
         min_occurrences_to_add_category occurrences
     """
+    _estimator_type = ['classifier', 'regressor']
+
     def __init__(
             self,
             max_epochs: Optional[int] = 300,  # will add max_epochs to lit_trainer_params, None to disable,
@@ -183,8 +185,8 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
 
     def fit(
             self,
-            X,
-            y,
+            X: pd.DataFrame,
+            y: pd.Series | pd.DataFrame,
             task: str,
             cat_features: Optional[list[int | str]] = None,
             cat_dims: Optional[list[int]] = None,
@@ -216,6 +218,8 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
         eval_metrics:
             Metrics to be evaluated. If None, the loss_fn will be used.
         """
+        if isinstance(y, pd.Series):
+            y = y.to_frame()
         # we will consider that the last set of eval_set will be used as validation
         # eval_name are the names of each set
         # we will consider that the last metric of eval_metric will be used as validation

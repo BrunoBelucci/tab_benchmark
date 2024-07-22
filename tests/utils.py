@@ -1,6 +1,5 @@
 import numpy as np
 import pandas as pd
-from sklearn.base import ClassifierMixin, RegressorMixin
 from sklearn.model_selection import train_test_split
 import pytest
 
@@ -101,8 +100,8 @@ def _test_fit_fn(model_class, model_kwargs, n_features, n_cat_features, samples,
 
 def fit_model(model_class, model_kwargs, X_train, y_train, cat_features_names, cont_features_names,
               orderly_features_names, task):
-    if (model_class._estimator_type == 'classifier' and task in ('classification', 'binary_classification')) or (
-            model_class._estimator_type == 'regressor' and task in ('regression', 'multi_regression')):
+    if ('classifier' in model_class._estimator_type and task in ('classification', 'binary_classification')) or (
+            'regressor' in model_class._estimator_type and task in ('regression', 'multi_regression')):
         if task == 'classification' and max(y_train.value_counts()) < 10:
             model_kwargs['categorical_target_min_frequency'] = 1
         model = model_class(**model_kwargs)
