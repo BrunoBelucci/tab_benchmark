@@ -74,7 +74,8 @@ class BaseExperiment:
 
     def add_arguments_to_parser(self):
         self.parser.add_argument('--experiment_name', type=str, default=self.experiment_name)
-        self.parser.add_argument('--model_nickname', type=str, choices=models_dict.keys(), default=self.model_nickname)
+        self.parser.add_argument('--model_nickname', type=str, choices=self.models_dict.keys(),
+                                 default=self.model_nickname)
         self.parser.add_argument('--seeds_models', nargs='*', type=int, default=self.seeds_models)
         self.parser.add_argument('--n_jobs', type=int, default=self.n_jobs)
 
