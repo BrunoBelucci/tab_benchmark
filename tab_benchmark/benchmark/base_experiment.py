@@ -317,8 +317,15 @@ class BaseExperiment:
         cont_features_names = [att_names[i] for i, value in enumerate(cat_ind) if value is False]
         model.create_preprocess_pipeline(task, cat_features_names, cont_features_names, att_names)
         model_pipeline = model.create_model_pipeline()
-        model_pipeline.fit(X_train, y_train, target_preprocess_and_estimator__cat_features=cat_features_names)
-        if task == 'classification':
+        # safer to preprocess and fit the model separately
+        data_preprocess_pipeline_ = model.data_preprocess_pipeline_
+        target_preprocess_pipeline_ = model.target_preprocess_pipeline_
+        X_train = data_preprocess_pipeline_.fit_transform(X_train)
+        y_train = target_preprocess_pipeline_.fit_transform(y_train.to_frame())
+        X_test = data_preprocess_pipeline_.transform(X_test)
+        y_test = target_preprocess_pipeline_.transform(y_test.to_frame())
+        model.fit(X_train, y_train, cat_features=cat_features_names, task=task)
+        if task in ('classification', 'binary_classification'):
             metrics = ['logloss', 'auc']
             n_classes = len(y_train.unique())
         elif task == 'regression':
@@ -326,6 +333,10 @@ class BaseExperiment:
             n_classes = None
         else:
             raise NotImplementedError
+        self.evaluate_model(model, X_test, y_test, metrics, n_classes)
+
+    @staticmethod
+    def evaluate_model(model_pipeline, X_test, y_test, metrics, n_classes):
         for metric in metrics:
             test_result = evaluate_set(model_pipeline, [X_test, y_test], metric, n_classes)
             mlflow.log_metric(f'test_{metric}', test_result)

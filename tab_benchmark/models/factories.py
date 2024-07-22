@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import Optional
 import numpy as np
+import pandas as pd
 from tab_benchmark.models.sk_lean_extension import SkLearnExtension
 from tab_benchmark.utils import extends
 from tab_benchmark.models.dnn_model import DNNModel
@@ -120,7 +121,7 @@ def init_factory(
 
     if has_auto_early_stopping:
         @extends(init_fn_step_1)
-        def init_fn_step_2(self, *args, auto_early_stopping: bool = False, early_stopping_validation_size=0.1,
+        def init_fn_step_2(self, *args, auto_early_stopping: bool = True, early_stopping_validation_size=0.1,
                            **kwargs):
             init_fn_step_1(self, *args, **kwargs)
             self.auto_early_stopping = auto_early_stopping
@@ -206,12 +207,18 @@ def init_factory(
 def fit_factory(cls, fn_to_run_before_fit=None):
     @extends(cls.fit)
     def fit_fn(self, X, y, *args, task=None, cat_features=None, **kwargs):
+        if isinstance(y, pd.Series):
+            y = y.to_frame()
         self.cat_features_ = cat_features
         self.task_ = task
-        if self.map_task_to_default_values is not None and task is not None:
-            if task in self.map_task_to_default_values:
-                for key, value in self.map_task_to_default_values[task].items():
-                    self.set_params(**{key: value})
+        if self.map_task_to_default_values is not None:
+            if task is not None:
+                if task in self.map_task_to_default_values:
+                    for key, value in self.map_task_to_default_values[task].items():
+                        self.set_params(**{key: value})
+            else:
+                raise (ValueError('This model has map_task_to_default_values, which means it has some values that are '
+                                  'task dependent. You must provide the task when calling fit.'))
         if fn_to_run_before_fit is not None:
             X, y, task, cat_features, args, kwargs = fn_to_run_before_fit(self, X, y, task, cat_features, *args,
                                                                           **kwargs)

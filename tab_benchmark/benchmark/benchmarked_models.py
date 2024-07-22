@@ -101,24 +101,24 @@ models_dict.update(
         'MLP_GReLUOneCycleLR': (MLPModel, dict(
             activation_fn=GeneralReLU(0.1, 0.4), initialization_fn=partial(nn.init.kaiming_normal_, a=0.1),
             lit_callbacks_tuples=[(OneCycleLR, dict(max_lr=1e-3)), ],
-            early_stopping_patience=0, n_iter=100, lit_trainer_kwargs=dict(max_epochs=100))),
+            early_stopping_patience=0, n_iter=100, lit_trainer_params=dict(max_epochs=100))),
         'ResNet_GReLUOneCycleLR': (ResNetModel, dict(
             activation_fn_1=GeneralReLU(0.1, 0.4), activation_fn_2=GeneralReLU(0.1, 0.4),
             initialization_fn_1=partial(nn.init.kaiming_normal_, a=0.1),
             initialization_fn_2=partial(nn.init.kaiming_normal_, a=0.1),
             lit_callbacks_tuples=[(OneCycleLR, dict(max_lr=1e-3)), ],
-            early_stopping_patience=0, n_iter=100, lit_trainer_kwargs=dict(max_epochs=100))),
+            early_stopping_patience=0, n_iter=100, lit_trainer_params=dict(max_epochs=100))),
         'MLP_GReLUAutoOneCycleLR': (MLPModel, dict(
             activation_fn=GeneralReLU(0.1, 0.4), initialization_fn=partial(nn.init.kaiming_normal_, a=0.1),
             lit_callbacks_tuples=[(AutomaticOneCycleLR, dict(suggestion_method='steep',
                                                              early_stop_threshold=None)), ],
-            early_stopping_patience=0, n_iter=100, lit_trainer_kwargs=dict(max_epochs=100))),
+            early_stopping_patience=0, n_iter=100, lit_trainer_params=dict(max_epochs=100))),
         'ResNet_GReLUAutoOneCycleLR': (ResNetModel, dict(
             activation_fn_1=GeneralReLU(0.1, 0.4), activation_fn_2=GeneralReLU(0.1, 0.4),
             initialization_fn_1=partial(nn.init.kaiming_normal_, a=0.1),
             initialization_fn_2=partial(nn.init.kaiming_normal_, a=0.1),
             lit_callbacks_tuples=[(AutomaticOneCycleLR, dict(suggestion_method='steep',
                                                              early_stop_threshold=None)), ],
-            early_stopping_patience=0, n_iter=100, lit_trainer_kwargs=dict(max_epochs=100))),
+            early_stopping_patience=0, n_iter=100, lit_trainer_params=dict(max_epochs=100))),
     }
 )

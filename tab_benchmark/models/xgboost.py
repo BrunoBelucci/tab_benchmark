@@ -29,6 +29,7 @@ def fn_to_run_before_fit_for_gbdt(self, X, y, task, cat_features, *args, **kwarg
             stratify=stratify
         )
         eval_set = kwargs.get('eval_set', [])
+        eval_set = eval_set if eval_set else []
         eval_set = sequence_to_list(eval_set)
         eval_set.append((X_valid, y_valid))
         kwargs['eval_set'] = eval_set
