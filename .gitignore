@@ -4,3 +4,4 @@
 /manual_test.py
 *.idea/
 *ipynb_checkpoints/
+*catboost_info/

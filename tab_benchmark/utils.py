@@ -100,7 +100,7 @@ def evaluate_set(model, eval_set: Sequence[pd.DataFrame], metrics: str | list[st
     Returns:
         The value of the metric evaluated on the evaluation set.
     """
-    labels = list(range(n_classes))
+    labels = list(range(n_classes)) if n_classes is not None else None
     # map_metric_to_func[metric] = (function, need_proba)
     map_metric_to_func = {
         'mse': (mean_squared_error, False),

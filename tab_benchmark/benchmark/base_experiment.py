@@ -27,7 +27,7 @@ class BaseExperiment:
     def __init__(
             self,
             # model specific
-            model_nickname=None, seeds_models=None, n_jobs=None,
+            model_nickname=None, seeds_models=None, n_jobs=1,
             # when performing our own resampling
             datasets_names_or_ids=None, seeds_datasets=None,
             resample_strategy='k-fold_cv', k_folds=10, folds=None, pct_test=0.2,
@@ -43,7 +43,7 @@ class BaseExperiment:
             raise_on_fit_error=False, parser=None
     ):
         self.model_nickname = model_nickname
-        self.seeds_models = seeds_models if seeds_models else [0]
+        self.seeds_model = seeds_models if seeds_models else [0]
         self.n_jobs = n_jobs
 
         # when performing our own resampling
@@ -76,7 +76,7 @@ class BaseExperiment:
         self.parser.add_argument('--experiment_name', type=str, default=self.experiment_name)
         self.parser.add_argument('--model_nickname', type=str, choices=self.models_dict.keys(),
                                  default=self.model_nickname)
-        self.parser.add_argument('--seeds_models', nargs='*', type=int, default=self.seeds_models)
+        self.parser.add_argument('--seeds_model', nargs='*', type=int, default=self.seeds_model)
         self.parser.add_argument('--n_jobs', type=int, default=self.n_jobs)
 
         self.parser.add_argument('--datasets_names_or_ids', nargs='*', choices=self.datasets_names_or_ids,
@@ -107,7 +107,7 @@ class BaseExperiment:
 
         self.datasets_names_or_ids = args.datasets_names_or_ids
         self.seeds_datasets = args.seeds_datasets
-        self.seeds_models = args.seeds_models
+        self.seeds_model = args.seeds_model
         self.resample_strategy = args.resample_strategy
         self.k_folds = args.k_folds
         self.folds = args.folds
@@ -149,7 +149,7 @@ class BaseExperiment:
         msg = (
             f"Experiment name: {self.experiment_name}\n"
             f"Model nickname: {self.model_nickname}\n"
-            f"Seeds Models: {self.seeds_models}\n"
+            f"Seeds Models: {self.seeds_model}\n"
 
         )
         if self.using_own_resampling:
@@ -174,10 +174,11 @@ class BaseExperiment:
     def check_if_own_exists_on_mlflow(self, dataset_name_or_id, seed_dataset, seed_model, fold):
         filter_string = (f"params.seed_dataset = '{seed_dataset}' "
                          f"AND params.dataset_name_or_id = '{dataset_name_or_id}' "
-                         f"AND params.seed_model = '{seed_model}' AND params.fold = '{fold}' "
+                         f"AND params.seed_model = '{seed_model}' "
+                         f"AND params.fold = '{fold}' "
                          f"AND params.model_nickname = '{self.model_nickname}' "
                          f"AND params.k_folds = '{self.k_folds}' "
-                         f"AND params.resample_strategy = '{self.resample_strategy} "
+                         f"AND params.resample_strategy = '{self.resample_strategy}' "
                          f"AND params.pct_test = '{self.pct_test}' ")
         runs = mlflow.search_runs(experiment_names=[self.experiment_name], filter_string=filter_string)
         runs = runs.loc[runs['status'] == 'FINISHED']
@@ -306,6 +307,9 @@ class BaseExperiment:
             model_kwargs = model_kwargs(model_class)
         model = model_class(**model_kwargs)
         if hasattr(model, 'n_jobs'):
+            if isinstance(model, DNNModel) and self.n_jobs == 1:
+                # set n_jobs to 0 for DNNModel (no parallelism)
+                setattr(model, 'n_jobs', 0)
             setattr(model, 'n_jobs', self.n_jobs)
         model_params = vars(model).copy()
         if issubclass(model_class, DNNModel):
@@ -364,7 +368,7 @@ class BaseExperiment:
     def run_experiment(self):
         if self.using_own_resampling:
             for seed_dataset in self.seeds_datasets:
-                for seed_model in self.seeds_models:
+                for seed_model in self.seeds_model:
                     for fold in self.folds:
                         for dataset_name_or_id in self.datasets_names_or_ids:
                             try:
@@ -403,7 +407,7 @@ class BaseExperiment:
         else:
             for task_repeat in self.task_repeats:
                 for task_sample in self.task_samples:
-                    for seed_model in self.seeds_models:
+                    for seed_model in self.seeds_model:
                         for task_fold in self.task_folds:
                             for task_id in self.tasks_ids:
                                 try:

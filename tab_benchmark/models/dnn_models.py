@@ -24,6 +24,7 @@ MLPModel = TabBenchmarkModelFactory.from_sk_cls(
     },
     extended_init_kwargs={
         'categorical_type': 'int64',
+        'categorical_encoder': 'ordinal',
         'categorical_target_type': 'int64',
         'data_scaler': 'standard',
         'continuous_target_scaler': 'standard',
@@ -45,6 +46,7 @@ ResNetModel = TabBenchmarkModelFactory.from_sk_cls(
     },
     extended_init_kwargs={
         'categorical_type': 'int64',
+        'categorical_encoder': 'ordinal',
         'categorical_target_type': 'int64',
         'data_scaler': 'standard',
         'continuous_target_scaler': 'standard',
@@ -66,6 +68,7 @@ TransformerModel = TabBenchmarkModelFactory.from_sk_cls(
     },
     extended_init_kwargs={
         'categorical_type': 'int64',
+        'categorical_encoder': 'ordinal',
         'categorical_target_type': 'int64',
         'data_scaler': 'standard',
         'continuous_target_scaler': 'standard',
@@ -87,6 +90,7 @@ NodeModel = TabBenchmarkModelFactory.from_sk_cls(
     },
     extended_init_kwargs={
         'categorical_type': 'float32',
+        'categorical_encoder': 'ordinal',
         'categorical_target_type': 'int64',
         'data_scaler': 'standard',
         'continuous_target_scaler': 'standard',
@@ -111,6 +115,7 @@ SaintModel = TabBenchmarkModelFactory.from_sk_cls(
     },
     extended_init_kwargs={
         'categorical_type': 'float32',
+        'categorical_encoder': 'ordinal',
         'categorical_target_type': 'int64',
         'data_scaler': 'standard',
         'continuous_target_scaler': 'standard',
@@ -135,6 +140,7 @@ TabTransformerModel = TabBenchmarkModelFactory.from_sk_cls(
     },
     extended_init_kwargs={
         'categorical_type': 'float32',
+        'categorical_encoder': 'ordinal',
         'categorical_target_type': 'int64',
         'data_scaler': 'standard',
         'continuous_target_scaler': 'standard',
@@ -159,6 +165,7 @@ TabNetModel = TabBenchmarkModelFactory.from_sk_cls(
     },
     extended_init_kwargs={
         'categorical_type': 'float32',
+        'categorical_encoder': 'ordinal',
         'categorical_target_type': 'int64',
         'data_scaler': 'standard',
         'continuous_target_scaler': 'standard',
