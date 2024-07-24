@@ -14,8 +14,6 @@ from tab_benchmark.benchmark.benchmarked_models import models_dict
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
 
-# We basically only need those 3 functions if we want to run an experiment iteratively,
-# for example using jupyter notebook.
 def get_model(model_nickname, models_dict):
     model_class, model_kwargs = models_dict[model_nickname]
     if callable(model_kwargs):
@@ -245,9 +243,9 @@ class BaseExperiment:
             split_train = X_train.index
             split_test = X_test.index
         elif self.resample_strategy == 'k-fold_cv':
-            if task == 'classification':
+            if task in ('classification', 'binary_classification'):
                 kf = StratifiedKFold(n_splits=self.k_folds, random_state=seed_dataset, shuffle=True)
-            elif task == 'regression':
+            elif task in ('regression', 'multi_regression'):
                 kf = KFold(n_splits=self.k_folds, random_state=seed_dataset, shuffle=True)
             else:
                 raise NotImplementedError
@@ -292,10 +290,13 @@ class BaseExperiment:
         task = get_task(task_id)
         dataset = task.get_dataset()
         split = task.get_train_test_split_indices(task_fold, task_repeat, task_sample)
-        task_type = task.task_type
-        if task_type == 'Supervised Classification':
-            task_name = 'classification'
-        elif task_type == 'Supervised Regression':
+        if task.task_type == 'Supervised Classification':
+            n_classes = len(task.class_labels)
+            if n_classes == 2:
+                task_name = 'binary_classification'
+            elif n_classes > 2:
+                task_name = 'classification'
+        elif task.task_type == 'Supervised Regression':
             task_name = 'regression'
         else:
             raise NotImplementedError
