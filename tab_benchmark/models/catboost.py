@@ -29,7 +29,6 @@ CatBoostRegressor = TabBenchmarkModelFactory.from_sk_cls(
         'categorical_encoder': 'ordinal',
         'categorical_type': 'int32',
         'data_scaler': None,
-        'continuous_target_scaler': None,
     },
     extra_dct={
         'n_jobs': n_jobs_property
@@ -49,7 +48,6 @@ CatBoostClassifier = TabBenchmarkModelFactory.from_sk_cls(
         'categorical_encoder': 'ordinal',
         'categorical_type': 'int32',
         'data_scaler': None,
-        'continuous_target_scaler': None,
     },
     extra_dct={
         'n_jobs': n_jobs_property

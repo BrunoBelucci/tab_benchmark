@@ -79,7 +79,6 @@ XGBClassifier = TabBenchmarkModelFactory.from_sk_cls(
         'categorical_encoder': None,
         'categorical_type': 'category',
         'data_scaler': None,
-        'continuous_target_scaler': None,
     }
 )
 
@@ -95,6 +94,5 @@ XGBRegressor = TabBenchmarkModelFactory.from_sk_cls(
         'categorical_encoder': None,
         'categorical_type': 'category',
         'data_scaler': None,
-        'continuous_target_scaler': None,
     }
 )

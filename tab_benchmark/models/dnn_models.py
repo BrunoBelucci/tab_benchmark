@@ -27,7 +27,6 @@ MLPModel = TabBenchmarkModelFactory.from_sk_cls(
         'categorical_encoder': 'ordinal',
         'categorical_target_type': 'int64',
         'data_scaler': 'standard',
-        'continuous_target_scaler': 'standard',
     },
     fn_to_run_before_fit=fn_to_run_before_fit_for_gbdt,
 )
@@ -49,7 +48,6 @@ ResNetModel = TabBenchmarkModelFactory.from_sk_cls(
         'categorical_encoder': 'ordinal',
         'categorical_target_type': 'int64',
         'data_scaler': 'standard',
-        'continuous_target_scaler': 'standard',
     },
     fn_to_run_before_fit=fn_to_run_before_fit_for_gbdt,
 )
@@ -71,7 +69,6 @@ TransformerModel = TabBenchmarkModelFactory.from_sk_cls(
         'categorical_encoder': 'ordinal',
         'categorical_target_type': 'int64',
         'data_scaler': 'standard',
-        'continuous_target_scaler': 'standard',
     },
     fn_to_run_before_fit=fn_to_run_before_fit_for_gbdt,
 )
@@ -93,7 +90,6 @@ NodeModel = TabBenchmarkModelFactory.from_sk_cls(
         'categorical_encoder': 'ordinal',
         'categorical_target_type': 'int64',
         'data_scaler': 'standard',
-        'continuous_target_scaler': 'standard',
     },
     fn_to_run_before_fit=fn_to_run_before_fit_for_gbdt,
     map_default_values_change={
@@ -118,7 +114,6 @@ SaintModel = TabBenchmarkModelFactory.from_sk_cls(
         'categorical_encoder': 'ordinal',
         'categorical_target_type': 'int64',
         'data_scaler': 'standard',
-        'continuous_target_scaler': 'standard',
     },
     fn_to_run_before_fit=fn_to_run_before_fit_for_gbdt,
     map_default_values_change={
@@ -143,7 +138,6 @@ TabTransformerModel = TabBenchmarkModelFactory.from_sk_cls(
         'categorical_encoder': 'ordinal',
         'categorical_target_type': 'int64',
         'data_scaler': 'standard',
-        'continuous_target_scaler': 'standard',
     },
     fn_to_run_before_fit=fn_to_run_before_fit_for_gbdt,
     map_default_values_change={
@@ -168,7 +162,6 @@ TabNetModel = TabBenchmarkModelFactory.from_sk_cls(
         'categorical_encoder': 'ordinal',
         'categorical_target_type': 'int64',
         'data_scaler': 'standard',
-        'continuous_target_scaler': 'standard',
     },
     fn_to_run_before_fit=fn_to_run_before_fit_for_gbdt,
     map_default_values_change={
