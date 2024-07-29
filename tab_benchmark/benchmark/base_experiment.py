@@ -4,11 +4,7 @@ import mlflow
 import os
 import logging
 import warnings
-from openml.tasks import get_task
-from sklearn.model_selection import StratifiedKFold, KFold
-from tab_benchmark.datasets import get_dataset
-from tab_benchmark.models.dnn_model import DNNModel
-from tab_benchmark.utils import get_git_revision_hash, set_seeds, train_test_split_forced, evaluate_set
+from tab_benchmark.benchmark.utils import run_openml_combination, run_own_combination
 from tab_benchmark.benchmark.benchmarked_models import models_dict
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
@@ -36,8 +32,9 @@ class BaseExperiment:
             experiment_name='base_experiment',
             models_dict=models_dict,
             log_dir=Path.cwd() / 'logs',
-            local_tmp_dir=Path('/tmp'),
-            mlflow_tracking_uri='sqlite:///ts_benchmark.db', check_if_exists=True, retry_on_oom=True,
+            output_dir=Path.cwd() / 'output',
+            mlflow_tracking_uri='sqlite:///' + str(Path.cwd().resolve()) + '/ts_benchmark.db', check_if_exists=True,
+            retry_on_oom=True,
             raise_on_fit_error=False, parser=None
     ):
         self.model_nickname = model_nickname
@@ -62,7 +59,7 @@ class BaseExperiment:
 
         self.experiment_name = experiment_name
         self.log_dir = log_dir
-        self.local_tmp_dir = local_tmp_dir
+        self.output_dir = output_dir
         self.mlflow_tracking_uri = mlflow_tracking_uri
         self.check_if_exists = check_if_exists
         self.retry_on_oom = retry_on_oom
@@ -91,7 +88,7 @@ class BaseExperiment:
         self.parser.add_argument('--task_folds', nargs='*', type=int, default=self.task_folds)
 
         self.parser.add_argument('--log_dir', type=Path, default=self.log_dir)
-        self.parser.add_argument('--local_tmp_dir', type=Path, default=self.local_tmp_dir)
+        self.parser.add_argument('--output_dir', type=Path, default=self.output_dir)
         self.parser.add_argument('--mlflow_tracking_uri', type=str, default=self.mlflow_tracking_uri)
         self.parser.add_argument('--do_not_check_if_exists', action='store_true')
         self.parser.add_argument('--do_not_retry_on_oom', action='store_true')
@@ -110,7 +107,6 @@ class BaseExperiment:
         self.k_folds = args.k_folds
         self.folds = args.folds
         self.pct_test = args.pct_test
-        # self.pct_valid_es = args.pct_valid_es
 
         self.tasks_ids = args.tasks_ids
         self.task_repeats = args.task_repeats
@@ -118,7 +114,7 @@ class BaseExperiment:
         self.task_samples = args.task_samples
 
         self.log_dir = args.log_dir
-        self.local_tmp_dir = args.local_tmp_dir
+        self.output_dir = args.output_dir
         self.mlflow_tracking_uri = args.mlflow_tracking_uri
         self.check_if_exists = not args.do_not_check_if_exists
         self.retry_on_oom = not args.do_not_retry_on_oom
@@ -132,13 +128,15 @@ class BaseExperiment:
 
     def create_logger(self):
         os.makedirs(self.log_dir, exist_ok=True)
+        self.output_dir = self.output_dir / self.experiment_name
+        os.makedirs(self.output_dir, exist_ok=True)
         name = self.experiment_name
         if (self.log_dir / f'{name}.log').exists():
             file_names = sorted(self.log_dir.glob(f'{name}_????.log'))
             if file_names:
                 file_name = file_names[-1].name
-                id = int(file_name.split('_')[-1].split('.')[0])
-                name = f'{name}_{id + 1:04d}'
+                id_file = int(file_name.split('_')[-1].split('.')[0])
+                name = f'{name}_{id_file + 1:04d}'
             else:
                 name = name + '_0001'
         logging.basicConfig(filename=self.log_dir / f'{name}.log',
@@ -169,202 +167,23 @@ class BaseExperiment:
         print(msg)
         logging.info(msg)
 
-    def check_if_own_exists_on_mlflow(self, dataset_name_or_id, seed_dataset, seed_model, fold):
-        filter_string = (f"params.seed_dataset = '{seed_dataset}' "
-                         f"AND params.dataset_name_or_id = '{dataset_name_or_id}' "
-                         f"AND params.seed_model = '{seed_model}' "
-                         f"AND params.fold = '{fold}' "
-                         f"AND params.model_nickname = '{self.model_nickname}' "
-                         f"AND params.k_folds = '{self.k_folds}' "
-                         f"AND params.resample_strategy = '{self.resample_strategy}' "
-                         f"AND params.pct_test = '{self.pct_test}' ")
-        runs = mlflow.search_runs(experiment_names=[self.experiment_name], filter_string=filter_string)
-        runs = runs.loc[runs['status'] == 'FINISHED']
-        if not runs.empty:
-            msg = f"Experiment already exists on MLflow. Skipping..."
-            print(msg)
-            logging.info(msg)
-            return True
-        return False
+    def run_own_combination(self, model_nickname, model_params,
+                            seed_model, dataset_name_or_id, seed_dataset, fold, resample_strategy, n_folds, pct_test,
+                            n_jobs, create_validation_set, experiment_name, mlflow_tracking_uri, check_if_exists):
+        run_own_combination(model_nickname=model_nickname, model_params=model_params, seed_model=seed_model,
+                            dataset_name_or_id=dataset_name_or_id, seed_dataset=seed_dataset,
+                            resample_strategy=resample_strategy, fold=fold, n_folds=n_folds, pct_test=pct_test,
+                            create_validation_set=create_validation_set, n_jobs=n_jobs, experiment_name=experiment_name,
+                            mlflow_tracking_uri=mlflow_tracking_uri, check_if_exists=check_if_exists)
 
-    def check_if_openml_exists_on_mlflow(self, task_id, task_repeat, task_sample, seed_model, task_fold):
-        filter_string = (f"params.task_id = '{task_id}' "
-                         f"AND params.seed_model = '{seed_model}' AND params.task_fold = '{task_fold}' "
-                         f"AND params.model_nickname = '{self.model_nickname}' "
-                         f"AND params.task_repeat = '{task_repeat}' "
-                         f"AND params.task_sample = '{task_sample}' ")
-        runs = mlflow.search_runs(experiment_names=[self.experiment_name], filter_string=filter_string)
-        runs = runs.loc[runs['status'] == 'FINISHED']
-        if not runs.empty:
-            msg = f"Experiment already exists on MLflow. Skipping..."
-            print(msg)
-            logging.info(msg)
-            return True
-        return False
-
-    def start_mlflow_own(self, dataset_name_or_id, seed_dataset, seed_model, fold):
-        mlflow.set_experiment(self.experiment_name)
-        run_name = f"{self.model_nickname}_{seed_model:04d}_{dataset_name_or_id}_{seed_dataset:04d}_{fold:02d}"
-        mlflow.start_run(run_name=run_name)
-        dataset, task, target = get_dataset(dataset_name_or_id)
-        mlflow.log_param('model_nickname', self.model_nickname)
-        mlflow.log_param('git_hash', get_git_revision_hash())
-        mlflow.log_param('dataset_name_or_id', dataset_name_or_id)
-        mlflow.log_param('seed_dataset', seed_dataset)
-        mlflow.log_param('seed_model', seed_model)
-        mlflow.log_param('fold', fold)
-        mlflow.log_param('dataset_id', dataset.id)
-        mlflow.log_param('dataset_name', dataset.name)
-        mlflow.log_param('resample_strategy', self.resample_strategy)
-        mlflow.log_param('k_folds', self.k_folds)
-        mlflow.log_param('pct_test', self.pct_test)
-        mlflow.log_param('task', task)
-        mlflow.log_param('target', target)
-
-    def run_own_combination(self, dataset_name_or_id, seed_dataset, seed_model, fold):
-        if self.check_if_exists:
-            if self.check_if_own_exists_on_mlflow(dataset_name_or_id, seed_dataset, seed_model, fold):
-                return
-        self.start_mlflow_own(dataset_name_or_id, seed_dataset, seed_model, fold)
-        dataset, task, target = get_dataset(dataset_name_or_id)
-        if target is None:
-            target = dataset.default_target_attribute
-        X, y, cat_ind, att_names = dataset.get_data(target=target)
-        if self.resample_strategy == 'hold_out':
-            test_size = int(self.pct_test * len(dataset.qualities['NumberOfInstances']))
-            if task in ('classification', 'binary_classification'):
-                stratify = y
-            elif task in ('regression', 'multi_regression'):
-                stratify = None
-            else:
-                raise NotImplementedError
-            X_train, X_test, y_train, y_test = train_test_split_forced(X, y, test_size_pct=test_size,
-                                                                       random_state=seed_dataset, stratify=stratify)
-            split_train = X_train.index
-            split_test = X_test.index
-        elif self.resample_strategy == 'k-fold_cv':
-            if task in ('classification', 'binary_classification'):
-                kf = StratifiedKFold(n_splits=self.k_folds, random_state=seed_dataset, shuffle=True)
-            elif task in ('regression', 'multi_regression'):
-                kf = KFold(n_splits=self.k_folds, random_state=seed_dataset, shuffle=True)
-            else:
-                raise NotImplementedError
-            folds = list(kf.split(X, y))
-            split_train, split_test = folds[fold]
-        else:
-            raise NotImplementedError
-        self.run_combination(seed_model, dataset, split_train, split_test, target, task)
-
-    def start_mlflow_openml(self, task_id, task_repeat, task_sample, seed_model, task_fold):
-        mlflow.set_experiment(self.experiment_name)
-        run_name = (f"{self.model_nickname}_{seed_model:04d}_{task_id}_{task_repeat:02d}_{task_sample:02d}_"
-                    f"{task_fold:02d}")
-        mlflow.start_run(run_name=run_name)
-        task = get_task(task_id)
-        dataset = task.get_dataset()
-        mlflow.log_param('model_nickname', self.model_nickname)
-        mlflow.log_param('git_hash', get_git_revision_hash())
-        mlflow.log_param('task_id', task.id)
-        mlflow.log_param('task_repeat', task_repeat)
-        mlflow.log_param('task_sample', task_sample)
-        mlflow.log_param('task_fold', task_fold)
-        mlflow.log_param('seed_model', seed_model)
-        mlflow.log_param('dataset_id', dataset.id)
-        mlflow.log_param('dataset_name', dataset.name)
-        task_type = task.task_type
-        if task_type == 'Supervised Classification':
-            task_name = 'classification'
-        elif task_type == 'Supervised Regression':
-            task_name = 'regression'
-        else:
-            raise NotImplementedError
-        mlflow.log_param('task_type', task_type)
-        mlflow.log_param('task', task_name)
-        mlflow.log_param('target', task.target_name)
-
-    def run_openml_combination(self, task_id, task_repeat, task_sample, seed_model, task_fold):
-        if self.check_if_exists:
-            if self.check_if_openml_exists_on_mlflow(task_id, task_repeat, task_sample, seed_model, task_fold):
-                return
-        self.start_mlflow_openml(task_id, task_repeat, task_sample, seed_model, task_fold)
-        task = get_task(task_id)
-        dataset = task.get_dataset()
-        split = task.get_train_test_split_indices(task_fold, task_repeat, task_sample)
-        if task.task_type == 'Supervised Classification':
-            n_classes = len(task.class_labels)
-            if n_classes == 2:
-                task_name = 'binary_classification'
-            elif n_classes > 2:
-                task_name = 'classification'
-        elif task.task_type == 'Supervised Regression':
-            task_name = 'regression'
-        else:
-            raise NotImplementedError
-        self.run_combination(seed_model, dataset, split.train, split.test, task.target_name, task_name)
-
-    def get_model(self):
-        model_class, model_kwargs = self.models_dict[self.model_nickname]
-        if callable(model_kwargs):
-            model_kwargs = model_kwargs(model_class)
-        model = model_class(**model_kwargs)
-        if hasattr(model, 'n_jobs'):
-            if isinstance(model, DNNModel) and self.n_jobs == 1:
-                # set n_jobs to 0 for DNNModel (no parallelism)
-                setattr(model, 'n_jobs', 0)
-            setattr(model, 'n_jobs', self.n_jobs)
-        model_params = vars(model).copy()
-        if issubclass(model_class, DNNModel):
-            # will be logged after
-            del model_params['loss_fn']
-        mlflow.log_params(model_params)
-        return model
-
-    def run_combination(self, seed_model, dataset, split_train, split_test, target, task):
-        X, y, cat_ind, att_names = dataset.get_data(target=target)
-        X_train = X.iloc[split_train]
-        y_train = y.iloc[split_train]
-        X_test = X.iloc[split_test]
-        y_test = y.iloc[split_test]
-        cat_features_names = [att_names[i] for i, value in enumerate(cat_ind) if value is True]
-        cont_features_names = [att_names[i] for i, value in enumerate(cat_ind) if value is False]
-        model, X_train, y_train, X_test, y_test = self.preprocess_and_fit_model(seed_model, X_train, y_train, X_test,
-                                                                                y_test, cat_features_names,
-                                                                                cont_features_names, att_names, task)
-        if task in ('classification', 'binary_classification'):
-            metrics = ['logloss', 'auc']
-            n_classes = len(y_train.iloc[:, 0].unique())
-        elif task == 'regression':
-            metrics = ['rmse', 'r2_score']
-            n_classes = None
-        else:
-            raise NotImplementedError
-        self.evaluate_model(model, X_test, y_test, metrics, n_classes)
-
-    # can be overridden
-    def evaluate_model(self, model, X_test_preprocessed, y_test_preprocessed, metrics, n_classes):
-        test_results = evaluate_set(model, [X_test_preprocessed, y_test_preprocessed], metrics, n_classes)
-        for metric, test_result in zip(metrics, test_results):
-            mlflow.log_metric(f'test_{metric}', test_result)
-
-    # can be overridden
-    def preprocess_and_fit_model(self, seed_model, X_train, y_train, X_test, y_test, cat_features_names,
-                                 cont_features_names, att_names, task):
-        set_seeds(seed_model)
-        model = self.get_model()
-        if not (('classifier' in model._estimator_type and task in ('classification', 'binary_classification')) or (
-                'regressor' in model._estimator_type and task in ('regression', 'multi_regression'))):
-            raise ValueError('Model class and task do not match')
-        # safer to preprocess and fit the model separately
-        model.create_preprocess_pipeline(task, cat_features_names, cont_features_names, att_names)
-        model.create_model_pipeline()
-        data_preprocess_pipeline_ = model.data_preprocess_pipeline_
-        target_preprocess_pipeline_ = model.target_preprocess_pipeline_
-        X_train = data_preprocess_pipeline_.fit_transform(X_train)
-        y_train = target_preprocess_pipeline_.fit_transform(y_train.to_frame())
-        X_test = data_preprocess_pipeline_.transform(X_test)
-        y_test = target_preprocess_pipeline_.transform(y_test.to_frame())
-        model.fit(X_train, y_train, task=task, cat_features=cat_features_names)
-        return model, X_train, y_train, X_test, y_test
+    def run_openml_combination(self, model_nickname, model_params, seed_model, task_id, task_repeat, task_sample,
+                               task_fold, create_validation_set, n_jobs, experiment_name, mlflow_tracking_uri,
+                               check_if_exists):
+        run_openml_combination(model_nickname=model_nickname, model_params=model_params, seed_model=seed_model,
+                               task_id=task_id, task_repeat=task_repeat, task_sample=task_sample, task_fold=task_fold,
+                               create_validation_set=create_validation_set, n_jobs=n_jobs,
+                               experiment_name=experiment_name, mlflow_tracking_uri=mlflow_tracking_uri,
+                               check_if_exists=check_if_exists)
 
     def run_experiment(self):
         if self.using_own_resampling:
@@ -383,10 +202,19 @@ class BaseExperiment:
                                 )
                                 print(msg)
                                 logging.info(msg)
-                                self.run_own_combination(dataset_name_or_id, seed_dataset, seed_model, fold)
+                                self.run_own_combination(model_nickname=self.model_nickname, model_params={},
+                                                         seed_model=seed_model,
+                                                         dataset_name_or_id=dataset_name_or_id,
+                                                         seed_dataset=seed_dataset, fold=fold,
+                                                         resample_strategy=self.resample_strategy,
+                                                         n_folds=self.k_folds, pct_test=self.pct_test,
+                                                         n_jobs=self.n_jobs,
+                                                         create_validation_set=False,
+                                                         experiment_name=self.experiment_name,
+                                                         mlflow_tracking_uri=self.mlflow_tracking_uri,
+                                                         check_if_exists=self.check_if_exists)
                             except Exception as exception:
                                 if self.raise_on_fit_error:
-                                    mlflow.end_run('FAILED')
                                     raise exception
                                 msg = (
                                     f"Error\n"
@@ -399,12 +227,10 @@ class BaseExperiment:
                                 )
                                 print(msg)
                                 logging.error(msg)
-                                mlflow.end_run('FAILED')
                             else:
                                 msg = 'Finished!'
                                 print(msg)
                                 logging.info(msg)
-                                mlflow.end_run('FINISHED')
         else:
             for task_repeat in self.task_repeats:
                 for task_sample in self.task_samples:
@@ -423,11 +249,16 @@ class BaseExperiment:
                                     )
                                     print(msg)
                                     logging.info(msg)
-                                    self.run_openml_combination(task_id, task_repeat, task_sample, seed_model,
-                                                                task_fold)
+                                    self.run_openml_combination(model_nickname=self.model_nickname, model_params={},
+                                                                seed_model=seed_model,
+                                                                task_id=task_id, task_repeat=task_repeat,
+                                                                task_sample=task_sample, task_fold=task_fold,
+                                                                create_validation_set=False, n_jobs=self.n_jobs,
+                                                                experiment_name=self.experiment_name,
+                                                                mlflow_tracking_uri=self.mlflow_tracking_uri,
+                                                                check_if_exists=self.check_if_exists)
                                 except Exception as exception:
                                     if self.raise_on_fit_error:
-                                        mlflow.end_run('FAILED')
                                         raise exception
                                     msg = (
                                         f"Error\n"
@@ -441,12 +272,10 @@ class BaseExperiment:
                                     )
                                     print(msg)
                                     logging.error(msg)
-                                    mlflow.end_run('FAILED')
                                 else:
                                     msg = 'Finished!'
                                     print(msg)
                                     logging.info(msg)
-                                    mlflow.end_run('FINISHED')
 
     def run(self):
         self.treat_parser()
@@ -456,7 +285,6 @@ class BaseExperiment:
             self.using_own_resampling = False
         else:
             raise ValueError("You must provide either datasets_names_or_ids or tasks_ids, but not both.")
-        mlflow.set_tracking_uri(self.mlflow_tracking_uri)
         self.create_logger()
         self.run_experiment()
 

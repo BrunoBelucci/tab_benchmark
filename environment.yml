@@ -29,4 +29,5 @@ dependencies:
   - pip
   - pip:
     - openml
+    - ray[tune]
     - -e .

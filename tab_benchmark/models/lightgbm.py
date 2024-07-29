@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any
 from lightgbm import LGBMRegressor as OriginalLGBMRegressor, LGBMClassifier as OriginalLGBMClassifier
 from lightgbm.basic import _is_numpy_1d_array, _to_string, _NUMERIC_TYPES, _is_numeric
-from tab_benchmark.models.xgboost import fn_to_run_before_fit_for_gbdt
+from tab_benchmark.models.xgboost import fn_to_run_before_fit_for_gbdt_and_dnn
 from tab_benchmark.models.factories import TabBenchmarkModelFactory
 import lightgbm.basic
 
@@ -35,9 +35,9 @@ LGBMRegressor = TabBenchmarkModelFactory.from_sk_cls(
         'metric': 'l2'
     },
     has_auto_early_stopping=True,
-    fn_to_run_before_fit=fn_to_run_before_fit_for_gbdt,
+    fn_to_run_before_fit=fn_to_run_before_fit_for_gbdt_and_dnn,
     extended_init_kwargs={
-        'categorical_encoder': None,
+        'categorical_encoder': 'ordinal',
         'categorical_type': 'category',
         'data_scaler': None,
     }
@@ -51,9 +51,9 @@ LGBMClassifier = TabBenchmarkModelFactory.from_sk_cls(
         'classification': {'objective': 'multiclass', 'metric': 'multi_logloss'},
     },
     has_auto_early_stopping=True,
-    fn_to_run_before_fit=fn_to_run_before_fit_for_gbdt,
+    fn_to_run_before_fit=fn_to_run_before_fit_for_gbdt_and_dnn,
     extended_init_kwargs={
-        'categorical_encoder': None,
+        'categorical_encoder': 'ordinal',
         'categorical_type': 'category',
         'data_scaler': None,
     }

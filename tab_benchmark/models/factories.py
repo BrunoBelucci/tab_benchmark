@@ -1,9 +1,15 @@
 from __future__ import annotations
+
+from copy import deepcopy
 from typing import Optional
 import numpy as np
 import pandas as pd
-from tab_benchmark.models.sk_lean_extension import SkLearnExtension
-from tab_benchmark.utils import extends
+from catboost import CatBoost
+from lightgbm import LGBMModel
+from xgboost import XGBModel
+
+from tab_benchmark.models.sk_learn_extension import SkLearnExtension
+from tab_benchmark.utils import extends, check_if_arg_in_kwargs_of_fn, check_if_arg_in_args_of_fn
 from tab_benchmark.models.dnn_model import DNNModel
 from inspect import cleandoc, signature
 from tab_benchmark.utils import check_same_keys
@@ -206,11 +212,20 @@ def init_factory(
 
 def fit_factory(cls, fn_to_run_before_fit=None):
     @extends(cls.fit)
-    def fit_fn(self, X, y, *args, task=None, cat_features=None, **kwargs):
+    def fit_fn(self, X, y, *args, task=None, cat_features=None, eval_set=None, **kwargs):
         if isinstance(y, pd.Series):
             y = y.to_frame()
-        self.cat_features_ = cat_features
-        self.task_ = task
+
+        if cat_features:
+            # if we pass cat_features as column names, we can ensure that they are in the dataframe
+            # (and not dropped during preprocessing)
+            if isinstance(cat_features[0], str):
+                cat_features_without_dropped = deepcopy(cat_features)
+                for feature in cat_features:
+                    if feature not in X.columns:
+                        cat_features_without_dropped.remove(feature)
+                cat_features = cat_features_without_dropped
+
         if self.map_task_to_default_values is not None:
             if task is not None:
                 if task in self.map_task_to_default_values:
@@ -219,13 +234,31 @@ def fit_factory(cls, fn_to_run_before_fit=None):
             else:
                 raise (ValueError('This model has map_task_to_default_values, which means it has some values that are '
                                   'task dependent. You must provide the task when calling fit.'))
+
         if fn_to_run_before_fit is not None:
-            X, y, task, cat_features, args, kwargs = fn_to_run_before_fit(self, X, y, task, cat_features, *args,
-                                                                          **kwargs)
+            X, y, task, cat_features, eval_set, args, kwargs = fn_to_run_before_fit(self, X, y, task, cat_features,
+                                                                                    eval_set, *args, **kwargs)
+
         if isinstance(self, DNNModel):
             kwargs['task'] = task
             kwargs['cat_features'] = cat_features
-        return cls.fit(self, X, y, **kwargs)
+            kwargs['eval_set'] = eval_set
+        elif isinstance(self, XGBModel):
+            if cat_features is not None:
+                self.set_params(**{'enable_categorical': True})
+            kwargs['eval_set'] = eval_set
+        elif isinstance(self, CatBoost):
+            self.set_params(**{'cat_features': cat_features})
+            kwargs['eval_set'] = eval_set
+        elif isinstance(self, LGBMModel):
+            if cat_features is not None:
+                if not check_if_arg_in_kwargs_of_fn('categorical_feature', **kwargs):
+                    i_possible_args = check_if_arg_in_args_of_fn(self.fit, 'categorical_feature', *args)
+                    if i_possible_args == False:
+                        # categorical_feature is not in kwargs and not in args
+                        kwargs['categorical_feature'] = cat_features
+            kwargs['eval_set'] = eval_set
+        return cls.fit(self, X, y, *args, **kwargs)
 
     doc = cleandoc("""Wrapper around the fit method of the scikit-learn class.
 

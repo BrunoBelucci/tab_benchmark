@@ -13,23 +13,6 @@ models_dict = {model_cls.__name__: (model_cls, {}) for model_cls in all_sklearn_
 n_estimators_gbdt = 10000
 early_stopping_patience_gbdt = 100
 
-XGB_params = dict(
-    n_estimators=n_estimators_gbdt,
-    auto_early_stopping=True,
-    early_stopping_rounds=early_stopping_patience_gbdt,
-    learning_rate=0.3,
-    reg_lambda=1.0,
-    reg_alpha=1e-10,
-    gamma=1e-1,
-    colsample_bylevel=1.0,
-    colsample_bynode=1.0,
-    colsample_bytree=1.0,
-    max_depth=6,
-    max_delta_step=0.0,
-    min_child_weight=1.0,
-    subsample=1.0,
-    tree_method='auto'
-)
 
 LGBM_params = dict(
     n_estimators=n_estimators_gbdt,
@@ -61,8 +44,8 @@ CatBoost_params = dict(
 
 
 models_dict.update({
-    XGBClassifier.__name__: (XGBClassifier, XGB_params),
-    XGBRegressor.__name__: (XGBRegressor, XGB_params),
+    XGBClassifier.__name__: (XGBClassifier, XGBClassifier.get_recommended_params()),
+    XGBRegressor.__name__: (XGBRegressor, XGBRegressor.get_recommended_params()),
     LGBMClassifier.__name__: (LGBMClassifier, LGBM_params),
     LGBMRegressor.__name__: (LGBMRegressor, LGBM_params),
     CatBoostClassifier.__name__: (CatBoostClassifier, CatBoost_params),

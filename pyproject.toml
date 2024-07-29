@@ -66,7 +66,8 @@ dependencies = [
     "openpyxl",
     "ipykernel",
     "ipywidgets",
-    "openml"
+    "openml",
+    "ray[tune]"
 ]
 
 [project.urls]

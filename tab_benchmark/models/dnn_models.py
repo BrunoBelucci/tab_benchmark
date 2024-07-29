@@ -8,7 +8,7 @@ from tab_benchmark.dnns.modules import TabNetModule
 from tab_benchmark.dnns.utils.external.node.lib.facebook_optimizer.optimizer import QHAdam
 from tab_benchmark.models.dnn_model import DNNModel
 from tab_benchmark.models.factories import TabBenchmarkModelFactory
-from tab_benchmark.models.xgboost import fn_to_run_before_fit_for_gbdt
+from tab_benchmark.models.xgboost import fn_to_run_before_fit_for_gbdt_and_dnn
 
 
 MLPModel = TabBenchmarkModelFactory.from_sk_cls(
@@ -28,7 +28,7 @@ MLPModel = TabBenchmarkModelFactory.from_sk_cls(
         'categorical_target_type': 'int64',
         'data_scaler': 'standard',
     },
-    fn_to_run_before_fit=fn_to_run_before_fit_for_gbdt,
+    fn_to_run_before_fit=fn_to_run_before_fit_for_gbdt_and_dnn,
 )
 
 
@@ -49,7 +49,7 @@ ResNetModel = TabBenchmarkModelFactory.from_sk_cls(
         'categorical_target_type': 'int64',
         'data_scaler': 'standard',
     },
-    fn_to_run_before_fit=fn_to_run_before_fit_for_gbdt,
+    fn_to_run_before_fit=fn_to_run_before_fit_for_gbdt_and_dnn,
 )
 
 
@@ -70,7 +70,7 @@ TransformerModel = TabBenchmarkModelFactory.from_sk_cls(
         'categorical_target_type': 'int64',
         'data_scaler': 'standard',
     },
-    fn_to_run_before_fit=fn_to_run_before_fit_for_gbdt,
+    fn_to_run_before_fit=fn_to_run_before_fit_for_gbdt_and_dnn,
 )
 
 
@@ -91,7 +91,7 @@ NodeModel = TabBenchmarkModelFactory.from_sk_cls(
         'categorical_target_type': 'int64',
         'data_scaler': 'standard',
     },
-    fn_to_run_before_fit=fn_to_run_before_fit_for_gbdt,
+    fn_to_run_before_fit=fn_to_run_before_fit_for_gbdt_and_dnn,
     map_default_values_change={
         'torch_optimizer_tuple': deepcopy((QHAdam, dict(nus=(0.7, 1.0), betas=(0.95, 0.998))))
     }
@@ -115,7 +115,7 @@ SaintModel = TabBenchmarkModelFactory.from_sk_cls(
         'categorical_target_type': 'int64',
         'data_scaler': 'standard',
     },
-    fn_to_run_before_fit=fn_to_run_before_fit_for_gbdt,
+    fn_to_run_before_fit=fn_to_run_before_fit_for_gbdt_and_dnn,
     map_default_values_change={
         'torch_optimizer_tuple': deepcopy((torch.optim.AdamW, {'lr': 1e-4, 'weight_decay': 1e-2}))
     }
@@ -139,7 +139,7 @@ TabTransformerModel = TabBenchmarkModelFactory.from_sk_cls(
         'categorical_target_type': 'int64',
         'data_scaler': 'standard',
     },
-    fn_to_run_before_fit=fn_to_run_before_fit_for_gbdt,
+    fn_to_run_before_fit=fn_to_run_before_fit_for_gbdt_and_dnn,
     map_default_values_change={
         'torch_optimizer_tuple': deepcopy((torch.optim.AdamW, {'lr': 1e-4, 'weight_decay': 1e-2}))
     }
@@ -163,7 +163,7 @@ TabNetModel = TabBenchmarkModelFactory.from_sk_cls(
         'categorical_target_type': 'int64',
         'data_scaler': 'standard',
     },
-    fn_to_run_before_fit=fn_to_run_before_fit_for_gbdt,
+    fn_to_run_before_fit=fn_to_run_before_fit_for_gbdt_and_dnn,
     map_default_values_change={
         'torch_optimizer_tuple': deepcopy((torch.optim.Adam, dict(lr=0.02))),
         'torch_scheduler_tuple': deepcopy(
