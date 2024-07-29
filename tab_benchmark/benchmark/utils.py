@@ -1,3 +1,5 @@
+import logging
+
 import mlflow
 import numpy as np
 import openml
@@ -69,6 +71,9 @@ def run_openml_combination(model_nickname, model_params, seed_model, task_id, ta
                                              task_sample=task_sample, task_fold=task_fold,
                                              create_validation_set=create_validation_set, n_jobs=n_jobs)
     if exists:
+        msg = f"Experiment already exists on MLflow. Skipping..."
+        print(msg)
+        logging.info(msg)
         return None
 
     try:
@@ -141,6 +146,9 @@ def run_own_combination(model_nickname, model_params, seed_model, dataset_name_o
                                              validation_resample_strategy=validation_resample_strategy,
                                              pct_validation=pct_validation, n_jobs=n_jobs)
     if exists:
+        msg = f"Experiment already exists on MLflow. Skipping..."
+        print(msg)
+        logging.info(msg)
         return None
 
     try:

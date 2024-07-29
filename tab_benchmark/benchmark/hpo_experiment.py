@@ -1,6 +1,9 @@
 import argparse
+import logging
+
 from base_experiment import BaseExperiment
-from tab_benchmark.benchmark.utils import run_openml_combination_hpo, run_own_combination_hpo, run_openml_combination
+from tab_benchmark.benchmark.utils import run_openml_combination_hpo, run_own_combination_hpo, run_openml_combination, \
+    check_if_exists_mlflow
 import mlflow
 from tab_benchmark.utils import get_git_revision_hash
 
@@ -36,6 +39,12 @@ class HPOExperiment(BaseExperiment):
                         task_sample=task_sample, task_fold=task_fold, search_algorithm=self.search_algorithm,
                         n_trials=self.n_trials, timeout_experiment=self.timeout_experiment,
                         timeout_trial=self.timeout_trial, n_jobs=n_jobs)
+        if self.check_if_exists:
+            if check_if_exists_mlflow(experiment_name, **run_args):
+                msg = f"Experiment already exists on MLflow. Skipping..."
+                print(msg)
+                logging.info(msg)
+                return
         run_name = '_'.join([f'{k}={v}' for k, v in run_args.items()])
         with mlflow.start_run(run_name=run_name) as run:
             run_uuid = run.info.run_uuid
@@ -64,6 +73,12 @@ class HPOExperiment(BaseExperiment):
                         seed_dataset=seed_dataset, fold=fold, resample_strategy=resample_strategy, n_folds=n_folds,
                         pct_test=pct_test, search_algorithm=self.search_algorithm, n_trials=self.n_trials,
                         timeout_experiment=self.timeout_experiment, timeout_trial=self.timeout_trial, n_jobs=n_jobs)
+        if self.check_if_exists:
+            if check_if_exists_mlflow(experiment_name, **run_args):
+                msg = f"Experiment already exists on MLflow. Skipping..."
+                print(msg)
+                logging.info(msg)
+                return
         run_name = '_'.join([f'{k}={v}' for k, v in run_args.items()])
         with mlflow.start_run(run_name=run_name) as run:
             mlflow.log_params(run_args)
