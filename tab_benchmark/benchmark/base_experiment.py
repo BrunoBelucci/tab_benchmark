@@ -167,23 +167,20 @@ class BaseExperiment:
         print(msg)
         logging.info(msg)
 
-    def run_own_combination(self, model_nickname, model_params,
-                            seed_model, dataset_name_or_id, seed_dataset, fold, resample_strategy, n_folds, pct_test,
-                            n_jobs, create_validation_set, experiment_name, mlflow_tracking_uri, check_if_exists):
-        run_own_combination(model_nickname=model_nickname, model_params=model_params, seed_model=seed_model,
+    def run_own_combination(self, seed_model, dataset_name_or_id, seed_dataset, fold):
+        run_own_combination(model_nickname=self.model_nickname, model_params={}, seed_model=seed_model,
                             dataset_name_or_id=dataset_name_or_id, seed_dataset=seed_dataset,
-                            resample_strategy=resample_strategy, fold=fold, n_folds=n_folds, pct_test=pct_test,
-                            create_validation_set=create_validation_set, n_jobs=n_jobs, experiment_name=experiment_name,
-                            mlflow_tracking_uri=mlflow_tracking_uri, check_if_exists=check_if_exists)
+                            resample_strategy=self.resample_strategy, fold=fold, n_folds=self.k_folds,
+                            pct_test=self.pct_test,
+                            create_validation_set=False, n_jobs=self.n_jobs, experiment_name=self.experiment_name,
+                            mlflow_tracking_uri=self.mlflow_tracking_uri, check_if_exists=self.check_if_exists)
 
-    def run_openml_combination(self, model_nickname, model_params, seed_model, task_id, task_repeat, task_sample,
-                               task_fold, create_validation_set, n_jobs, experiment_name, mlflow_tracking_uri,
-                               check_if_exists):
-        run_openml_combination(model_nickname=model_nickname, model_params=model_params, seed_model=seed_model,
+    def run_openml_combination(self, seed_model, task_id, task_repeat, task_sample, task_fold):
+        run_openml_combination(model_nickname=self.model_nickname, model_params={}, seed_model=seed_model,
                                task_id=task_id, task_repeat=task_repeat, task_sample=task_sample, task_fold=task_fold,
-                               create_validation_set=create_validation_set, n_jobs=n_jobs,
-                               experiment_name=experiment_name, mlflow_tracking_uri=mlflow_tracking_uri,
-                               check_if_exists=check_if_exists)
+                               create_validation_set=False, n_jobs=self.n_jobs,
+                               experiment_name=self.experiment_name, mlflow_tracking_uri=self.mlflow_tracking_uri,
+                               check_if_exists=self.check_if_exists)
 
     def run_experiment(self):
         if self.using_own_resampling:
@@ -202,17 +199,9 @@ class BaseExperiment:
                                 )
                                 print(msg)
                                 logging.info(msg)
-                                self.run_own_combination(model_nickname=self.model_nickname, model_params={},
-                                                         seed_model=seed_model,
+                                self.run_own_combination(seed_model=seed_model,
                                                          dataset_name_or_id=dataset_name_or_id,
-                                                         seed_dataset=seed_dataset, fold=fold,
-                                                         resample_strategy=self.resample_strategy,
-                                                         n_folds=self.k_folds, pct_test=self.pct_test,
-                                                         n_jobs=self.n_jobs,
-                                                         create_validation_set=False,
-                                                         experiment_name=self.experiment_name,
-                                                         mlflow_tracking_uri=self.mlflow_tracking_uri,
-                                                         check_if_exists=self.check_if_exists)
+                                                         seed_dataset=seed_dataset, fold=fold)
                             except Exception as exception:
                                 if self.raise_on_fit_error:
                                     raise exception
