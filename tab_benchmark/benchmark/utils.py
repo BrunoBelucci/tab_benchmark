@@ -255,30 +255,40 @@ def fit_model(X, y, cat_ind, att_names, model_nickname, model_params, seed_model
         eval_set = [(X_validation, y_validation)]
     else:
         eval_set = None
-    if return_to_fit:
-        return model, X_train, y_train, X_test, y_test, eval_set, task_name, cat_features_names
-    model.fit(X_train, y_train, task=task_name, cat_features=cat_features_names, eval_set=eval_set)
     if task_name in ('classification', 'binary_classification'):
         metrics = ['logloss', 'auc']
-        validation_default = 'logloss'
+        default_metric = 'logloss'
         n_classes = len(y.unique())
     elif task_name == 'regression':
         metrics = ['rmse', 'r2_score']
-        validation_default = 'rmse'
+        default_metric = 'rmse'
         n_classes = None
     else:
         raise NotImplementedError
+    if return_to_fit:
+        return dict(model=model, X_train=X_train, y_train=y_train, X_test=X_test, y_test=y_test, eval_set=eval_set,
+                    task_name=task_name, cat_features_names=cat_features_names, n_classes=n_classes, metrics=metrics,
+                    default_metric=default_metric)
+    model.fit(X_train, y_train, task=task_name, cat_features=cat_features_names, eval_set=eval_set)
+    results = evaluate_model(model, task_name, X_test, y_test, n_classes, eval_set, logging_to_mlflow)
+    results['model'] = model
+    return results
+
+
+def evaluate_model(model, X_test, y_test, default_metric, metrics, n_classes=None, eval_set=None,
+                   logging_to_mlflow=False):
     test_results = evaluate_set(model, (X_test, y_test), metrics, n_classes)
+    results = dict(test_results=test_results)
     if logging_to_mlflow:
         mlflow.log_metrics({f'test_{metric}': value for metric, value in test_results.items()})
-    if validation_indices is not None:
-        validation_results = evaluate_set(model, (X_validation, y_validation), metrics, n_classes)
-        validation_results['default'] = validation_results[validation_default]
+    if eval_set is not None:
+        validation_results = evaluate_set(model, eval_set[-1], metrics, n_classes)
+        validation_results['default'] = validation_results[default_metric]
+        results['validation_results'] = validation_results
         if logging_to_mlflow:
             mlflow.log_metrics({f'validation_{metric}': value for metric, value in validation_results.items()})
-            mlflow.log_param('validation_default_metric', validation_default)
-        return model, test_results, validation_results
-    return model, test_results
+            mlflow.log_param('default_metric', default_metric)
+    return results
 
 
 def training_fn_for_openml_hpo(config):
