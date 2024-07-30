@@ -10,46 +10,14 @@ from torch import nn
 
 models_dict = {model_cls.__name__: (model_cls, {}) for model_cls in all_sklearn_models}
 
-n_estimators_gbdt = 10000
-early_stopping_patience_gbdt = 100
-
-
-LGBM_params = dict(
-    n_estimators=n_estimators_gbdt,
-    auto_early_stopping=True,
-    early_stopping_rounds=early_stopping_patience_gbdt,
-    learning_rate=0.1,
-    reg_lambda=0.0,
-    reg_alpha=0.0,
-    min_split_gain=0.0,
-    colsample_bytree=1.0,
-    feature_fraction_bynode=1.0,
-    max_depth=-1,
-    num_leaves=31,
-    min_child_samples=20,
-    max_delta_step=0.0,
-    min_child_weight=1e-3,
-    subsample=1.0,
-    subsample_freq=0,
-)
-
-CatBoost_params = dict(
-    iterations=n_estimators_gbdt,
-    auto_early_stopping=True,
-    early_stopping_rounds=early_stopping_patience_gbdt,
-    random_strength=1.0,
-    l2_leaf_reg=3.0,
-    bagging_temperature=1.0,
-)
-
 
 models_dict.update({
     XGBClassifier.__name__: (XGBClassifier, XGBClassifier.get_recommended_params()),
     XGBRegressor.__name__: (XGBRegressor, XGBRegressor.get_recommended_params()),
-    LGBMClassifier.__name__: (LGBMClassifier, LGBM_params),
-    LGBMRegressor.__name__: (LGBMRegressor, LGBM_params),
-    CatBoostClassifier.__name__: (CatBoostClassifier, CatBoost_params),
-    CatBoostRegressor.__name__: (CatBoostRegressor, CatBoost_params),
+    LGBMClassifier.__name__: (LGBMClassifier, LGBMClassifier.get_recommended_params()),
+    LGBMRegressor.__name__: (LGBMRegressor, LGBMRegressor.get_recommended_params()),
+    CatBoostClassifier.__name__: (CatBoostClassifier, CatBoostClassifier.get_recommended_params()),
+    CatBoostRegressor.__name__: (CatBoostRegressor, CatBoostRegressor.get_recommended_params()),
 })
 
 
