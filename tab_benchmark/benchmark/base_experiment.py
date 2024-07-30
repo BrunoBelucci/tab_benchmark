@@ -169,9 +169,19 @@ class BaseExperiment:
         print(msg)
         logging.info(msg)
 
+    def get_model(self, model_nickname, seed_model, model_params=None, models_dict=models_dict, n_jobs=1,
+                  logging_to_mlflow=False):
+        model = get_model(model_nickname, seed_model, model_params, models_dict, n_jobs)
+        if logging_to_mlflow:
+            model_params = vars(model).copy()
+            if hasattr(model, 'loss_fn'):
+                # will be logged after
+                del model_params['loss_fn']
+            mlflow.log_params(model_params)
+        return model
+
     def run_combination(self, seed_model=0, n_jobs=1, create_validation_set=False, return_to_fit=False,
-                        model_params=None,
-                        parent_run_uuid=None, is_openml=True, logging_to_mlflow=False, **kwargs):
+                        model_params=None, is_openml=True, logging_to_mlflow=False, **kwargs):
         """
 
         Parameters
@@ -181,7 +191,6 @@ class BaseExperiment:
         create_validation_set
         return_to_fit
         model_params
-        parent_run_uuid
         is_openml
         logging_to_mlflow
         kwargs:
@@ -219,8 +228,8 @@ class BaseExperiment:
             )
 
         # load model
-        model = get_model(self.model_nickname, seed_model, model_params=model_params, models_dict=self.models_dict,
-                          n_jobs=n_jobs)
+        model = self.get_model(self.model_nickname, seed_model, model_params=model_params, models_dict=self.models_dict,
+                               n_jobs=n_jobs, logging_to_mlflow=logging_to_mlflow)
 
         # fit model
         # data here is already preprocessed

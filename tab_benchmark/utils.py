@@ -152,7 +152,7 @@ def evaluate_set(model, eval_set: Sequence[pd.DataFrame], metrics: str | list[st
             else:
                 y_ = y
             if n_classes == 2:
-                y_pred_proba_ = y_pred_proba[:, 1]
+                y_pred_proba_ = y_pred_proba.to_numpy()[:, 1]
             else:
                 y_pred_proba_ = y_pred_proba
         else:
