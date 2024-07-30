@@ -171,7 +171,7 @@ class BaseExperiment:
 
     def get_model(self, model_nickname, seed_model, model_params=None, models_dict=models_dict, n_jobs=1,
                   logging_to_mlflow=False):
-        model = get_model(model_nickname, seed_model, model_params, models_dict, n_jobs)
+        model = get_model(model_nickname, seed_model, model_params, models_dict, n_jobs, output_dir=self.output_dir)
         if logging_to_mlflow:
             model_params = vars(model).copy()
             if hasattr(model, 'loss_fn'):

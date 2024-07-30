@@ -24,7 +24,7 @@ def check_if_exists_mlflow(experiment_name, **kwargs):
         return False
 
 
-def get_model(model_nickname, seed_model, model_params=None, models_dict=models_dict, n_jobs=1):
+def get_model(model_nickname, seed_model, model_params=None, models_dict=models_dict, n_jobs=1, output_dir=None):
     model_params = model_params if model_params is not None else {}
     set_seeds(seed_model)
     model_class, model_default_params = models_dict[model_nickname]
@@ -37,6 +37,9 @@ def get_model(model_nickname, seed_model, model_params=None, models_dict=models_
             # set n_jobs to 0 for DNNModel (no parallelism)
             setattr(model, 'n_jobs', 0)
         setattr(model, 'n_jobs', n_jobs)
+    if output_dir is not None:
+        if hasattr(model, 'output_dir'):
+            setattr(model, 'output_dir', output_dir)
     return model
 
 

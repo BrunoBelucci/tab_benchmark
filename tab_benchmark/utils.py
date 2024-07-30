@@ -152,7 +152,10 @@ def evaluate_set(model, eval_set: Sequence[pd.DataFrame], metrics: str | list[st
             else:
                 y_ = y
             if n_classes == 2:
-                y_pred_proba_ = y_pred_proba.to_numpy()[:, 1]
+                if isinstance(y_pred_proba, pd.DataFrame):
+                    y_pred_proba_ = y_pred_proba.to_numpy()[:, 1]
+                else:
+                    y_pred_proba_ = y_pred_proba[:, 1]
             else:
                 y_pred_proba_ = y_pred_proba
         else:
@@ -276,7 +279,12 @@ def extends(fn_being_extended, map_default_values_change=None, additional_params
         def wrapper(*args, **kwargs):
             bound_args = new_signature.bind(*args, **kwargs)
             bound_args.apply_defaults()
-            return fn(**bound_args.arguments)
+            arguments = bound_args.arguments
+            if 'kwargs' in arguments:
+                extra_arguments = arguments['kwargs']
+                del arguments['kwargs']
+                arguments.update(extra_arguments)
+            return fn(**arguments)
 
         wrapper.__signature__ = new_signature
         doc = ''

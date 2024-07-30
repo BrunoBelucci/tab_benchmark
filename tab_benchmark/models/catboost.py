@@ -52,6 +52,20 @@ def n_jobs_set(self, value):
 n_jobs_property = property(n_jobs_get, n_jobs_set)
 
 
+def output_dir_get(self):
+    if not hasattr(self, '_output_dir'):
+        self._output_dir = self.get_params().get('train_dir', None)
+    return self._output_dir
+
+
+def output_dir_set(self, value):
+    self._output_dir = value
+    self.set_params(**{'train_dir': value})
+
+
+output_dir_property = property(output_dir_get, output_dir_set)
+
+
 CatBoostRegressor = TabBenchmarkModelFactory.from_sk_cls(
     OriginalCatBoostRegressor,
     map_task_to_default_values={
@@ -67,6 +81,7 @@ CatBoostRegressor = TabBenchmarkModelFactory.from_sk_cls(
     },
     extra_dct={
         'n_jobs': n_jobs_property,
+        'output_dir': output_dir_property,
         'create_search_space': staticmethod(create_search_space_catboost),
         'get_recommended_params': staticmethod(get_recommended_params_catboost)
     }
@@ -88,6 +103,7 @@ CatBoostClassifier = TabBenchmarkModelFactory.from_sk_cls(
     },
     extra_dct={
         'n_jobs': n_jobs_property,
+        'output_dir': output_dir_property,
         'create_search_space': staticmethod(create_search_space_catboost),
         'get_recommended_params': staticmethod(get_recommended_params_catboost)
     }

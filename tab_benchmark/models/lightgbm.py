@@ -51,9 +51,9 @@ def create_search_space_lgbm():
     )
     default_values = dict(
         learning_rate=0.1,
-        reg_lambda=1e-10,
-        reg_alpha=1e-10,
-        min_split_gain=1e-10,
+        reg_lambda=0,
+        reg_alpha=0,
+        min_split_gain=0,
         colsample_bytree=1.0,
         feature_fraction_bynode=1.0,
         max_depth=6,
