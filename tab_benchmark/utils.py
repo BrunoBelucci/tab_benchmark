@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 import subprocess
 import warnings
 from functools import partial
@@ -11,6 +10,28 @@ import pandas as pd
 import torch
 from sklearn.metrics import mean_squared_error, root_mean_squared_error, log_loss, roc_auc_score, r2_score
 from sklearn.model_selection import train_test_split
+
+
+def flatten_dict(dct, parent_key='', sep='/'):
+    """
+    Flatten a dictionary.
+
+    Parameters:
+    dct (dict): Dictionary to be flattened.
+    parent_key (str): Key of the parent dictionary.
+    sep (str): Separator to be used between keys.
+
+    Returns:
+    dict: Flattened dictionary.
+    """
+    items = []
+    for k, v in dct.items():
+        new_key = parent_key + sep + k if parent_key else k
+        if isinstance(v, dict):
+            items.extend(flatten_dict(v, new_key, sep=sep).items())
+        else:
+            items.append((new_key, v))
+    return dict(items)
 
 
 def sequence_to_list(sequence):

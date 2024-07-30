@@ -4,17 +4,12 @@ import mlflow
 import os
 import logging
 import warnings
-from tab_benchmark.benchmark.utils import run_openml_combination, run_own_combination
+from tab_benchmark.benchmark.utils import treat_mlflow, get_model, load_openml_task, fit_model, evaluate_model, \
+    load_own_task
 from tab_benchmark.benchmark.benchmarked_models import models_dict
+from tab_benchmark.utils import get_git_revision_hash, flatten_dict
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
-
-
-def get_model(model_nickname, models_dict):
-    model_class, model_kwargs = models_dict[model_nickname]
-    if callable(model_kwargs):
-        model_kwargs = model_kwargs(model_class)
-    return model_class(**model_kwargs)
 
 
 class BaseExperiment:
@@ -25,6 +20,7 @@ class BaseExperiment:
             # when performing our own resampling
             datasets_names_or_ids=None, seeds_datasets=None,
             resample_strategy='k-fold_cv', k_folds=10, folds=None, pct_test=0.2,
+            validation_resample_strategy='next_fold', pct_validation=0.1,
             # when using openml tasks
             tasks_ids=None,
             task_repeats=None, task_folds=None, task_samples=None,
@@ -33,7 +29,7 @@ class BaseExperiment:
             models_dict=models_dict,
             log_dir=Path.cwd() / 'logs',
             output_dir=Path.cwd() / 'output',
-            mlflow_tracking_uri='sqlite:///' + str(Path.cwd().resolve()) + '/ts_benchmark.db', check_if_exists=True,
+            mlflow_tracking_uri='sqlite:///' + str(Path.cwd().resolve()) + '/tab_benchmark.db', check_if_exists=True,
             retry_on_oom=True,
             raise_on_fit_error=False, parser=None
     ):
@@ -48,6 +44,8 @@ class BaseExperiment:
         self.k_folds = k_folds
         self.folds = folds if folds else [0]
         self.pct_test = pct_test
+        self.validation_resample_strategy = validation_resample_strategy
+        self.pct_validation = pct_validation
 
         # when using openml tasks
         self.tasks_ids = tasks_ids
@@ -81,6 +79,8 @@ class BaseExperiment:
         self.parser.add_argument('--k_folds', default=self.k_folds, type=int)
         self.parser.add_argument('--folds', nargs='*', type=int, default=self.folds)
         self.parser.add_argument('--pct_test', type=float, default=self.pct_test)
+        self.parser.add_argument('--validation_resample_strategy', type=str, default=self.validation_resample_strategy)
+        self.parser.add_argument('--pct_validation', type=float, default=self.pct_validation)
 
         self.parser.add_argument('--tasks_ids', nargs='*', type=int, default=self.tasks_ids)
         self.parser.add_argument('--task_repeats', nargs='*', type=int, default=self.task_repeats)
@@ -107,6 +107,8 @@ class BaseExperiment:
         self.k_folds = args.k_folds
         self.folds = args.folds
         self.pct_test = args.pct_test
+        self.validation_resample_strategy = args.validation_resample_strategy
+        self.pct_validation = args.pct_validation
 
         self.tasks_ids = args.tasks_ids
         self.task_repeats = args.task_repeats
@@ -167,20 +169,154 @@ class BaseExperiment:
         print(msg)
         logging.info(msg)
 
-    def run_own_combination(self, seed_model, dataset_name_or_id, seed_dataset, fold):
-        run_own_combination(model_nickname=self.model_nickname, model_params={}, seed_model=seed_model,
-                            dataset_name_or_id=dataset_name_or_id, seed_dataset=seed_dataset,
-                            resample_strategy=self.resample_strategy, fold=fold, n_folds=self.k_folds,
-                            pct_test=self.pct_test,
-                            create_validation_set=False, n_jobs=self.n_jobs, experiment_name=self.experiment_name,
-                            mlflow_tracking_uri=self.mlflow_tracking_uri, check_if_exists=self.check_if_exists)
+    def run_combination(self, seed_model=0, n_jobs=1, create_validation_set=False, return_to_fit=False,
+                        model_params=None,
+                        parent_run_uuid=None, is_openml=True, logging_to_mlflow=False, **kwargs):
+        """
 
-    def run_openml_combination(self, seed_model, task_id, task_repeat, task_sample, task_fold):
-        run_openml_combination(model_nickname=self.model_nickname, model_params={}, seed_model=seed_model,
-                               task_id=task_id, task_repeat=task_repeat, task_sample=task_sample, task_fold=task_fold,
-                               create_validation_set=False, n_jobs=self.n_jobs,
-                               experiment_name=self.experiment_name, mlflow_tracking_uri=self.mlflow_tracking_uri,
-                               check_if_exists=self.check_if_exists)
+        Parameters
+        ----------
+        seed_model
+        n_jobs
+        create_validation_set
+        return_to_fit
+        model_params
+        parent_run_uuid
+        is_openml
+        logging_to_mlflow
+        kwargs:
+            must contain task_id, task_repeat, task_sample, task_fold if is_openml is True
+            must contain dataset_name_or_id, seed_dataset, fold if is_openml is False
+
+        Returns
+        -------
+
+        """
+        model_params = model_params if model_params is not None else {}
+        # load data
+        if is_openml:
+            task_id = kwargs['task_id']
+            task_repeat = kwargs['task_repeat']
+            task_sample = kwargs['task_sample']
+            task_fold = kwargs['task_fold']
+            X, y, cat_ind, att_names, task_name, train_indices, test_indices, validation_indices = (
+                load_openml_task(task_id, task_repeat, task_sample, task_fold,
+                                 create_validation_set=create_validation_set)
+            )
+        else:
+            dataset_name_or_id = kwargs['dataset_name_or_id']
+            seed_dataset = kwargs['seed_dataset']
+            fold = kwargs['fold']
+            resample_strategy = self.resample_strategy
+            n_folds = self.k_folds
+            pct_test = self.pct_test
+            validation_resample_strategy = self.validation_resample_strategy
+            pct_validation = self.pct_validation
+            X, y, cat_ind, att_names, task_name, train_indices, test_indices, validation_indices = (
+                load_own_task(dataset_name_or_id, seed_dataset, resample_strategy, n_folds, pct_test, fold,
+                              create_validation_set=create_validation_set,
+                              validation_resample_strategy=validation_resample_strategy, pct_validation=pct_validation)
+            )
+
+        # load model
+        model = get_model(self.model_nickname, seed_model, model_params=model_params, models_dict=self.models_dict,
+                          n_jobs=n_jobs)
+
+        # fit model
+        # data here is already preprocessed
+        model, X_train, y_train, X_test, y_test, X_validation, y_validation = fit_model(
+            model, X, y, cat_ind, att_names, task_name, train_indices, test_indices, validation_indices,
+            logging_to_mlflow, return_to_fit)
+
+        # evaluate model
+        if task_name in ('classification', 'binary_classification'):
+            metrics = ['logloss', 'auc']
+            default_metric = 'logloss'
+            n_classes = len(y.unique())
+        elif task_name == 'regression':
+            metrics = ['rmse', 'r2_score']
+            default_metric = 'rmse'
+            n_classes = None
+        else:
+            raise NotImplementedError
+
+        results = evaluate_model(model, (X_test, y_test), 'test', metrics, default_metric, n_classes,
+                                 logging_to_mlflow)
+        if create_validation_set:
+            validation_results = evaluate_model(model, (X_validation, y_validation), 'validation', metrics,
+                                                default_metric, n_classes, logging_to_mlflow)
+            results.update(validation_results)
+        results.update({
+            'model': model,
+            'task_name': task_name,
+            'X_train': X_train,
+            'y_train': y_train,
+            'X_test': X_test,
+            'y_test': y_test,
+            'X_validation': X_validation,
+            'y_validation': y_validation,
+            'cat_features_names': [att_names[i] for i, value in enumerate(cat_ind) if value is True],
+            'n_classes': n_classes,
+            'metrics': metrics,
+            'default_metric': default_metric,
+        })
+        return results
+
+    def run_combination_with_mlflow(self, seed_model=0, n_jobs=1, create_validation_set=False, return_to_fit=False,
+                                    model_params=None,
+                                    parent_run_uuid=None, is_openml=True, **kwargs):
+        model_params = model_params if model_params is not None else {}
+        experiment_name = kwargs.pop('experiment_name', self.experiment_name)
+        mlflow_tracking_uri = kwargs.pop('mlflow_tracking_uri', self.mlflow_tracking_uri)
+        check_if_exists = kwargs.pop('check_if_exists', self.check_if_exists)
+        model_nickname = kwargs.pop('model_nickname', self.model_nickname)
+        if not is_openml:
+            kwargs.update({
+                'resample_strategy': kwargs.pop('resample_strategy', self.resample_strategy),
+                'n_folds': kwargs.pop('n_folds', self.k_folds),
+                'pct_test': kwargs.pop('pct_test', self.pct_test),
+                'validation_resample_strategy': kwargs.pop('validation_resample_strategy',
+                                                           self.validation_resample_strategy),
+                'pct_validation': kwargs.pop('pct_validation', self.pct_validation),
+            })
+        unique_params = dict(model_nickname=model_nickname, model_params=model_params, seed_model=seed_model, **kwargs)
+        exists, logging_to_mlflow = treat_mlflow(experiment_name, mlflow_tracking_uri, check_if_exists, **unique_params)
+
+        if exists:
+            msg = f"Experiment already exists on MLflow. Skipping..."
+            print(msg)
+            logging.info(msg)
+            return None
+
+        if logging_to_mlflow:
+            mlflow.set_experiment(experiment_name)
+            run_name = '_'.join([f'{k}={v}' for k, v in unique_params.items()])
+            if parent_run_uuid is not None:
+                # check if parent run is active, if not start it
+                possible_parent_run = mlflow.active_run()
+                if possible_parent_run is not None:
+                    if possible_parent_run.info.run_uuid != parent_run_uuid:
+                        mlflow.start_run(run_id=parent_run_uuid, nested=True)
+                else:
+                    mlflow.start_run(parent_run_uuid)
+                nested = True
+            else:
+                nested = False
+            with mlflow.start_run(run_name=run_name, nested=nested) as run:
+                parent_run_uuid = run.info.run_uuid
+                mlflow.log_params(flatten_dict(unique_params))
+                mlflow.log_param('git_hash', get_git_revision_hash())
+                return self.run_combination(seed_model=seed_model, n_jobs=n_jobs,
+                                            create_validation_set=create_validation_set,
+                                            return_to_fit=return_to_fit, model_params=model_params,
+                                            parent_run_uuid=parent_run_uuid, is_openml=is_openml,
+                                            logging_to_mlflow=logging_to_mlflow, **kwargs)
+        else:
+            return self.run_combination(seed_model=seed_model, n_jobs=n_jobs,
+                                        create_validation_set=create_validation_set,
+                                        return_to_fit=return_to_fit, model_params=model_params,
+                                        parent_run_uuid=parent_run_uuid, is_openml=is_openml,
+                                        logging_to_mlflow=logging_to_mlflow, **kwargs)
 
     def run_experiment(self):
         if self.using_own_resampling:
@@ -199,9 +335,9 @@ class BaseExperiment:
                                 )
                                 print(msg)
                                 logging.info(msg)
-                                self.run_own_combination(seed_model=seed_model,
-                                                         dataset_name_or_id=dataset_name_or_id,
-                                                         seed_dataset=seed_dataset, fold=fold)
+                                self.run_combination_with_mlflow(
+                                    seed_model=seed_model, dataset_name_or_id=dataset_name_or_id,
+                                    seed_dataset=seed_dataset, fold=fold, n_jobs=self.n_jobs, is_openml=False)
                             except Exception as exception:
                                 if self.raise_on_fit_error:
                                     raise exception
@@ -238,14 +374,11 @@ class BaseExperiment:
                                     )
                                     print(msg)
                                     logging.info(msg)
-                                    self.run_openml_combination(model_nickname=self.model_nickname, model_params={},
-                                                                seed_model=seed_model,
-                                                                task_id=task_id, task_repeat=task_repeat,
-                                                                task_sample=task_sample, task_fold=task_fold,
-                                                                create_validation_set=False, n_jobs=self.n_jobs,
-                                                                experiment_name=self.experiment_name,
-                                                                mlflow_tracking_uri=self.mlflow_tracking_uri,
-                                                                check_if_exists=self.check_if_exists)
+                                    self.run_combination_with_mlflow(seed_model=seed_model,
+                                                                     task_id=task_id, task_repeat=task_repeat,
+                                                                     task_sample=task_sample,
+                                                                     task_fold=task_fold,
+                                                                     n_jobs=self.n_jobs, is_openml=True)
                                 except Exception as exception:
                                     if self.raise_on_fit_error:
                                         raise exception
