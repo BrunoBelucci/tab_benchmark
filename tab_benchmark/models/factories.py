@@ -252,11 +252,7 @@ def fit_factory(cls, fn_to_run_before_fit=None):
             kwargs['eval_set'] = eval_set
         elif isinstance(self, LGBMModel):
             if cat_features is not None:
-                if not check_if_arg_in_kwargs_of_fn('categorical_feature', **kwargs):
-                    i_possible_args = check_if_arg_in_args_of_fn(self.fit, 'categorical_feature', *args)
-                    if i_possible_args == False:
-                        # categorical_feature is not in kwargs and not in args
-                        kwargs['categorical_feature'] = cat_features
+                kwargs['categorical_feature'] = cat_features
             kwargs['eval_set'] = eval_set
         return cls.fit(self, X, y, *args, **kwargs)
 
