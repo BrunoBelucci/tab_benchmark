@@ -8,6 +8,8 @@ from tab_benchmark.benchmark.utils import treat_mlflow, get_model, load_openml_t
     load_own_task
 from tab_benchmark.benchmark.benchmarked_models import models_dict
 from tab_benchmark.utils import get_git_revision_hash, flatten_dict
+from dask.distributed import LocalCluster
+from dask_jobqueue import SLURMCluster
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
@@ -326,6 +328,17 @@ class BaseExperiment:
                                         return_to_fit=return_to_fit, model_params=model_params,
                                         parent_run_uuid=parent_run_uuid, is_openml=is_openml,
                                         logging_to_mlflow=logging_to_mlflow, **kwargs)
+
+    def setup_dask(self, n_workers, cluster_type='local', slurm_config_name=None):
+        if cluster_type == 'local':
+            cluster = LocalCluster(n_workers=0)
+        elif cluster_type == 'slurm':
+            cluster = SLURMCluster(config_name=slurm_config_name)
+        else:
+            raise ValueError("cluster_type must be either 'local' or 'slurm'.")
+        cluster.scale(n_workers)
+        client = cluster.get_client()
+        return
 
     def run_experiment(self):
         if self.using_own_resampling:
