@@ -181,7 +181,7 @@ class BaseExperiment:
         return model
 
     def run_combination(self, seed_model=0, n_jobs=1, create_validation_set=False, return_to_fit=False,
-                        model_params=None, is_openml=True, logging_to_mlflow=False, **kwargs):
+                        model_params=None, is_openml=True, logging_to_mlflow=False, fit_params=None, **kwargs):
         """
 
         Parameters
@@ -201,6 +201,7 @@ class BaseExperiment:
         -------
 
         """
+        fit_params = fit_params if fit_params is not None else {}
         model_params = model_params if model_params is not None else {}
         # load data
         if is_openml:
@@ -235,7 +236,7 @@ class BaseExperiment:
         # data here is already preprocessed
         model, X_train, y_train, X_test, y_test, X_validation, y_validation = fit_model(
             model, X, y, cat_ind, att_names, task_name, train_indices, test_indices, validation_indices,
-            logging_to_mlflow, return_to_fit)
+            logging_to_mlflow, return_to_fit, **fit_params)
 
         # evaluate model
         if task_name in ('classification', 'binary_classification'):
@@ -272,8 +273,9 @@ class BaseExperiment:
         return results
 
     def run_combination_with_mlflow(self, seed_model=0, n_jobs=1, create_validation_set=False, return_to_fit=False,
-                                    model_params=None,
+                                    model_params=None, fit_params=None,
                                     parent_run_uuid=None, is_openml=True, **kwargs):
+        fit_params = fit_params if fit_params is not None else {}
         model_params = model_params if model_params is not None else {}
         experiment_name = kwargs.pop('experiment_name', self.experiment_name)
         mlflow_tracking_uri = kwargs.pop('mlflow_tracking_uri', self.mlflow_tracking_uri)
@@ -317,13 +319,15 @@ class BaseExperiment:
                 mlflow.log_param('git_hash', get_git_revision_hash())
                 return self.run_combination(seed_model=seed_model, n_jobs=n_jobs,
                                             create_validation_set=create_validation_set,
-                                            return_to_fit=return_to_fit, model_params=model_params,
+                                            return_to_fit=return_to_fit,
+                                            model_params=model_params, fit_params=fit_params,
                                             parent_run_uuid=parent_run_uuid, is_openml=is_openml,
                                             logging_to_mlflow=logging_to_mlflow, **kwargs)
         else:
             return self.run_combination(seed_model=seed_model, n_jobs=n_jobs,
                                         create_validation_set=create_validation_set,
-                                        return_to_fit=return_to_fit, model_params=model_params,
+                                        return_to_fit=return_to_fit,
+                                        model_params=model_params, fit_params=fit_params,
                                         parent_run_uuid=parent_run_uuid, is_openml=is_openml,
                                         logging_to_mlflow=logging_to_mlflow, **kwargs)
 
