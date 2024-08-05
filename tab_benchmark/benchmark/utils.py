@@ -60,7 +60,7 @@ def treat_mlflow(experiment_name, mlflow_tracking_uri, check_if_exists, **kwargs
 
 
 def fit_model(model, X, y, cat_ind, att_names, task_name, train_indices, test_indices, validation_indices=None,
-              logging_to_mlflow=False, return_to_fit=False):
+              logging_to_mlflow=False):
     if logging_to_mlflow:
         mlflow.log_param('task_name', task_name)
     X_train = X.iloc[train_indices]

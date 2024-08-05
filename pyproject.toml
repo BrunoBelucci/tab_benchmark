@@ -16,7 +16,7 @@ to use one model to use all of them.
 We have also included a module for downloading datasets from various sources, including Kaggle, but we mainly work
 with openml."""
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = "==3.11"
 license = "MIT"
 authors = [
   { name = "Bruno Belucci", email = "bruno.belucci-teixeira@dauphine.eu" },
@@ -66,6 +66,9 @@ dependencies = [
     "openpyxl",
     "ipykernel",
     "ipywidgets",
+    "dask",
+    "distributed",
+    "dask-jobqueue",
     "openml",
     "ray[tune]"
 ]

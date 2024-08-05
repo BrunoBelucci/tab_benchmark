@@ -3,6 +3,7 @@ channels:
   - conda-forge
   - nvidia
 dependencies:
+  - python=3.11
   - pytorch::pytorch
   - pytorch::pytorch-cuda=12.1
   - lightning
@@ -26,6 +27,9 @@ dependencies:
   - pytest
   - ipykernel
   - ipywidgets
+  - dask
+  - distributed
+  - dask-jobqueue
   - pip
   - pip:
     - openml
