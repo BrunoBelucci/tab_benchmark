@@ -1,8 +1,9 @@
+import os
 import mlflow
 import numpy as np
 import openml
 from ray.air import FailureConfig
-from ray.tune import TuneConfig, Tuner
+from ray.tune import TuneConfig
 from ray.tune.schedulers import HyperBandForBOHB
 from ray.tune.search import BasicVariantGenerator
 from ray.tune.search.bohb import TuneBOHB
@@ -17,6 +18,8 @@ from tab_benchmark.utils import set_seeds, evaluate_set, train_test_split_forced
 def check_if_exists_mlflow(experiment_name, **kwargs):
     filter_string = " AND ".join([f'params."{k}" = "{v}"' for k, v in flatten_dict(kwargs).items()])
     runs = mlflow.search_runs(experiment_names=[experiment_name], filter_string=filter_string)
+    # remove ./mlruns that is automatically created
+    os.rmdir('./mlruns')
     runs = runs.loc[runs['status'] == 'FINISHED']
     if not runs.empty:
         return True

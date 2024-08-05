@@ -121,6 +121,9 @@ class HPOExperiment(BaseExperiment):
             return None
 
         if logging_to_mlflow:
+            experiment = mlflow.get_experiment_by_name(experiment_name)
+            if experiment is None:
+                mlflow.create_experiment(experiment_name, artifact_location=str(self.output_dir))
             mlflow.set_experiment(experiment_name)
             run_name = '_'.join([f'{k}={v}' for k, v in unique_params.items()])
             if parent_run_uuid is not None:
