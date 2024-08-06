@@ -317,7 +317,7 @@ class BaseExperiment:
 
     def run_combination_with_mlflow(self, seed_model=0, n_jobs=1, create_validation_set=False,
                                     model_params=None, fit_params=None,
-                                    parent_run_uuid=None, is_openml=True, **kwargs):
+                                    parent_run_uuid=None, is_openml=True, return_results=False, **kwargs):
         fit_params = fit_params if fit_params is not None else {}
         model_params = model_params if model_params is not None else {}
         experiment_name = kwargs.pop('experiment_name', self.experiment_name)
@@ -334,11 +334,15 @@ class BaseExperiment:
                 'pct_validation': kwargs.pop('pct_validation', self.pct_validation),
             })
         unique_params = dict(model_nickname=model_nickname, model_params=model_params, seed_model=seed_model, **kwargs)
-        exists, logging_to_mlflow = treat_mlflow(experiment_name, mlflow_tracking_uri, check_if_exists, **unique_params)
+        possible_existent_run, logging_to_mlflow = treat_mlflow(experiment_name, mlflow_tracking_uri, check_if_exists,
+                                                                **unique_params)
 
-        if exists:
-            log_and_print_msg('Experiment already exists on MLflow. Skipping...')
-            return None
+        if possible_existent_run is not None:
+            log_and_print_msg('Run already exists on MLflow. Skipping...')
+            if return_results:
+                return possible_existent_run.to_dict()
+            else:
+                return None
 
         if logging_to_mlflow:
             experiment = mlflow.get_experiment_by_name(experiment_name)
@@ -364,14 +368,16 @@ class BaseExperiment:
                 return self.run_combination(seed_model=seed_model, n_jobs=n_jobs,
                                             create_validation_set=create_validation_set,
                                             model_params=model_params, fit_params=fit_params,
-                                            parent_run_uuid=parent_run_uuid, is_openml=is_openml,
-                                            logging_to_mlflow=logging_to_mlflow, **kwargs)
+                                            is_openml=is_openml,
+                                            logging_to_mlflow=logging_to_mlflow, return_results=return_results,
+                                            **kwargs)
         else:
             return self.run_combination(seed_model=seed_model, n_jobs=n_jobs,
                                         create_validation_set=create_validation_set,
                                         model_params=model_params, fit_params=fit_params,
-                                        parent_run_uuid=parent_run_uuid, is_openml=is_openml,
-                                        logging_to_mlflow=logging_to_mlflow, **kwargs)
+                                        is_openml=is_openml,
+                                        logging_to_mlflow=logging_to_mlflow, return_results=return_results,
+                                        **kwargs)
 
     def setup_dask(self, n_workers, cluster_type='local', slurm_config_name=None, address=None):
         if address is not None:

@@ -38,7 +38,7 @@ def create_search_space_xgboost():
         colsample_bynode=1.0,
         colsample_bytree=1.0,
         max_depth=6,
-        max_delta_step=0.0,
+        max_delta_step=0,
         min_child_weight=1.0,
         subsample=1.0,
     )

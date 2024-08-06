@@ -18,13 +18,14 @@ from tab_benchmark.utils import set_seeds, evaluate_set, train_test_split_forced
 def check_if_exists_mlflow(experiment_name, **kwargs):
     filter_string = " AND ".join([f'params."{k}" = "{v}"' for k, v in flatten_dict(kwargs).items()])
     runs = mlflow.search_runs(experiment_names=[experiment_name], filter_string=filter_string)
-    # remove ./mlruns that is automatically created
-    os.rmdir('./mlruns')
+    # remove ./mlruns if it is automatically created
+    if os.path.exists('./mlruns'):
+        os.rmdir('./mlruns')
     runs = runs.loc[runs['status'] == 'FINISHED']
     if not runs.empty:
-        return True
+        return runs.iloc[0]
     else:
-        return False
+        return None
 
 
 def get_model(model_nickname, seed_model, model_params=None, models_dict=models_dict, n_jobs=1, output_dir=None):
@@ -50,16 +51,15 @@ def treat_mlflow(experiment_name, mlflow_tracking_uri, check_if_exists, **kwargs
     if mlflow_tracking_uri:
         mlflow.set_tracking_uri(mlflow_tracking_uri)
     if mlflow_tracking_uri and experiment_name:
-        exists = False
+        run = None
         if check_if_exists:
-            exists = check_if_exists_mlflow(experiment_name, **kwargs)
-        if exists:
-            return True, False
+            run = check_if_exists_mlflow(experiment_name, **kwargs)
+        if run is not None:
+            return run, False
         else:
-            # setup_mlflow_run(experiment_name, parent_run_uuid, **kwargs)
-            return False, True
+            return run, True
     else:
-        return False, False
+        return None, False
 
 
 def fit_model(model, X, y, cat_ind, att_names, task_name, train_indices, test_indices, validation_indices=None,
@@ -203,16 +203,17 @@ def load_openml_task(task_id, task_repeat, task_sample, task_fold, create_valida
     return X, y, cat_ind, att_names, task_name, train_indices, test_indices, validation_indices
 
 
-def get_search_algorithm_tune_config_run_config(default_values, search_algorithm_str, search_space, n_trials,
-                                                timeout_experiment, timeout_trial, storage_path, metric, mode):
-    param_space_default = dict(model_params=default_values)
+def get_search_algorithm_tune_config_run_config(default_param_space, search_algorithm_str, n_trials,
+                                                timeout_experiment, timeout_trial, storage_path, metric, mode,
+                                                seed, max_concurrent):
     if search_algorithm_str == 'random_search':
-        search_algorithm = BasicVariantGenerator(points_to_evaluate=[param_space_default])
+        search_algorithm = BasicVariantGenerator(points_to_evaluate=[default_param_space], random_state=seed,
+                                                 max_concurrent=max_concurrent)
         scheduler = None
     elif search_algorithm_str == 'bohb':
-        search_algorithm = TuneBOHB(space=search_space, metric=metric, mode=mode,
-                                    points_to_evaluate=[param_space_default])
-        scheduler = HyperBandForBOHB()
+        search_algorithm = TuneBOHB(metric=metric, mode=mode, seed=seed, max_concurrent=max_concurrent,
+                                    points_to_evaluate=[flatten_dict(default_param_space)])
+        scheduler = HyperBandForBOHB(metric=metric, mode=mode)
     else:
         raise NotImplementedError(f"Search algorithm {search_algorithm_str} not implemented.")
     tune_config = TuneConfig(mode=mode, metric=metric, search_alg=search_algorithm,

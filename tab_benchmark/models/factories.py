@@ -9,7 +9,7 @@ from lightgbm import LGBMModel
 from xgboost import XGBModel
 
 from tab_benchmark.models.sk_learn_extension import SkLearnExtension
-from tab_benchmark.utils import extends, check_if_arg_in_kwargs_of_fn, check_if_arg_in_args_of_fn
+from tab_benchmark.utils import extends
 from tab_benchmark.models.dnn_model import DNNModel
 from inspect import cleandoc, signature
 from tab_benchmark.utils import check_same_keys
