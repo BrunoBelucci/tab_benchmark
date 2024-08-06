@@ -53,7 +53,7 @@ class TabularDataset(Dataset):
             List of the number of categories for each categorical feature.
     """
     def __init__(self, x: pd.DataFrame, y: pd.DataFrame | None, task: str, categorical_features_idx: list[int],
-                 categorical_dims: list[int],
+                 categorical_dims: list[int], name=None,
                  store_as_tensor: bool = False, continuous_type: Optional[np.dtype] = None,
                  categorical_type: Optional[np.dtype] = None):
         """Initializes the TabularDataset.
@@ -82,6 +82,7 @@ class TabularDataset(Dataset):
         self.continuous_features_idx = continuous_features_idx
         self.categorical_features_idx = categorical_features_idx
         self.categorical_dims = categorical_dims
+        self.name = name
         if store_as_tensor:
             categorical_type = numpy_and_str_to_torch_type_dict[categorical_type]
             continuous_type = numpy_and_str_to_torch_type_dict[continuous_type]
@@ -109,16 +110,15 @@ class TabularDataset(Dataset):
         """Gets the data at a given index."""
         x_continuous = self.x_continuous[idx]
         x_categorical = self.x_categorical[idx]
+        data = {'x_continuous': x_continuous, 'x_categorical': x_categorical, 'name': self.name}
         if self.y is not None:
             y = self.y[idx]
-            data = {'x_continuous': x_continuous, 'x_categorical': x_categorical, 'y_train': y}
-        else:
-            data = {'x_continuous': x_continuous, 'x_categorical': x_categorical}
+            data['y'] = y
         return data
 
     def get_all_data(self) -> dict[str, torch.Tensor | np.ndarray]:
         """Gets all the data."""
-        return {'x_continuous': self.x_continuous, 'x_categorical': self.x_categorical, 'y_train': self.y}
+        return {'x_continuous': self.x_continuous, 'x_categorical': self.x_categorical, 'y': self.y}
 
 
 class EmptyDataset(Dataset):
@@ -168,6 +168,7 @@ class TabularDataModule(L.LightningDataModule):
     def __init__(self, x_train: pd.DataFrame, y_train: pd.DataFrame, task: str, categorical_features_idx: list[int],
                  categorical_dims: list[int],
                  eval_sets: Optional[list[tuple[pd.DataFrame, pd.DataFrame]]] = None,
+                 eval_names: Optional[list[str]] = None,
                  num_workers: int = 0, batch_size: int = 1, store_as_tensor: bool = False,
                  continuous_type: Optional[np.dtype] = None, categorical_type: Optional[np.dtype] = None):
         """Initializes the TabularDataModule.
@@ -207,6 +208,7 @@ class TabularDataModule(L.LightningDataModule):
         self.categorical_features_idx = categorical_features_idx
         self.categorical_dims = categorical_dims
         self.eval_sets = eval_sets
+        self.eval_names = eval_names
         self.num_workers = num_workers
         self.batch_size = batch_size
         self.store_as_tensor = store_as_tensor
@@ -229,12 +231,15 @@ class TabularDataModule(L.LightningDataModule):
                                                 categorical_dims=self.categorical_dims,
                                                 store_as_tensor=self.store_as_tensor,
                                                 continuous_type=self.continuous_type,
-                                                categorical_type=self.categorical_type)
+                                                categorical_type=self.categorical_type, name='train')
             if self.eval_sets:
-                self.valid_datasets = []
-                for x_valid, y_valid in self.eval_sets:
-                    self.valid_datasets.append(
-                        TabularDataset(x=x_valid, y=y_valid, task=self.task,
+                if self.eval_names is None:
+                    self.eval_names = [f'validation_{i}' for i in range(len(self.eval_sets))]
+                self.valid_datasets = {}
+                for eval_set, name in zip(self.eval_sets, self.eval_names):
+                    (x_valid, y_valid) = eval_set
+                    self.valid_datasets[name] = (
+                        TabularDataset(x=x_valid, y=y_valid, task=self.task, name=name,
                                        categorical_features_idx=self.categorical_features_idx,
                                        categorical_dims=self.categorical_dims, store_as_tensor=self.store_as_tensor,
                                        continuous_type=self.continuous_type, categorical_type=self.categorical_type)
@@ -256,7 +261,7 @@ class TabularDataModule(L.LightningDataModule):
         """Returns the DataLoader for the validation set."""
         if self.valid_datasets:
             return [DataLoader(valid_dataset, batch_size=self.batch_size, num_workers=self.num_workers,
-                               pin_memory=True, drop_last=False) for valid_dataset in self.valid_datasets]
+                               pin_memory=True, drop_last=False) for name, valid_dataset in self.valid_datasets.items()]
         else:
             # TODO: choose whether to return None or an empty DataLoader
             return DataLoader(EmptyDataset(), batch_size=self.batch_size, drop_last=True)

@@ -87,14 +87,13 @@ class TabularModule(L.LightningModule):
         return self.model(batch)
 
     def base_step(self, batch, batch_idx):
-        y_true = batch['y_train']
+        y_true = batch['y']
         model_output = self.model(batch)
         y_pred = model_output['y_pred']
         loss = self.loss_fn(y_pred, y_true)
         outputs = {
             'loss': loss,
             'y_pred': y_pred,
-            'y_true': y_true,
         }
         return outputs
 

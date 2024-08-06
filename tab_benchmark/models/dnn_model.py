@@ -168,7 +168,7 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
                 'Either architecture_params or architecture_params_not_from_dataset must be specified, even if is'
                 'an empty dictionary.')
 
-    def initialize_datamodule(self, X, y, task, cat_features_idx, cat_dims, eval_set):
+    def initialize_datamodule(self, X, y, task, cat_features_idx, cat_dims, eval_set, eval_name):
         self.lit_datamodule_ = self.lit_datamodule_class(
             x_train=X,
             y_train=y,
@@ -176,6 +176,7 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
             categorical_features_idx=cat_features_idx,
             categorical_dims=cat_dims,
             eval_sets=eval_set,
+            eval_names=eval_name,
             num_workers=self.n_jobs,
             batch_size=self.batch_size,
             store_as_tensor=True,
@@ -252,7 +253,7 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
         # initialize model
 
         # initialize datamodule
-        self.initialize_datamodule(X, y, task, cat_features_idx, cat_dims, eval_set)
+        self.initialize_datamodule(X, y, task, cat_features_idx, cat_dims, eval_set, eval_name)
 
         # initialize module
         if self.architecture_params_not_from_dataset is not None:

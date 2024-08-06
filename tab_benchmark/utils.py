@@ -1,6 +1,7 @@
 from __future__ import annotations
 import subprocess
 import warnings
+from copy import copy
 from functools import partial
 from inspect import signature
 from typing import Sequence, Optional
@@ -104,6 +105,44 @@ def check_if_arg_in_args_kwargs_of_fn(fn, arg_name, *args, return_arg=False, **k
                 return False
 
 
+def get_metric_fn(metric, n_classes=None):
+    labels = list(range(n_classes)) if n_classes is not None else None
+    # map_metric_to_func[metric] = (function, need_proba)
+    auc_fn = partial(roc_auc_score, multi_class='ovr', labels=labels)
+    auc_fn.__name__ = 'auc'
+    map_metric_to_func = {
+        'mse': (mean_squared_error, False),
+        'rmse': (root_mean_squared_error, False),
+        'logloss': (partial(log_loss, labels=labels), True),
+        'r2_score': (r2_score, False),
+        'auc': (auc_fn, True)
+    }
+    metric_fn, need_proba = map_metric_to_func[metric]
+    return metric_fn, need_proba
+
+
+def evaluate_metric(y_true, y_pred, metric, n_classes=None):
+    y_true = copy(y_true)
+    y_pred = copy(y_pred)
+    if isinstance(metric, str):
+        metric_fn, _ = get_metric_fn(metric, n_classes)
+    else:
+        metric_fn = metric
+    if metric_fn.__name__ == 'auc':
+        if y_true.shape[1] == 1:
+            y_true = y_true.to_numpy().reshape(-1)
+        if n_classes == 2:
+            if isinstance(y_pred, pd.DataFrame):
+                y_pred = y_pred.to_numpy()[:, 1]
+            else:
+                y_pred = y_pred[:, 1]
+    try:
+        score = metric_fn(y_true, y_pred)
+    except ValueError as e:
+        score = np.nan
+    return score
+
+
 def evaluate_set(model, eval_set: Sequence[pd.DataFrame], metrics: str | list[str], n_classes: Optional[int] = None) \
         -> dict[str, float]:
     """Given an eval_set, consisting of a tuple-like (X, y), evaluate the metric on the given set.
@@ -121,51 +160,25 @@ def evaluate_set(model, eval_set: Sequence[pd.DataFrame], metrics: str | list[st
     Returns:
         The value of the metric evaluated on the evaluation set.
     """
-    labels = list(range(n_classes)) if n_classes is not None else None
-    # map_metric_to_func[metric] = (function, need_proba)
-    map_metric_to_func = {
-        'mse': (mean_squared_error, False),
-        'rmse': (root_mean_squared_error, False),
-        'logloss': (partial(log_loss, labels=labels), True),
-        'r2_score': (r2_score, False),
-        'auc': (partial(roc_auc_score, multi_class='ovr', labels=labels), True)
-    }
     X = eval_set[0]
     y = eval_set[1]
     y_pred = None
     y_pred_proba = None
     scores = {}
     for metric in metrics:
-        if metric not in map_metric_to_func:
-            msg = f'metric {metric} not implemented'
-            raise NotImplementedError(msg)
-        func, need_proba = map_metric_to_func[metric]
+        func, need_proba = get_metric_fn(metric, n_classes)
         if need_proba:
             if y_pred_proba is None:
-                y_pred_proba = model.predict_proba(X)
+                y_pred_ = model.predict_proba(X)
+            else:
+                y_pred_ = y_pred_proba
         else:
             if y_pred is None:
-                y_pred = model.predict(X)
-        if metric == 'auc':
-            if y.shape[1] == 1:
-                y_ = y.to_numpy().reshape(-1)
+                y_pred_ = model.predict(X)
             else:
-                y_ = y
-            if n_classes == 2:
-                if isinstance(y_pred_proba, pd.DataFrame):
-                    y_pred_proba_ = y_pred_proba.to_numpy()[:, 1]
-                else:
-                    y_pred_proba_ = y_pred_proba[:, 1]
-            else:
-                y_pred_proba_ = y_pred_proba
-        else:
-            y_ = y
-            y_pred_proba_ = y_pred_proba
-        try:
-            score = func(y_, y_pred_proba_ if need_proba else y_pred)
-        except ValueError as e:
-            score = np.nan
-        scores[metric] = score
+                y_pred_ = y_pred
+        # maybe we should pass copy of y_pred_ to avoid changing the original y_pred_?
+        scores[metric] = evaluate_metric(y, y_pred_, func, n_classes)
     return scores
 
 

@@ -7,7 +7,7 @@ class TabNetModule(TabularModule):
     The base step is slightly different to allow for the M_loss to be subtracted from the loss.
     """
     def base_step(self, batch, batch_idx):
-        y_true = batch['y_train']
+        y_true = batch['y']
         model_output = self.model(batch)
         y_pred = model_output['y_pred']
         M_loss = model_output['M_loss']
@@ -16,7 +16,6 @@ class TabNetModule(TabularModule):
         outputs = {
             'loss': loss,
             'y_pred': y_pred,
-            'y_true': y_true,
             'M_loss': M_loss,
         }
         return outputs
