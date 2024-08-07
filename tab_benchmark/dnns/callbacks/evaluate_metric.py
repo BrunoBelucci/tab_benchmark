@@ -11,7 +11,7 @@ from tab_benchmark.utils import evaluate_metric, get_metric_fn
 
 class EvaluateMetric(Callback):
     def __init__(self, eval_metric, eval_name: Optional[str | list[str]] = None, report_to_ray: bool = False,
-                 default_metric: Optional[str] = None, last_metric_as_default: bool = False):
+                 default_metric: Optional[str] = None, last_metric_as_default: bool = True):
         if isinstance(eval_metric, str):
             eval_metric = [eval_metric]
         self.eval_metric = eval_metric

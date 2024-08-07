@@ -112,10 +112,12 @@ def get_metric_fn(metric, n_classes=None):
     # map_metric_to_func[metric] = (function, need_proba)
     auc_fn = partial(roc_auc_score, multi_class='ovr', labels=labels)
     auc_fn.__name__ = 'auc'
+    log_loss_fn = partial(log_loss, labels=labels)
+    log_loss_fn.__name__ = 'logloss'
     map_metric_to_func = {
         'mse': (mean_squared_error, False),
         'rmse': (root_mean_squared_error, False),
-        'logloss': (partial(log_loss, labels=labels), True),
+        'logloss': (log_loss_fn, True),
         'r2_score': (r2_score, False),
         'auc': (auc_fn, True)
     }

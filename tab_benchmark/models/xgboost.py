@@ -1,3 +1,4 @@
+import mlflow
 from xgboost import XGBClassifier as OriginalXGBClassifier, XGBRegressor as OriginalXGBRegressor, XGBModel
 from xgboost.callback import TrainingCallback, _Model
 from tab_benchmark.models.factories import TabBenchmarkModelFactory, fn_to_add_auto_early_stopping
@@ -53,24 +54,59 @@ def get_recommended_params_xgboost():
     return default_values_from_search_space
 
 
-# class ReportToRayXGBoost(TrainingCallback):
-#     def __init__(self):
-#
-#     def after_iteration(self, model: _Model, epoch: int, evals_log):
-#         for eval_name, metric_dict in evals_log.items():
-#             for metric_name, metric_values in metric_dict.items():
-#                 report({f'{eval_name}_{metric_name}': metric_values[-1]})
+class ReportToRayXGBoost(TrainingCallback):
+    def __init__(self, eval_name, map_default_name_to_eval_name, last_metric_as_default=True):
+        super().__init__()
+        self.eval_name = eval_name
+        self.map_default_name_to_eval_name = map_default_name_to_eval_name
+        self.last_metric_as_default = last_metric_as_default
+
+    def after_iteration(self, model: _Model, epoch: int, evals_log):
+        for default_name, metrics in evals_log.items():
+            our_name = self.map_default_name_to_eval_name[default_name]
+            if our_name in self.eval_name:
+                dict_to_report = {f'{our_name}_{metric}': value[-1] for metric, value in metrics.items()}
+                if self.last_metric_as_default:
+                    dict_to_report[f'{our_name}_default'] = metrics[list(metrics.keys())[-1]][-1]
+                report(dict_to_report)
+
+
+class LogToMLFlowXGBoost(TrainingCallback):
+    def __init__(self, map_default_name_to_eval_name, last_metric_as_default=True):
+        super().__init__()
+        self.map_default_name_to_eval_name = map_default_name_to_eval_name
+        self.last_metric_as_default = last_metric_as_default
+
+    def after_iteration(self, model: _Model, epoch: int, evals_log):
+        for default_name, metrics in evals_log.items():
+            our_name = self.map_default_name_to_eval_name[default_name]
+            dict_to_log = {f'{our_name}_{metric}': value[-1] for metric, value in metrics.items()}
+            if self.last_metric_as_default:
+                dict_to_log[f'{our_name}_default'] = metrics[list(metrics.keys())[-1]][-1]
+            dict_to_log['epoch'] = epoch
+            mlflow.log_metrics(dict_to_log, step=epoch)
 
 
 def before_fit_xgboost(self, extra_arguments, **fit_arguments):
     cat_features = extra_arguments.get('cat_features')
     report_to_ray = extra_arguments.get('report_to_ray')
+    eval_name = extra_arguments.get('eval_name')
+    eval_set = fit_arguments.get('eval_set')
+    X_train = fit_arguments.get('X')
+    y_train = fit_arguments.get('y')
+    eval_set.insert(0, (X_train, y_train))
+    eval_name.insert(0, 'train')
+    fit_arguments['eval_set'] = eval_set
+    map_default_name_to_eval_name = {f'validation_{i}': name for i, name in enumerate(eval_name)}
     if cat_features is not None:
         self.set_params(**{'enable_categorical': True})
+    if self.callbacks is None:
+        self.callbacks = []
     if report_to_ray:
-        if self.callbacks is None:
-            self.callbacks = []
-        # self.callbacks.append(ReportToRayXGBoost())
+        self.callbacks.append(ReportToRayXGBoost(eval_name, map_default_name_to_eval_name))
+    if self.log_to_mlflow_if_running:
+        if mlflow.active_run():
+            self.callbacks.append(LogToMLFlowXGBoost(map_default_name_to_eval_name))
     return fit_arguments
 
 
