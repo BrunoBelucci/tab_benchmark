@@ -1,18 +1,33 @@
 from __future__ import annotations
-
 from copy import deepcopy
 from typing import Optional
 import numpy as np
 import pandas as pd
-from catboost import CatBoost
-from lightgbm import LGBMModel
-from xgboost import XGBModel
-
 from tab_benchmark.models.sk_learn_extension import SkLearnExtension
-from tab_benchmark.utils import extends
-from tab_benchmark.models.dnn_model import DNNModel
+from tab_benchmark.utils import extends, train_test_split_forced, sequence_to_list
 from inspect import cleandoc, signature
 from tab_benchmark.utils import check_same_keys
+
+
+def fn_to_add_auto_early_stopping(self, X, y, task, eval_set, eval_name):
+    if self.auto_early_stopping:
+        if task == 'classification' or task == 'binary_classification':
+            stratify = y
+        else:
+            stratify = None
+        X, X_valid, y, y_valid = train_test_split_forced(
+            X, y,
+            test_size_pct=self.early_stopping_validation_size,
+            # random_state=self.random_seed,  this will be ensured by set_seeds
+            stratify=stratify
+        )
+        eval_set = eval_set if eval_set else []
+        eval_set = sequence_to_list(eval_set)
+        eval_set.append((X_valid, y_valid))
+        eval_name = eval_name if eval_name else []
+        eval_name = sequence_to_list(eval_name)
+        eval_name.append('validation_es')
+    return eval_set, eval_name
 
 
 def init_factory(
@@ -210,9 +225,11 @@ def init_factory(
     return init_fn_step_3, init_doc
 
 
-def fit_factory(cls, fn_to_run_before_fit=None):
+def fit_factory(cls):
     @extends(cls.fit)
-    def fit_fn(self, X, y, *args, task=None, cat_features=None, eval_set=None, **kwargs):
+    def fit_fn(self, X, y, *args, task=None, cat_features=None, eval_set=None, eval_name=None, eval_metric=None,
+               report_to_ray=False, **kwargs):
+
         if isinstance(y, pd.Series):
             y = y.to_frame()
 
@@ -235,26 +252,29 @@ def fit_factory(cls, fn_to_run_before_fit=None):
                 raise (ValueError('This model has map_task_to_default_values, which means it has some values that are '
                                   'task dependent. You must provide the task when calling fit.'))
 
-        if fn_to_run_before_fit is not None:
-            X, y, task, cat_features, eval_set, args, kwargs = fn_to_run_before_fit(self, X, y, task, cat_features,
-                                                                                    eval_set, *args, **kwargs)
+        if hasattr(self, 'auto_early_stopping'):
+            eval_set, eval_name = fn_to_add_auto_early_stopping(self, X, y, task, eval_set, eval_name)
 
-        if isinstance(self, DNNModel):
-            kwargs['task'] = task
-            kwargs['cat_features'] = cat_features
-            kwargs['eval_set'] = eval_set
-        elif isinstance(self, XGBModel):
-            if cat_features is not None:
-                self.set_params(**{'enable_categorical': True})
-            kwargs['eval_set'] = eval_set
-        elif isinstance(self, CatBoost):
-            self.set_params(**{'cat_features': cat_features})
-            kwargs['eval_set'] = eval_set
-        elif isinstance(self, LGBMModel):
-            if cat_features is not None:
-                kwargs['categorical_feature'] = cat_features
-            kwargs['eval_set'] = eval_set
-        return cls.fit(self, X, y, *args, **kwargs)
+        # if we have a before_fit method, we call it here
+        # it can modify the arguments of fit that will be passed to the original fit method
+        # this way we can integrate for example the modifications on eval_set, eval_name etc
+        cls_signature = signature(cls.fit)
+        bound_args = cls_signature.bind_partial(self, X, y, *args, **kwargs)
+        cls_parameters = cls_signature.parameters
+        fit_arguments = bound_args.arguments
+        extra_arguments = dict(task=task, cat_features=cat_features, eval_set=eval_set, eval_name=eval_name,
+                               eval_metric=eval_metric, report_to_ray=report_to_ray)
+        # if any extra_arguments are in the parameters of the original fit method, we integrate them back
+        for key, value in extra_arguments.copy().items():
+            if key in cls_parameters:
+                fit_arguments[key] = value
+                del extra_arguments[key]
+
+        if hasattr(self, 'before_fit'):
+            # fn takes extra_arguments and fit_arguments and returns fit_arguments (possibly modified)
+            fit_arguments = self.before_fit(extra_arguments, **fit_arguments)
+
+        return cls.fit(**fit_arguments)
 
     doc = cleandoc("""Wrapper around the fit method of the scikit-learn class.
 
@@ -273,7 +293,7 @@ def fit_factory(cls, fn_to_run_before_fit=None):
 class TabBenchmarkModelFactory(type):
     @classmethod  # to be cleaner (not change the signature of __new__)
     def from_sk_cls(cls, sk_cls, extended_init_kwargs=None, map_default_values_change=None,
-                    has_auto_early_stopping=False, map_task_to_default_values=None, fn_to_run_before_fit=None,
+                    has_auto_early_stopping=False, map_task_to_default_values=None,
                     dnn_architecture_cls=None, add_lr_and_weight_decay_params=False, extra_dct=None):
         extended_init_kwargs = extended_init_kwargs if extended_init_kwargs else {}
 
@@ -303,7 +323,7 @@ class TabBenchmarkModelFactory(type):
             doc = init_doc
         dct = {
             '__init__': init_fn,
-            'fit': fit_factory(sk_cls, fn_to_run_before_fit),
+            'fit': fit_factory(sk_cls),
             '__doc__': doc
         }
         if extra_dct:

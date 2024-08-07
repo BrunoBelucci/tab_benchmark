@@ -1,11 +1,9 @@
-from copy import deepcopy
 from xgboost import XGBClassifier as OriginalXGBClassifier, XGBRegressor as OriginalXGBRegressor, XGBModel
-from catboost import CatBoost
-from lightgbm import LGBMModel
-from tab_benchmark.models.factories import TabBenchmarkModelFactory
-from tab_benchmark.utils import (extends, train_test_split_forced, sequence_to_list, check_if_arg_in_args_of_fn,
-                                 check_if_arg_in_kwargs_of_fn)
+from xgboost.callback import TrainingCallback, _Model
+from tab_benchmark.models.factories import TabBenchmarkModelFactory, fn_to_add_auto_early_stopping
+from tab_benchmark.utils import extends
 from ray import tune
+from ray.train import report
 
 
 n_estimators_gbdt = 10000
@@ -55,22 +53,25 @@ def get_recommended_params_xgboost():
     return default_values_from_search_space
 
 
-def fn_to_run_before_fit_for_gbdt_and_dnn(self, X, y, task, cat_features, eval_set, *args, **kwargs):
-    if self.auto_early_stopping:
-        if self.task_ == 'classification' or self.task_ == 'binary_classification':
-            stratify = y
-        else:
-            stratify = None
-        X, X_valid, y, y_valid = train_test_split_forced(
-            X, y,
-            test_size_pct=self.early_stopping_validation_size,
-            # random_state=self.random_seed,  this will be ensured by set_seeds
-            stratify=stratify
-        )
-        eval_set = eval_set if eval_set else []
-        eval_set = sequence_to_list(eval_set)
-        eval_set.append((X_valid, y_valid))
-    return X, y, task, cat_features, eval_set, args, kwargs
+# class ReportToRayXGBoost(TrainingCallback):
+#     def __init__(self):
+#
+#     def after_iteration(self, model: _Model, epoch: int, evals_log):
+#         for eval_name, metric_dict in evals_log.items():
+#             for metric_name, metric_values in metric_dict.items():
+#                 report({f'{eval_name}_{metric_name}': metric_values[-1]})
+
+
+def before_fit_xgboost(self, extra_arguments, **fit_arguments):
+    cat_features = extra_arguments.get('cat_features')
+    report_to_ray = extra_arguments.get('report_to_ray')
+    if cat_features is not None:
+        self.set_params(**{'enable_categorical': True})
+    if report_to_ray:
+        if self.callbacks is None:
+            self.callbacks = []
+        # self.callbacks.append(ReportToRayXGBoost())
+    return fit_arguments
 
 
 # Just to get the parameters of the XGBModel, because XGBClassifier and XGBRegressor do not show them
@@ -99,7 +100,6 @@ XGBClassifier = TabBenchmarkModelFactory.from_sk_cls(
         'binary_classification': {'objective': 'binary:logistic', 'eval_metric': 'logloss'},
     },
     has_auto_early_stopping=True,
-    fn_to_run_before_fit=fn_to_run_before_fit_for_gbdt_and_dnn,
     extended_init_kwargs={
         'categorical_encoder': 'ordinal',
         'categorical_type': 'category',
@@ -107,7 +107,8 @@ XGBClassifier = TabBenchmarkModelFactory.from_sk_cls(
     },
     extra_dct={
         'create_search_space': staticmethod(create_search_space_xgboost),
-        'get_recommended_params': staticmethod(get_recommended_params_xgboost)
+        'get_recommended_params': staticmethod(get_recommended_params_xgboost),
+        'before_fit': before_fit_xgboost,
     }
 )
 
@@ -118,7 +119,6 @@ XGBRegressor = TabBenchmarkModelFactory.from_sk_cls(
         'eval_metric': 'rmse'
     },
     has_auto_early_stopping=True,
-    fn_to_run_before_fit=fn_to_run_before_fit_for_gbdt_and_dnn,
     extended_init_kwargs={
         'categorical_encoder': 'ordinal',
         'categorical_type': 'category',
@@ -126,6 +126,7 @@ XGBRegressor = TabBenchmarkModelFactory.from_sk_cls(
     },
     extra_dct={
         'create_search_space': staticmethod(create_search_space_xgboost),
-        'get_recommended_params': staticmethod(get_recommended_params_xgboost)
+        'get_recommended_params': staticmethod(get_recommended_params_xgboost),
+        'before_fit': before_fit_xgboost,
     }
 )

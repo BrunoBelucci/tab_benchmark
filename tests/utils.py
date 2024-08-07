@@ -99,16 +99,23 @@ def _test_fit_fn(model_class, model_kwargs, n_features, n_cat_features, samples,
 
 
 def fit_model(model_class, model_kwargs, X_train, y_train, cat_features_names, cont_features_names,
-              orderly_features_names, task):
+              orderly_features_names, task, X_test=None, y_test=None):
     if ('classifier' in model_class._estimator_type and task in ('classification', 'binary_classification')) or (
             'regressor' in model_class._estimator_type and task in ('regression', 'multi_regression')):
         if task == 'classification' and max(y_train.value_counts()) < 10:
             model_kwargs['categorical_target_min_frequency'] = 1
         model = model_class(**model_kwargs)
         model.create_preprocess_pipeline(task, cat_features_names, cont_features_names, orderly_features_names)
-        model_pipeline = model.create_model_pipeline()
-        model_pipeline.fit(X_train, y_train, )
-        return model_pipeline
+        model.create_model_pipeline()
+        data_preprocess_pipeline_ = model.data_preprocess_pipeline_
+        target_preprocess_pipeline_ = model.target_preprocess_pipeline_
+        X_train = data_preprocess_pipeline_.fit_transform(X_train)
+        y_train = target_preprocess_pipeline_.fit_transform(y_train)
+        if X_test is not None and y_test is not None:
+            X_test = data_preprocess_pipeline_.transform(X_test)
+            y_test = target_preprocess_pipeline_.transform(y_test.to_frame())
+        model.fit(X_train, y_train, task=task, cat_features=cat_features_names)
+        return model, X_test, y_test
     else:
         pytest.skip('Model class and task do not match')
 
@@ -128,8 +135,9 @@ def _test_predict_fn(model_class, model_kwargs, task):
                                                                                                             n_classes,
                                                                                                             10, task)
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-    model = fit_model(model_class, model_kwargs, X_train, y_train, cat_features_names, cont_features_names,
-                      orderly_features_names, task)
+    model, X_test, y_test = fit_model(model_class, model_kwargs, X_train, y_train, cat_features_names,
+                                      cont_features_names,
+                                      orderly_features_names, task, X_test, y_test)
     y_pred_1 = model.predict(X_test)
     y_pred_2 = model.predict(X_test)
     assert np.isclose(y_pred_1.astype(float), y_pred_2.astype(float)).all()
@@ -146,8 +154,9 @@ def _test_predict_proba_fn(model_class, model_kwargs, task):
                                                                                                             n_classes,
                                                                                                             10, task)
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-    model = fit_model(model_class, model_kwargs, X_train, y_train, cat_features_names, cont_features_names,
-                      orderly_features_names, task)
+    model, X_test, y_test = fit_model(model_class, model_kwargs, X_train, y_train, cat_features_names,
+                                      cont_features_names,
+                                      orderly_features_names, task, X_test, y_test)
     y_pred_1 = model.predict_proba(X_test)
     y_pred_2 = model.predict_proba(X_test)
     assert np.isclose(y_pred_1, y_pred_2).all()

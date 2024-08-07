@@ -1,8 +1,7 @@
 from catboost import CatBoostRegressor as OriginalCatBoostRegressor, CatBoostClassifier as OriginalCatBoostClassifier
 from ray import tune
-from tab_benchmark.models.xgboost import fn_to_run_before_fit_for_gbdt_and_dnn, n_estimators_gbdt, \
-    early_stopping_patience_gbdt
-from tab_benchmark.models.factories import TabBenchmarkModelFactory
+from tab_benchmark.models.xgboost import n_estimators_gbdt, early_stopping_patience_gbdt
+from tab_benchmark.models.factories import TabBenchmarkModelFactory, fn_to_add_auto_early_stopping
 
 
 def create_search_space_catboost():
@@ -66,6 +65,12 @@ def output_dir_set(self, value):
 output_dir_property = property(output_dir_get, output_dir_set)
 
 
+def before_fit_catboost(self, extra_arguments, **fit_arguments):
+    cat_features = extra_arguments.get('cat_features')
+    self.set_params(**{'cat_features': cat_features})
+    return fit_arguments
+
+
 CatBoostRegressor = TabBenchmarkModelFactory.from_sk_cls(
     OriginalCatBoostRegressor,
     map_task_to_default_values={
@@ -73,7 +78,6 @@ CatBoostRegressor = TabBenchmarkModelFactory.from_sk_cls(
         'multi_regression': {'loss_function': 'MultiRMSE', 'eval_metric': 'MultiRMSE'},
     },
     has_auto_early_stopping=True,
-    fn_to_run_before_fit=fn_to_run_before_fit_for_gbdt_and_dnn,
     extended_init_kwargs={
         'categorical_encoder': 'ordinal',
         'categorical_type': 'int32',
@@ -83,7 +87,8 @@ CatBoostRegressor = TabBenchmarkModelFactory.from_sk_cls(
         'n_jobs': n_jobs_property,
         'output_dir': output_dir_property,
         'create_search_space': staticmethod(create_search_space_catboost),
-        'get_recommended_params': staticmethod(get_recommended_params_catboost)
+        'get_recommended_params': staticmethod(get_recommended_params_catboost),
+        'before_fit': before_fit_catboost
     }
 )
 
@@ -95,7 +100,6 @@ CatBoostClassifier = TabBenchmarkModelFactory.from_sk_cls(
         'binary_classification': {'loss_function': 'Logloss', 'eval_metric': 'Logloss'},
     },
     has_auto_early_stopping=True,
-    fn_to_run_before_fit=fn_to_run_before_fit_for_gbdt_and_dnn,
     extended_init_kwargs={
         'categorical_encoder': 'ordinal',
         'categorical_type': 'int32',
@@ -105,6 +109,7 @@ CatBoostClassifier = TabBenchmarkModelFactory.from_sk_cls(
         'n_jobs': n_jobs_property,
         'output_dir': output_dir_property,
         'create_search_space': staticmethod(create_search_space_catboost),
-        'get_recommended_params': staticmethod(get_recommended_params_catboost)
+        'get_recommended_params': staticmethod(get_recommended_params_catboost),
+        'before_fit': before_fit_catboost
     }
 )

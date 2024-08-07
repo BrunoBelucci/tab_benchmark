@@ -3,8 +3,7 @@ from typing import Optional, Dict, Any
 from lightgbm import LGBMRegressor as OriginalLGBMRegressor, LGBMClassifier as OriginalLGBMClassifier
 from lightgbm.basic import _is_numpy_1d_array, _to_string, _NUMERIC_TYPES, _is_numeric
 from ray import tune
-from tab_benchmark.models.xgboost import fn_to_run_before_fit_for_gbdt_and_dnn, n_estimators_gbdt, \
-    early_stopping_patience_gbdt
+from tab_benchmark.models.xgboost import n_estimators_gbdt, early_stopping_patience_gbdt
 from tab_benchmark.models.factories import TabBenchmarkModelFactory
 import lightgbm.basic
 
@@ -77,6 +76,13 @@ def get_recommended_params_lgbm():
     return default_values_from_search_space
 
 
+def before_fit_lgbm(self, extra_arguments, **fit_arguments):
+    cat_features = extra_arguments.get('cat_features')
+    if cat_features is not None:
+        fit_arguments['categorical_feature'] = cat_features
+    return fit_arguments
+
+
 LGBMRegressor = TabBenchmarkModelFactory.from_sk_cls(
     OriginalLGBMRegressor,
     map_default_values_change={
@@ -84,7 +90,6 @@ LGBMRegressor = TabBenchmarkModelFactory.from_sk_cls(
         'metric': 'l2'
     },
     has_auto_early_stopping=True,
-    fn_to_run_before_fit=fn_to_run_before_fit_for_gbdt_and_dnn,
     extended_init_kwargs={
         'categorical_encoder': 'ordinal',
         'categorical_type': 'category',
@@ -92,7 +97,8 @@ LGBMRegressor = TabBenchmarkModelFactory.from_sk_cls(
     },
     extra_dct={
         'create_search_space': staticmethod(create_search_space_lgbm),
-        'get_recommended_params': staticmethod(get_recommended_params_lgbm)
+        'get_recommended_params': staticmethod(get_recommended_params_lgbm),
+        'before_fit': before_fit_lgbm
     }
 )
 
@@ -104,7 +110,6 @@ LGBMClassifier = TabBenchmarkModelFactory.from_sk_cls(
         'classification': {'objective': 'multiclass', 'metric': 'multi_logloss'},
     },
     has_auto_early_stopping=True,
-    fn_to_run_before_fit=fn_to_run_before_fit_for_gbdt_and_dnn,
     extended_init_kwargs={
         'categorical_encoder': 'ordinal',
         'categorical_type': 'category',
@@ -112,6 +117,7 @@ LGBMClassifier = TabBenchmarkModelFactory.from_sk_cls(
     },
     extra_dct={
         'create_search_space': staticmethod(create_search_space_lgbm),
-        'get_recommended_params': staticmethod(get_recommended_params_lgbm)
+        'get_recommended_params': staticmethod(get_recommended_params_lgbm),
+        'before_fit': before_fit_lgbm
     }
 )

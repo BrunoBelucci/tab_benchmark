@@ -39,6 +39,8 @@ def sequence_to_list(sequence):
     if isinstance(sequence, list):
         return sequence
     else:
+        if isinstance(sequence, str):
+            return [sequence]
         # we assume that the sequence can be converted to a list
         return list(sequence)
 
