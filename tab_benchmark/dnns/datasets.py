@@ -110,7 +110,7 @@ class TabularDataset(Dataset):
         """Gets the data at a given index."""
         x_continuous = self.x_continuous[idx]
         x_categorical = self.x_categorical[idx]
-        data = {'x_continuous': x_continuous, 'x_categorical': x_categorical, 'name': self.name}
+        data = {'x_continuous': x_continuous, 'x_categorical': x_categorical}
         if self.y is not None:
             y = self.y[idx]
             data['y'] = y
@@ -215,7 +215,7 @@ class TabularDataModule(L.LightningDataModule):
         self.continuous_type = continuous_type
         self.categorical_type = categorical_type
         self.train_dataset = None
-        self.valid_datasets = None
+        self.validation_datasets = None
         self.test_dataset = None
 
     def setup(self, stage: str):
@@ -235,10 +235,10 @@ class TabularDataModule(L.LightningDataModule):
             if self.eval_sets:
                 if self.eval_names is None:
                     self.eval_names = [f'validation_{i}' for i in range(len(self.eval_sets))]
-                self.valid_datasets = {}
+                self.validation_datasets = {}
                 for eval_set, name in zip(self.eval_sets, self.eval_names):
                     (x_valid, y_valid) = eval_set
-                    self.valid_datasets[name] = (
+                    self.validation_datasets[name] = (
                         TabularDataset(x=x_valid, y=y_valid, task=self.task, name=name,
                                        categorical_features_idx=self.categorical_features_idx,
                                        categorical_dims=self.categorical_dims, store_as_tensor=self.store_as_tensor,
@@ -259,9 +259,10 @@ class TabularDataModule(L.LightningDataModule):
 
     def val_dataloader(self):
         """Returns the DataLoader for the validation set."""
-        if self.valid_datasets:
+        if self.validation_datasets:
             return [DataLoader(valid_dataset, batch_size=self.batch_size, num_workers=self.num_workers,
-                               pin_memory=True, drop_last=False) for name, valid_dataset in self.valid_datasets.items()]
+                               pin_memory=True, drop_last=False)
+                    for name, valid_dataset in self.validation_datasets.items()]
         else:
             # TODO: choose whether to return None or an empty DataLoader
             return DataLoader(EmptyDataset(), batch_size=self.batch_size, drop_last=True)

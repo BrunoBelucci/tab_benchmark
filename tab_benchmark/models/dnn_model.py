@@ -16,26 +16,26 @@ from torch import nn
 import mlflow
 from torch.utils.data import DataLoader
 from tab_benchmark.dnns.callbacks import DefaultLogs
+from tab_benchmark.dnns.callbacks.evaluate_metric import EvaluateMetric
 from tab_benchmark.dnns.datasets import TabularDataModule, TabularDataset
 from tab_benchmark.dnns.modules import TabularModule
 from tab_benchmark.utils import sequence_to_list
 
 
-def get_early_stopping_callback(eval_sets, early_stopping_patience) -> list[tuple[type[Callback], dict]]:
+def get_early_stopping_callback(eval_names, early_stopping_patience) -> list[tuple[type[Callback], dict]]:
     if early_stopping_patience > 0:
-        if eval_sets is None or len(eval_sets) < 1:
+        if eval_names is None or len(eval_names) < 1:
             return [
-                (EarlyStopping, dict(monitor='train_loss_0', patience=early_stopping_patience,
+                (EarlyStopping, dict(monitor='train_loss', patience=early_stopping_patience,
                                      min_delta=0)),
-                (ModelCheckpoint, dict(monitor='train_loss_0', every_n_epochs=1, save_last=True)),
+                (ModelCheckpoint, dict(monitor='train_loss', every_n_epochs=1, save_last=True)),
             ]
-        else:
-            n_validation_set = len(eval_sets) - 1  # last eval_set is used for early stopping
+        else:  # last eval_set / eval_name is used for early stopping
             return [
-                (EarlyStopping, dict(monitor=f'validation_loss_{n_validation_set}',
+                (EarlyStopping, dict(monitor=f'{eval_names[-1]}_loss',
                                      patience=early_stopping_patience,
                                      min_delta=0)),
-                (ModelCheckpoint, dict(monitor=f'validation_loss_{n_validation_set}',
+                (ModelCheckpoint, dict(monitor=f'{eval_names[-1]}_loss',
                                        every_n_epochs=1, save_last=True)),
             ]
     else:
@@ -119,6 +119,7 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
             output_dir: Optional[Path | str] = None,
             dnn_architecture_class: type[nn.Module] = None,
             loss_fn: Optional[Callable] = torch.nn.functional.mse_loss,
+            eval_metric: Optional[Sequence[str]] = None,
             architecture_params: Optional[dict] = None,
             architecture_params_not_from_dataset: Optional[dict] = None,
             torch_optimizer_tuple: Optional[tuple[Callable, dict]] = None,
@@ -142,6 +143,7 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
         self.output_dir = output_dir if output_dir else Path.cwd() / 'dnn_model_output'
         self.dnn_architecture_class = dnn_architecture_class
         self.loss_fn = loss_fn
+        self.eval_metric = eval_metric
         self.architecture_params = architecture_params if architecture_params else {}
         self.architecture_params_not_from_dataset = architecture_params_not_from_dataset if (
             architecture_params_not_from_dataset) else {}
@@ -194,7 +196,7 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
             delete_checkpoints: bool = True,
             eval_set: Optional[Sequence[tuple[pd.DataFrame, pd.DataFrame]]] = None,
             eval_name: Optional[Sequence[str]] = None,
-            eval_metric: Optional[Sequence[str]] = None,
+            report_to_ray: bool = False,
     ):
         """Fit the model.
 
@@ -216,23 +218,19 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
             Evaluation sets. The last set will be used as validation for early stopping.
         eval_name:
             Names of the evaluation sets. If None, they will be named as 'eval_i', where i is the index of the set.
-        eval_metric:
-            Metrics to be evaluated. If None, the loss_fn will be used.
         """
         if isinstance(y, pd.Series):
             y = y.to_frame()
         # we will consider that the last set of eval_set will be used as validation
-        # eval_name are the names of each set
         # we will consider that the last metric of eval_metric will be used as validation
+        # if no eval_metric is provided, we use only the loss function
         eval_set = sequence_to_list(eval_set) if eval_set is not None else []
         eval_name = sequence_to_list(eval_name) if eval_name is not None else []
         if eval_set and not eval_name:
-            eval_name = [f'eval_{i}' for i in range(len(eval_set))]
+            eval_name = [f'validation_{i}' for i in range(len(eval_set))]
         if len(eval_set) != len(eval_name):
             raise AttributeError('eval_sets and eval_names should have the same length')
-
-        # not using for the moment...
-        eval_metric = sequence_to_list(eval_metric) if eval_metric is not None else []
+        eval_metric = sequence_to_list(self.eval_metric) if self.eval_metric is not None else []
 
         cat_features = sequence_to_list(cat_features) if cat_features is not None else []
         if cat_features:
@@ -279,9 +277,18 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
                 lit_scheduler_config=self.torch_scheduler_tuple[2])
 
         # initialize callbacks
-        callbacks_tuples = get_early_stopping_callback(eval_set, self.early_stopping_patience)
+        callbacks_tuples = get_early_stopping_callback(eval_name, self.early_stopping_patience)
+
         if self.log_losses:
-            callbacks_tuples.append((DefaultLogs, {}))
+            if not eval_metric:
+                is_default_metric = True
+            else:
+                is_default_metric = False
+            callbacks_tuples.append((DefaultLogs, dict(report_to_ray=report_to_ray,
+                                                       is_default_metric=is_default_metric)))
+        if eval_metric:
+            callbacks_tuples.append((EvaluateMetric, dict(eval_metric=eval_metric, eval_name=eval_name,
+                                                          report_to_ray=report_to_ray, last_metric_as_default=True)))
         callbacks_tuples.extend(self.lit_callbacks_tuples)
         self.lit_callbacks_ = [fn(**kwargs) for fn, kwargs in callbacks_tuples]
 

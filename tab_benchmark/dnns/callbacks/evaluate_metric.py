@@ -10,7 +10,8 @@ from tab_benchmark.utils import evaluate_metric, get_metric_fn
 
 
 class EvaluateMetric(Callback):
-    def __init__(self, eval_metric, eval_name: Optional[str | list[str]] = None, report_to_ray: bool = False):
+    def __init__(self, eval_metric, eval_name: Optional[str | list[str]] = None, report_to_ray: bool = False,
+                 default_metric: Optional[str] = None, last_metric_as_default: bool = False):
         if isinstance(eval_metric, str):
             eval_metric = [eval_metric]
         self.eval_metric = eval_metric
@@ -25,6 +26,9 @@ class EvaluateMetric(Callback):
         self.eval_name = eval_name
         self.validation_predictions = validation_predictions
         self.report_to_ray = report_to_ray
+        if last_metric_as_default:
+            default_metric = eval_metric[-1]
+        self.default_metric = default_metric
 
     def on_validation_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0):
         if self.eval_name:
@@ -45,6 +49,7 @@ class EvaluateMetric(Callback):
         for name, predictions in self.validation_predictions.items():
             y_pred = torch.vstack(predictions)
             y_true = trainer.datamodule.valid_datasets[name].y
+            scores = {}
             for metric in self.eval_metric:
                 if metric == 'auc':
                     n_classes = len(torch.unique(trainer.datamodule.train_dataset.y))
@@ -55,9 +60,15 @@ class EvaluateMetric(Callback):
                     y_pred_ = torch.softmax(y_pred, dim=1)
                 else:
                     y_pred_ = y_pred
-                score = evaluate_metric(y_true, y_pred_, metric_fn, n_classes)
-                pl_module.log(f'{name}_{metric}', score, on_epoch=True, on_step=False, prog_bar=True,
-                              logger=True)
-                if self.report_to_ray:
-                    report(f'{name}_{metric}', score)
+                scores[metric] = evaluate_metric(y_true, y_pred_, metric_fn, n_classes)
+
+            if self.default_metric is not None:
+                if self.default_metric != 'loss_metric':
+                    scores['default'] = scores[self.default_metric]
+
+            pl_module.log_dict({f'{name}_{metric}': score for metric, score in scores.items()}, on_epoch=True,
+                               on_step=False, prog_bar=True, logger=True)
+            if self.report_to_ray:
+                report({f'{name}_{metric}': score for metric, score in scores.items()})
+
             predictions.clear()
