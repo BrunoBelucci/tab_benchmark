@@ -199,8 +199,12 @@ class BaseExperiment:
         log_and_print_msg('Starting experiment...', **kwargs_to_log)
 
     def get_model(self, model_nickname, seed_model, model_params=None, models_dict=models_dict, n_jobs=1,
-                  logging_to_mlflow=False):
+                  logging_to_mlflow=False, create_validation_set=False):
         model = get_model(model_nickname, seed_model, model_params, models_dict, n_jobs, output_dir=self.output_dir)
+        if create_validation_set:
+            # we disable auto early stopping when creating a validation set, because we will use it to validate
+            if hasattr(model, 'auto_early_stopping'):
+                model.auto_early_stopping = False
         if logging_to_mlflow:
             model_params = vars(model).copy()
             if hasattr(model, 'loss_fn'):
@@ -265,15 +269,10 @@ class BaseExperiment:
             # load model
             model = self.get_model(self.model_nickname, seed_model, model_params=model_params,
                                    models_dict=self.models_dict,
-                                   n_jobs=n_jobs, logging_to_mlflow=logging_to_mlflow)
+                                   n_jobs=n_jobs, logging_to_mlflow=logging_to_mlflow,
+                                   create_validation_set=create_validation_set)
 
-            # fit model
-            # data here is already preprocessed
-            model, X_train, y_train, X_test, y_test, X_validation, y_validation = fit_model(
-                model, X, y, cat_ind, att_names, task_name, train_indices, test_indices, validation_indices,
-                logging_to_mlflow, **fit_params)
-
-            # evaluate model
+            # get metrics
             if task_name in ('classification', 'binary_classification'):
                 metrics = ['logloss', 'auc']
                 default_metric = 'logloss'
@@ -285,6 +284,13 @@ class BaseExperiment:
             else:
                 raise NotImplementedError
 
+            # fit model
+            # data here is already preprocessed
+            model, X_train, y_train, X_test, y_test, X_validation, y_validation = fit_model(
+                model, X, y, cat_ind, att_names, task_name, train_indices, test_indices, validation_indices,
+                logging_to_mlflow, **fit_params)
+
+            # evaluate model
             results = evaluate_model(model, (X_test, y_test), 'test', metrics, default_metric, n_classes,
                                      logging_to_mlflow)
             if create_validation_set:
@@ -333,7 +339,8 @@ class BaseExperiment:
                                                            self.validation_resample_strategy),
                 'pct_validation': kwargs.pop('pct_validation', self.pct_validation),
             })
-        unique_params = dict(model_nickname=model_nickname, model_params=model_params, seed_model=seed_model, **kwargs)
+        unique_params = dict(model_nickname=model_nickname, model_params=model_params, seed_model=seed_model,
+                             create_validation_set=create_validation_set, fit_params=fit_params, **kwargs)
         possible_existent_run, logging_to_mlflow = treat_mlflow(experiment_name, mlflow_tracking_uri, check_if_exists,
                                                                 **unique_params)
 
