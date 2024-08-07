@@ -1,5 +1,9 @@
 from copy import deepcopy
+
+import mlflow
 import torch
+from lightning.pytorch.loggers import MLFlowLogger
+
 from tab_benchmark.dnns.architectures import Node, Saint, TabTransformer, TabNet
 from tab_benchmark.dnns.architectures.mlp import MLP
 from tab_benchmark.dnns.architectures.resnet import ResNet
@@ -9,6 +13,14 @@ from tab_benchmark.dnns.utils.external.node.lib.facebook_optimizer.optimizer imp
 from tab_benchmark.models.dnn_model import DNNModel
 from tab_benchmark.models.factories import TabBenchmarkModelFactory
 
+
+def before_fit_dnn(self, extra_arguments, **fit_arguments):
+    if self.log_to_mlflow_if_running:
+        run = mlflow.active_run()
+        if run:
+            self.lit_trainer_params['logger'] = MLFlowLogger(run_id=run.info.run_id,
+                                                             tracking_uri=mlflow.get_tracking_uri())
+    return fit_arguments
 
 MLPModel = TabBenchmarkModelFactory.from_sk_cls(
     DNNModel,

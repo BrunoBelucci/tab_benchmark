@@ -62,9 +62,6 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
         It adds EarlyStopping callback. If 0, it will not be added.
     use_best_model:
         If True, it will load the best model. Default is True.
-    log_to_mlflow_if_running:
-        If True, it will log to MLFlow if running. It adds a MLFlowLogger as the logger to lit_trainer_params.
-        Default is True.
     output_dir:
         Directory to save the model.
     dnn_architecture_class:
@@ -115,7 +112,6 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
             n_jobs: int = 0,  # will add num_workers to lit_datamodule_kwargs
             early_stopping_patience: int = 40,  # will add EarlyStopping callback, 0 to disable
             use_best_model: bool = True,  # will load the best model if True, False to load the last model
-            log_to_mlflow_if_running: bool = True,
             output_dir: Optional[Path | str] = None,
             dnn_architecture_class: type[nn.Module] = None,
             loss_fn: Optional[Callable] = torch.nn.functional.mse_loss,
@@ -139,7 +135,6 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
         self.n_jobs = n_jobs
         self.early_stopping_patience = early_stopping_patience
         self.use_best_model = use_best_model
-        self.log_to_mlflow_if_running = log_to_mlflow_if_running
         self.output_dir = output_dir if output_dir else Path.cwd() / 'dnn_model_output'
         self.dnn_architecture_class = dnn_architecture_class
         self.loss_fn = loss_fn
@@ -224,12 +219,6 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
         # we will consider that the last set of eval_set will be used as validation
         # we will consider that the last metric of eval_metric will be used as validation
         # if no eval_metric is provided, we use only the loss function
-        eval_set = sequence_to_list(eval_set) if eval_set is not None else []
-        eval_name = sequence_to_list(eval_name) if eval_name is not None else []
-        if eval_set and not eval_name:
-            eval_name = [f'validation_{i}' for i in range(len(eval_set))]
-        if len(eval_set) != len(eval_name):
-            raise AttributeError('eval_sets and eval_names should have the same length')
         eval_metric = sequence_to_list(self.eval_metric) if self.eval_metric is not None else []
 
         cat_features = sequence_to_list(cat_features) if cat_features is not None else []
@@ -298,10 +287,6 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
             trainer_kwargs['max_epochs'] = self.max_epochs
         if self.add_default_root_dir_to_lit_trainer_kwargs:
             trainer_kwargs['default_root_dir'] = self.output_dir
-        if self.log_to_mlflow_if_running:
-            run = mlflow.active_run()
-            if run:
-                trainer_kwargs['logger'] = MLFlowLogger(run_id=run.info.run_id, tracking_uri=mlflow.get_tracking_uri())
         trainer_kwargs.update(self.lit_trainer_params)
         self.lit_trainer_ = L.Trainer(**trainer_kwargs, callbacks=self.lit_callbacks_)
 

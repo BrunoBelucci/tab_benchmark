@@ -53,7 +53,6 @@ def init_factory(
         # dnn architecture
         dnn_architecture_cls=None,
         add_lr_and_weight_decay_params=False
-
 ):
     map_task_to_default_values_outer = map_task_to_default_values
 
@@ -143,16 +142,22 @@ def init_factory(
     if has_auto_early_stopping:
         @extends(init_fn_step_1)
         def init_fn_step_2(self, *args, auto_early_stopping: bool = True, early_stopping_validation_size=0.1,
+                           log_to_mlflow_if_running: bool = True,
                            **kwargs):
             init_fn_step_1(self, *args, **kwargs)
             self.auto_early_stopping = auto_early_stopping
             self.early_stopping_validation_size = early_stopping_validation_size
+            self.log_to_mlflow_if_running = log_to_mlflow_if_running
 
         init_doc += "\n"
         init_doc += cleandoc("""
         auto_early_stopping:
             Whether to use early stopping automatically, i.e., split the training data into training and validation sets
             and stop training when the validation score does not improve anymore.
+        early_stopping_validation_size:
+            Size of the validation set when using auto early stopping.
+        log_to_mlflow_if_running:
+            Whether to log intermediate results to MLflow if it is running.
         """)
 
     else:
@@ -227,8 +232,15 @@ def init_factory(
 
 def fit_factory(cls):
     @extends(cls.fit)
-    def fit_fn(self, X, y, *args, task=None, cat_features=None, eval_set=None, eval_name=None, eval_metric=None,
+    def fit_fn(self, X, y, *args, task=None, cat_features=None, eval_set=None, eval_name=None,
                report_to_ray=False, **kwargs):
+
+        eval_set = sequence_to_list(eval_set) if eval_set is not None else []
+        eval_name = sequence_to_list(eval_name) if eval_name is not None else []
+        if eval_set and not eval_name:
+            eval_name = [f'validation_{i}' for i in range(len(eval_set))]
+        if len(eval_set) != len(eval_name):
+            raise AttributeError('eval_set and eval_name should have the same length')
 
         if isinstance(y, pd.Series):
             y = y.to_frame()
@@ -262,8 +274,9 @@ def fit_factory(cls):
         bound_args = cls_signature.bind_partial(self, X, y, *args, **kwargs)
         cls_parameters = cls_signature.parameters
         fit_arguments = bound_args.arguments
+        del fit_arguments['self']
         extra_arguments = dict(task=task, cat_features=cat_features, eval_set=eval_set, eval_name=eval_name,
-                               eval_metric=eval_metric, report_to_ray=report_to_ray)
+                               report_to_ray=report_to_ray)
         # if any extra_arguments are in the parameters of the original fit method, we integrate them back
         for key, value in extra_arguments.copy().items():
             if key in cls_parameters:
@@ -274,7 +287,7 @@ def fit_factory(cls):
             # fn takes extra_arguments and fit_arguments and returns fit_arguments (possibly modified)
             fit_arguments = self.before_fit(extra_arguments, **fit_arguments)
 
-        return cls.fit(**fit_arguments)
+        return cls.fit(self, **fit_arguments)
 
     doc = cleandoc("""Wrapper around the fit method of the scikit-learn class.
 

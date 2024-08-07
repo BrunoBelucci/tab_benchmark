@@ -94,12 +94,15 @@ def fit_model(model, X, y, cat_ind, att_names, task_name, train_indices, test_in
         X_validation = data_preprocess_pipeline_.transform(X_validation)
         y_validation = target_preprocess_pipeline_.transform(y_validation.to_frame())
         eval_set = [(X_validation, y_validation)]
+        eval_name = ['validation']
     else:
         X_validation = None
         y_validation = None
         eval_set = None
+        eval_name = None
 
-    model.fit(X_train, y_train, task=task_name, cat_features=cat_features_names, eval_set=eval_set, **kwargs)
+    model.fit(X_train, y_train, task=task_name, cat_features=cat_features_names, eval_set=eval_set, eval_name=eval_name,
+              **kwargs)
     return model, X_train, y_train, X_test, y_test, X_validation, y_validation
 
 
