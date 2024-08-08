@@ -5,12 +5,13 @@ import mlflow
 from tab_benchmark.benchmark.base_experiment import BaseExperiment, log_and_print_msg
 from tab_benchmark.benchmark.utils import treat_mlflow, get_search_algorithm_tune_config_run_config
 from tab_benchmark.utils import get_git_revision_hash, flatten_dict, extends
+from tab_benchmark.benchmark.benchmarked_models import models_dict
 
 
 class HPOExperiment(BaseExperiment):
     @extends(BaseExperiment.__init__)
     def __init__(self, *args, search_algorithm='random_search', n_trials=30, timeout_experiment=10*60*60,
-                 timeout_trial=2*60*60, retrain_best_model=False, max_concurrent=0,  **kwargs):
+                 timeout_trial=2*60*60, retrain_best_model=False, max_concurrent=0, **kwargs):
         super().__init__(*args, **kwargs)
         self.search_algorithm = search_algorithm
         self.n_trials = n_trials
@@ -70,6 +71,8 @@ class HPOExperiment(BaseExperiment):
         trainable = self.get_training_fn_for_hpo(is_openml=is_openml)
         model_cls = models_dict[model_nickname][0]
         search_space, default_values = model_cls.create_search_space()
+        fit_params = fit_params if fit_params is not None else {}
+        fit_params['report_to_ray'] = True
         param_space = dict(
             seed_model=randint(0, 10000),  # seed for model, seed_model will be passed to the search algorithm
             n_jobs=n_jobs,
@@ -79,10 +82,7 @@ class HPOExperiment(BaseExperiment):
         )
         default_param_space = dict(
             seed_model=seed_model,
-            # n_jobs=n_jobs,
             model_params=default_values,
-            # parent_run_uuid=parent_run_uuid,
-            # fit_params=fit_params,
         )
         param_space.update(kwargs)
         search_algorithm, tune_config, run_config = get_search_algorithm_tune_config_run_config(default_param_space,

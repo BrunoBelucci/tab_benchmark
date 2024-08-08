@@ -3,7 +3,7 @@ import subprocess
 import warnings
 from copy import copy
 from functools import partial
-from inspect import signature
+from inspect import signature, Parameter
 from typing import Sequence, Optional
 import numpy as np
 import random
@@ -213,9 +213,14 @@ def extends(fn_being_extended, map_default_values_change=None, additional_params
             parameters = []
             for i, (name, param) in enumerate(fn_being_extended_parameters.items()):
                 if name in map_default_values_change:
-                    param = param.replace(default=map_default_values_change[name])
+                    param = param.replace(default=map_default_values_change.pop(name))
                 if name not in exclude_params:
                     parameters.append(param)
+            if map_default_values_change:
+                for name, default_value in map_default_values_change.items():
+                    if name not in exclude_params:
+                        param = Parameter(name, kind=Parameter.KEYWORD_ONLY , default=default_value)
+                        parameters.append(param)
         else:
             parameters = [param for name, param in fn_being_extended_parameters.items() if name not in exclude_params]
 
