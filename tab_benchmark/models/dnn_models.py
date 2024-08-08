@@ -1,9 +1,7 @@
 from copy import deepcopy
-
 import mlflow
 import torch
 from lightning.pytorch.loggers import MLFlowLogger
-
 from tab_benchmark.dnns.architectures import Node, Saint, TabTransformer, TabNet
 from tab_benchmark.dnns.architectures.mlp import MLP
 from tab_benchmark.dnns.architectures.resnet import ResNet
@@ -22,6 +20,7 @@ def before_fit_dnn(self, extra_arguments, **fit_arguments):
                                                              tracking_uri=mlflow.get_tracking_uri())
     return fit_arguments
 
+
 MLPModel = TabBenchmarkModelFactory.from_sk_cls(
     DNNModel,
     dnn_architecture_cls=MLP,
@@ -39,6 +38,11 @@ MLPModel = TabBenchmarkModelFactory.from_sk_cls(
         'categorical_target_type': 'int64',
         'data_scaler': 'standard',
     },
+    extra_dct={
+        'create_search_space': lambda X: NotImplementedError,
+        'get_recommended_params': lambda X: NotImplementedError,
+        'before_fit': before_fit_dnn,
+    }
 )
 
 
@@ -59,6 +63,11 @@ ResNetModel = TabBenchmarkModelFactory.from_sk_cls(
         'categorical_target_type': 'int64',
         'data_scaler': 'standard',
     },
+    extra_dct={
+        'create_search_space': lambda X: NotImplementedError,
+        'get_recommended_params': lambda X: NotImplementedError,
+        'before_fit': before_fit_dnn,
+    }
 )
 
 
@@ -79,6 +88,11 @@ TransformerModel = TabBenchmarkModelFactory.from_sk_cls(
         'categorical_target_type': 'int64',
         'data_scaler': 'standard',
     },
+    extra_dct={
+        'create_search_space': lambda X: NotImplementedError,
+        'get_recommended_params': lambda X: NotImplementedError,
+        'before_fit': before_fit_dnn,
+    }
 )
 
 
@@ -101,6 +115,11 @@ NodeModel = TabBenchmarkModelFactory.from_sk_cls(
     },
     map_default_values_change={
         'torch_optimizer_tuple': deepcopy((QHAdam, dict(nus=(0.7, 1.0), betas=(0.95, 0.998))))
+    },
+    extra_dct={
+        'create_search_space': lambda X: NotImplementedError,
+        'get_recommended_params': lambda X: NotImplementedError,
+        'before_fit': before_fit_dnn,
     }
 )
 
@@ -124,6 +143,11 @@ SaintModel = TabBenchmarkModelFactory.from_sk_cls(
     },
     map_default_values_change={
         'torch_optimizer_tuple': deepcopy((torch.optim.AdamW, {'lr': 1e-4, 'weight_decay': 1e-2}))
+    },
+    extra_dct={
+        'create_search_space': lambda X: NotImplementedError,
+        'get_recommended_params': lambda X: NotImplementedError,
+        'before_fit': before_fit_dnn,
     }
 )
 
@@ -147,6 +171,11 @@ TabTransformerModel = TabBenchmarkModelFactory.from_sk_cls(
     },
     map_default_values_change={
         'torch_optimizer_tuple': deepcopy((torch.optim.AdamW, {'lr': 1e-4, 'weight_decay': 1e-2}))
+    },
+    extra_dct={
+        'create_search_space': lambda X: NotImplementedError,
+        'get_recommended_params': lambda X: NotImplementedError,
+        'before_fit': before_fit_dnn,
     }
 )
 
@@ -180,5 +209,10 @@ TabNetModel = TabBenchmarkModelFactory.from_sk_cls(
             'gradient_clip_algorithm': 'norm',
         }),
         'lit_module_class': TabNetModule,
+    },
+    extra_dct={
+        'create_search_space': lambda X: NotImplementedError,
+        'get_recommended_params': lambda X: NotImplementedError,
+        'before_fit': before_fit_dnn,
     }
 )

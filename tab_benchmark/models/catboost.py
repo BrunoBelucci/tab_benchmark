@@ -1,7 +1,9 @@
+import mlflow
 from catboost import CatBoostRegressor as OriginalCatBoostRegressor, CatBoostClassifier as OriginalCatBoostClassifier
 from ray import tune
+from ray.train import report
 from tab_benchmark.models.xgboost import n_estimators_gbdt, early_stopping_patience_gbdt
-from tab_benchmark.models.factories import TabBenchmarkModelFactory, fn_to_add_auto_early_stopping
+from tab_benchmark.models.factories import TabBenchmarkModelFactory
 
 
 def create_search_space_catboost():
@@ -65,9 +67,58 @@ def output_dir_set(self, value):
 output_dir_property = property(output_dir_get, output_dir_set)
 
 
+class ReportToRayCatboost:
+    def __init__(self, eval_name, default_metric=None):
+        super().__init__()
+        self.map_default_name_to_eval_name = {f'validation_{i}': name for i, name in enumerate(eval_name)}
+        self.default_metric = default_metric
+
+    def after_iteration(self, info):
+        for default_name, metrics in info.metrics.items():
+            our_name = self.map_default_name_to_eval_name[default_name]
+            dict_to_report = {f'{our_name}_{metric}': value[-1] for metric, value in metrics.items()}
+            if self.default_metric:
+                dict_to_report[f'{our_name}_default'] = metrics[self.default_metric][-1]
+            report(dict_to_report)
+        return True
+
+
+class LogToMLFlowCatboost:
+    def __init__(self, eval_name, log_every_n_steps=50, default_metric=None):
+        if len(eval_name) > 1:
+            self.map_default_name_to_eval_name = {f'validation_{i}': name for i, name in enumerate(eval_name)}
+        else:
+            self.map_default_name_to_eval_name = {'validation': eval_name[0]}
+        self.map_default_name_to_eval_name['learn'] = 'train'
+        self.log_every_n_steps = log_every_n_steps
+        self.default_metric = default_metric
+
+    def after_iteration(self, info):
+        if info.iteration % self.log_every_n_steps != 0:
+            return True
+        for default_name, metrics in info.metrics.items():
+            our_name = self.map_default_name_to_eval_name[default_name]
+            dict_to_log = {f'{our_name}_{metric}': value[-1] for metric, value in metrics.items()}
+            if self.default_metric:
+                dict_to_log[f'{our_name}_default'] = metrics[self.default_metric][-1]
+            dict_to_log['iteration'] = info.iteration
+            mlflow.log_metrics(dict_to_log, step=info.iteration)
+        return True
+
+
 def before_fit_catboost(self, extra_arguments, **fit_arguments):
-    cat_features = extra_arguments.get('cat_features')
+    cat_features = fit_arguments.get('cat_features')
+    callbacks = fit_arguments.get('callbacks', [])
+    callbacks = callbacks if callbacks else []
+    eval_name = extra_arguments.get('eval_name')
+    report_to_ray = extra_arguments.get('report_to_ray')
     self.set_params(**{'cat_features': cat_features})
+    if report_to_ray:
+        self.callbacks.append(ReportToRayCatboost(eval_name, default_metric=self.get_param('eval_metric')))
+    if self.log_to_mlflow_if_running:
+        if mlflow.active_run():
+            callbacks = [LogToMLFlowCatboost(eval_name, default_metric=self.get_param('eval_metric'))]
+    fit_arguments['callbacks'] = callbacks
     return fit_arguments
 
 

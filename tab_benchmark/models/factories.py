@@ -259,7 +259,7 @@ def fit_factory(cls):
             if task is not None:
                 if task in self.map_task_to_default_values:
                     for key, value in self.map_task_to_default_values[task].items():
-                        if getattr(self, key) == 'default':
+                        if self.get_params()[key] == 'default':
                             self.set_params(**{key: value})
             else:
                 raise (ValueError('This model has map_task_to_default_values, which means it has some values that are '
