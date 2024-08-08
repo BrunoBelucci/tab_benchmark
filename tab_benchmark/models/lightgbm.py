@@ -1,8 +1,11 @@
 from pathlib import Path
 from typing import Optional, Dict, Any
+import mlflow
 from lightgbm import LGBMRegressor as OriginalLGBMRegressor, LGBMClassifier as OriginalLGBMClassifier
 from lightgbm.basic import _is_numpy_1d_array, _to_string, _NUMERIC_TYPES, _is_numeric
+from lightgbm.callback import CallbackEnv
 from ray import tune
+from ray.train import report
 from tab_benchmark.models.xgboost import n_estimators_gbdt, early_stopping_patience_gbdt
 from tab_benchmark.models.factories import TabBenchmarkModelFactory
 import lightgbm.basic
@@ -76,10 +79,67 @@ def get_recommended_params_lgbm():
     return default_values_from_search_space
 
 
+class ReportToRayLGBM:
+    def __init__(self, default_metric=None):
+        super().__init__()
+        self.default_metric = default_metric
+
+    def __call__(self, env: CallbackEnv) -> None:
+        result_list = env.evaluation_result_list
+        report_dict = {}
+        for result in result_list:
+            eval_name, metric_name, eval_result, is_higher_better = result
+            # this is done everywhere on the original code with the comment
+            # split is needed for "<dataset type> <metric>" case (e.g. "train l1")
+            # so we do the same here
+            metric_name = metric_name.split(" ")[-1]
+            report_dict[f'{eval_name}_{metric_name}'] = eval_result
+            if self.default_metric:
+                if metric_name == self.default_metric:
+                    report_dict[f'{eval_name}_default'] = eval_result
+        report(report_dict)
+
+
+class LogToMLFlowLGBM:
+    def __init__(self, log_every_n_steps=50, default_metric=None):
+        super().__init__()
+        self.log_every_n_steps = log_every_n_steps
+        self.default_metric = default_metric
+
+    def __call__(self, env: CallbackEnv) -> None:
+        if env.iteration % self.log_every_n_steps != 0:
+            return
+        result_list = env.evaluation_result_list
+        log_dict = {}
+        for result in result_list:
+            eval_name, metric_name, eval_result, is_higher_better = result
+            # this is done everywhere on the original code with the comment
+            # split is needed for "<dataset type> <metric>" case (e.g. "train l1")
+            # so we do the same here
+            metric_name = metric_name.split(" ")[-1]
+            log_dict[f'{eval_name}_{metric_name}'] = eval_result
+            if self.default_metric:
+                if metric_name == self.default_metric:
+                    log_dict[f'{eval_name}_default'] = eval_result
+        log_dict['epoch'] = env.iteration
+        mlflow.log_metrics(log_dict, step=env.iteration)
+
+
 def before_fit_lgbm(self, extra_arguments, **fit_arguments):
+    report_to_ray = extra_arguments.get('report_to_ray')
     cat_features = extra_arguments.get('cat_features')
+    eval_name = extra_arguments.get('eval_name')
+    callbacks = fit_arguments.get('callbacks', [])
+    callbacks = callbacks if callbacks is not None else []
     if cat_features is not None:
         fit_arguments['categorical_feature'] = cat_features
+    if report_to_ray:
+        callbacks.append(ReportToRayLGBM(default_metric=self.metric))
+    if self.log_to_mlflow_if_running:
+        if mlflow.active_run():
+            callbacks.append(LogToMLFlowLGBM(default_metric=self.metric))
+    fit_arguments['eval_names'] = eval_name
+    fit_arguments['callbacks'] = callbacks
     return fit_arguments
 
 

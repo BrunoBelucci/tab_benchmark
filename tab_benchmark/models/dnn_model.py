@@ -9,11 +9,9 @@ import torch
 import lightning as L
 from lightning import Callback
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
-from lightning.pytorch.loggers import MLFlowLogger
 from scipy.special import softmax
 from sklearn.base import BaseEstimator, ClassifierMixin, RegressorMixin, clone
 from torch import nn
-import mlflow
 from torch.utils.data import DataLoader
 from tab_benchmark.dnns.callbacks import DefaultLogs
 from tab_benchmark.dnns.callbacks.evaluate_metric import EvaluateMetric
@@ -277,7 +275,7 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
                                                        is_default_metric=is_default_metric)))
         if eval_metric:
             callbacks_tuples.append((EvaluateMetric, dict(eval_metric=eval_metric, eval_name=eval_name,
-                                                          report_to_ray=report_to_ray, last_metric_as_default=True)))
+                                                          report_to_ray=report_to_ray, default_metric=eval_metric[-1])))
         callbacks_tuples.extend(self.lit_callbacks_tuples)
         self.lit_callbacks_ = [fn(**kwargs) for fn, kwargs in callbacks_tuples]
 

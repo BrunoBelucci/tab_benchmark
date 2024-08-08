@@ -55,34 +55,37 @@ def get_recommended_params_xgboost():
 
 
 class ReportToRayXGBoost(TrainingCallback):
-    def __init__(self, eval_name, map_default_name_to_eval_name, last_metric_as_default=True):
+    def __init__(self, eval_name, map_default_name_to_eval_name, default_metric=None):
         super().__init__()
         self.eval_name = eval_name
         self.map_default_name_to_eval_name = map_default_name_to_eval_name
-        self.last_metric_as_default = last_metric_as_default
+        self.default_metric = default_metric
 
     def after_iteration(self, model: _Model, epoch: int, evals_log):
         for default_name, metrics in evals_log.items():
             our_name = self.map_default_name_to_eval_name[default_name]
             if our_name in self.eval_name:
                 dict_to_report = {f'{our_name}_{metric}': value[-1] for metric, value in metrics.items()}
-                if self.last_metric_as_default:
-                    dict_to_report[f'{our_name}_default'] = metrics[list(metrics.keys())[-1]][-1]
+                if self.default_metric:
+                    dict_to_report[f'{our_name}_default'] = metrics[self.default_metric][-1]
                 report(dict_to_report)
 
 
 class LogToMLFlowXGBoost(TrainingCallback):
-    def __init__(self, map_default_name_to_eval_name, last_metric_as_default=True):
+    def __init__(self, map_default_name_to_eval_name, log_every_n_steps=50, default_metric=None):
         super().__init__()
         self.map_default_name_to_eval_name = map_default_name_to_eval_name
-        self.last_metric_as_default = last_metric_as_default
+        self.log_every_n_steps = log_every_n_steps
+        self.default_metric = default_metric
 
     def after_iteration(self, model: _Model, epoch: int, evals_log):
+        if epoch % self.log_every_n_steps != 0:
+            return
         for default_name, metrics in evals_log.items():
             our_name = self.map_default_name_to_eval_name[default_name]
             dict_to_log = {f'{our_name}_{metric}': value[-1] for metric, value in metrics.items()}
-            if self.last_metric_as_default:
-                dict_to_log[f'{our_name}_default'] = metrics[list(metrics.keys())[-1]][-1]
+            if self.default_metric:
+                dict_to_log[f'{our_name}_default'] = metrics[self.default_metric][-1]
             dict_to_log['epoch'] = epoch
             mlflow.log_metrics(dict_to_log, step=epoch)
 
@@ -103,10 +106,12 @@ def before_fit_xgboost(self, extra_arguments, **fit_arguments):
     if self.callbacks is None:
         self.callbacks = []
     if report_to_ray:
-        self.callbacks.append(ReportToRayXGBoost(eval_name, map_default_name_to_eval_name))
+        self.callbacks.append(ReportToRayXGBoost(eval_name, map_default_name_to_eval_name,
+                                                 default_metric=self.eval_metric[-1]))
     if self.log_to_mlflow_if_running:
         if mlflow.active_run():
-            self.callbacks.append(LogToMLFlowXGBoost(map_default_name_to_eval_name))
+            self.callbacks.append(LogToMLFlowXGBoost(map_default_name_to_eval_name,
+                                                     default_metric=self.eval_metric[-1]))
     return fit_arguments
 
 

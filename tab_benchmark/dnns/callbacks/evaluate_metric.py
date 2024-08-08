@@ -11,7 +11,7 @@ from tab_benchmark.utils import evaluate_metric, get_metric_fn
 
 class EvaluateMetric(Callback):
     def __init__(self, eval_metric, eval_name: Optional[str | list[str]] = None, report_to_ray: bool = False,
-                 default_metric: Optional[str] = None, last_metric_as_default: bool = True):
+                 default_metric: Optional[str] = None):
         if isinstance(eval_metric, str):
             eval_metric = [eval_metric]
         self.eval_metric = eval_metric
@@ -26,8 +26,6 @@ class EvaluateMetric(Callback):
         self.eval_name = eval_name
         self.validation_predictions = validation_predictions
         self.report_to_ray = report_to_ray
-        if last_metric_as_default:
-            default_metric = eval_metric[-1]
         self.default_metric = default_metric
 
     def on_validation_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0):
