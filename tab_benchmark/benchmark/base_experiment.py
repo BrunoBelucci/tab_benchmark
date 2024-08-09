@@ -8,7 +8,7 @@ import warnings
 from distributed import WorkerPlugin, Worker, Client
 from tab_benchmark.benchmark.utils import treat_mlflow, get_model, load_openml_task, fit_model, evaluate_model, \
     load_own_task
-from tab_benchmark.benchmark.benchmarked_models import models_dict
+from tab_benchmark.benchmark.benchmarked_models import models_dict as benchmarked_models_dict
 from tab_benchmark.utils import get_git_revision_hash, flatten_dict
 from dask.distributed import LocalCluster
 from dask_jobqueue import SLURMCluster
@@ -46,7 +46,7 @@ class BaseExperiment:
             task_repeats=None, task_folds=None, task_samples=None,
             # parameters of experiment
             experiment_name='base_experiment',
-            models_dict=models_dict,
+            models_dict=None,
             log_dir=Path.cwd() / 'logs',
             output_dir=Path.cwd() / 'output',
             mlflow_tracking_uri='sqlite:///' + str(Path.cwd().resolve()) + '/tab_benchmark.db', check_if_exists=True,
@@ -93,7 +93,7 @@ class BaseExperiment:
         self.check_if_exists = check_if_exists
         self.retry_on_oom = retry_on_oom
         self.parser = parser
-        self.models_dict = models_dict
+        self.models_dict = models_dict if models_dict else benchmarked_models_dict.copy()
         self.raise_on_fit_error = raise_on_fit_error
         self.client = None
 
@@ -198,8 +198,10 @@ class BaseExperiment:
                                       task_samples=self.task_samples, task_folds=self.task_folds))
         log_and_print_msg('Starting experiment...', **kwargs_to_log)
 
-    def get_model(self, model_nickname, seed_model, model_params=None, models_dict=models_dict, n_jobs=1,
+    def get_model(self, seed_model, model_params=None, n_jobs=1,
                   logging_to_mlflow=False, create_validation_set=False):
+        model_nickname = self.model_nickname
+        models_dict = self.models_dict.copy()
         model = get_model(model_nickname, seed_model, model_params, models_dict, n_jobs, output_dir=self.output_dir)
         if create_validation_set:
             # we disable auto early stopping when creating a validation set, because we will use it to validate
@@ -267,8 +269,7 @@ class BaseExperiment:
                 )
 
             # load model
-            model = self.get_model(self.model_nickname, seed_model, model_params=model_params,
-                                   models_dict=self.models_dict,
+            model = self.get_model(seed_model, model_params=model_params,
                                    n_jobs=n_jobs, logging_to_mlflow=logging_to_mlflow,
                                    create_validation_set=create_validation_set)
 

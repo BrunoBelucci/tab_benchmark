@@ -1,4 +1,5 @@
 import os
+from copy import deepcopy
 import mlflow
 import numpy as np
 import openml
@@ -9,7 +10,7 @@ from ray.tune.search import BasicVariantGenerator
 from ray.tune.search.bohb import TuneBOHB
 from ray.train import RunConfig
 from sklearn.model_selection import StratifiedKFold, KFold
-from tab_benchmark.benchmark.benchmarked_models import models_dict
+from tab_benchmark.benchmark.benchmarked_models import models_dict as benchmarked_models_dict
 from tab_benchmark.datasets import get_dataset
 from tab_benchmark.models.dnn_model import DNNModel
 from tab_benchmark.utils import set_seeds, evaluate_set, train_test_split_forced, flatten_dict
@@ -28,10 +29,11 @@ def check_if_exists_mlflow(experiment_name, **kwargs):
         return None
 
 
-def get_model(model_nickname, seed_model, model_params=None, models_dict=models_dict, n_jobs=1, output_dir=None):
+def get_model(model_nickname, seed_model, model_params=None, models_dict=None, n_jobs=1, output_dir=None):
     model_params = model_params if model_params is not None else {}
+    models_dict = models_dict if models_dict is not None else benchmarked_models_dict.copy()
     set_seeds(seed_model)
-    model_class, model_default_params = models_dict[model_nickname]
+    model_class, model_default_params = deepcopy(models_dict[model_nickname])
     if callable(model_default_params):
         model_default_params = model_default_params(model_class)
     model_default_params.update(model_params)
