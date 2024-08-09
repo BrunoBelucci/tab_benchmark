@@ -1,5 +1,7 @@
 from __future__ import annotations
+import os
 from copy import deepcopy
+from pathlib import Path
 from typing import Optional
 import numpy as np
 import pandas as pd
@@ -33,7 +35,7 @@ def fn_to_add_auto_early_stopping(self, X, y, task, eval_set, eval_name):
 def init_factory(
         cls,
         map_default_values_change=None,
-        has_auto_early_stopping: bool = False,
+        has_early_stopping: bool = False,
         map_task_to_default_values=None,
         # preprocessing
         categorical_imputer: Optional[str | int | float] = 'most_frequent',
@@ -76,6 +78,8 @@ def init_factory(
             continuous_target_scaler: Optional[str] = continuous_target_scaler,  # only used in regression
             categorical_target_type: Optional[np.dtype] = categorical_target_type,
             continuous_target_type: Optional[np.dtype] = continuous_target_type,
+            # any output of model will be written here
+            output_dir: Optional[str | os.PathLike] = Path.cwd(),
             **kwargs
     ):
         cls.__init__(self, *args, **kwargs)
@@ -97,6 +101,7 @@ def init_factory(
         self.continuous_target_scaler = continuous_target_scaler
         self.categorical_target_type = categorical_target_type
         self.continuous_target_type = continuous_target_type
+        self.output_dir = output_dir
         self.data_preprocess_pipeline_ = None
         self.target_preprocess_pipeline_ = None
         self.model_pipeline_ = None
@@ -139,15 +144,18 @@ def init_factory(
             Data type for target.
         """)
 
-    if has_auto_early_stopping:
+    if has_early_stopping:
         @extends(init_fn_step_1)
         def init_fn_step_2(self, *args, auto_early_stopping: bool = True, early_stopping_validation_size=0.1,
-                           log_to_mlflow_if_running: bool = True,
+                           early_stopping_patience: int = 0,
+                           log_to_mlflow_if_running: bool = True, eval_metric: Optional[str] = None,
                            **kwargs):
-            init_fn_step_1(self, *args, **kwargs)
             self.auto_early_stopping = auto_early_stopping
             self.early_stopping_validation_size = early_stopping_validation_size
+            self.early_stopping_patience = early_stopping_patience
             self.log_to_mlflow_if_running = log_to_mlflow_if_running
+            self.eval_metric = eval_metric
+            init_fn_step_1(self, *args, **kwargs)
 
         init_doc += "\n"
         init_doc += cleandoc("""
@@ -158,6 +166,9 @@ def init_factory(
             Size of the validation set when using auto early stopping.
         log_to_mlflow_if_running:
             Whether to log intermediate results to MLflow if it is running.
+        eval_metric:
+            Evaluation metric. If None, the default metric of the model will be used. This metric can be any defined
+            in get_metric_fn, and if there is an equivalent metric in the model, it will be used.
         """)
 
     else:
@@ -307,7 +318,7 @@ def fit_factory(cls):
 class TabBenchmarkModelFactory(type):
     @classmethod  # to be cleaner (not change the signature of __new__)
     def from_sk_cls(cls, sk_cls, extended_init_kwargs=None, map_default_values_change=None,
-                    has_auto_early_stopping=False, map_task_to_default_values=None,
+                    has_early_stopping=False, map_task_to_default_values=None,
                     dnn_architecture_cls=None, add_lr_and_weight_decay_params=False, extra_dct=None):
         extended_init_kwargs = extended_init_kwargs if extended_init_kwargs else {}
 
@@ -320,15 +331,12 @@ class TabBenchmarkModelFactory(type):
             for key in keys:
                 map_default_values_change[key] = 'default'
 
-        init_fn, init_doc = init_factory(
-            sk_cls,
-            map_default_values_change=map_default_values_change,
-            has_auto_early_stopping=has_auto_early_stopping,
-            map_task_to_default_values=map_task_to_default_values,
-            dnn_architecture_cls=dnn_architecture_cls,
-            add_lr_and_weight_decay_params=add_lr_and_weight_decay_params,
-            **extended_init_kwargs
-        )
+        init_fn, init_doc = init_factory(sk_cls, map_default_values_change=map_default_values_change,
+                                         has_early_stopping=has_early_stopping,
+                                         map_task_to_default_values=map_task_to_default_values,
+                                         dnn_architecture_cls=dnn_architecture_cls,
+                                         add_lr_and_weight_decay_params=add_lr_and_weight_decay_params,
+                                         **extended_init_kwargs)
         if dnn_architecture_cls is not None:
             name = dnn_architecture_cls.__name__ + 'Model'
             doc = init_doc
