@@ -10,38 +10,28 @@ from tab_benchmark.utils import evaluate_metric, get_metric_fn
 
 
 class EvaluateMetric(Callback):
-    def __init__(self, eval_metric, eval_name: Optional[str | list[str]] = None, report_to_ray: bool = False,
-                 default_metric: Optional[str] = None):
+    def __init__(self, eval_metric, report_to_ray: bool = False, default_metric: Optional[str] = None):
         if isinstance(eval_metric, str):
             eval_metric = [eval_metric]
         self.eval_metric = eval_metric
-        validation_predictions = {}
-        if eval_name is not None:
-            if isinstance(eval_name, str):
-                eval_name = [eval_name]
-            for name in eval_name:
-                validation_predictions[name] = []
-        else:
-            eval_name = []
-        self.eval_name = eval_name
-        self.validation_predictions = validation_predictions
+        self.validation_predictions = {}
         self.report_to_ray = report_to_ray
         self.default_metric = default_metric
 
     def on_validation_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0):
-        if self.eval_name:
-            if 'name' in batch:
-                dataset_name = batch['name']
-                name = dataset_name
-            else:
-                name = 'validation_' + str(dataloader_idx)
-            if name in self.eval_name:
-                self.validation_predictions[name].append(outputs['y_pred'].detach().cpu())
-        else:
-            name = 'validation_' + str(dataloader_idx)
-            if name not in self.validation_predictions:
-                self.validation_predictions[name] = []
-            self.validation_predictions[name].append(outputs['y_pred'].detach().cpu())
+        if not trainer.sanity_checking:
+            str_set = 'validation'
+            dataset_name = None
+            if hasattr(trainer.datamodule, str_set + '_datasets'):
+                dataset_name = list(getattr(trainer.datamodule, str_set + '_datasets').keys())[dataloader_idx]
+            elif hasattr(trainer.datamodule, str_set + '_dataset'):
+                if hasattr(getattr(trainer.datamodule, str_set + '_dataset'), 'name'):
+                    dataset_name = getattr(trainer.datamodule, str_set + '_dataset').name
+            if dataset_name is None:
+                dataset_name = str_set + str(dataloader_idx)
+            if dataset_name not in self.validation_predictions:
+                self.validation_predictions[dataset_name] = []
+            self.validation_predictions[dataset_name].append(outputs['y_pred'].detach().cpu())
 
     def on_validation_epoch_end(self, trainer, pl_module):
         for name, predictions in self.validation_predictions.items():
@@ -61,12 +51,12 @@ class EvaluateMetric(Callback):
                 scores[metric] = evaluate_metric(y_true, y_pred_, metric_fn, n_classes)
 
             if self.default_metric is not None:
-                if self.default_metric != 'loss_metric':
-                    scores['default'] = scores[self.default_metric]
+                scores['default'] = scores[self.default_metric]
 
-            pl_module.log_dict({f'{name}_{metric}': score for metric, score in scores.items()}, on_epoch=True,
-                               on_step=False, prog_bar=True, logger=True)
+            dict_to_log = {f'{name}_{metric}': score for metric, score in scores.items()}
+
+            pl_module.log_dict(dict_to_log, on_epoch=True, on_step=False, prog_bar=True, logger=True)
             if self.report_to_ray:
-                report({f'{name}_{metric}': score for metric, score in scores.items()})
+                report(dict_to_log)
 
             predictions.clear()
