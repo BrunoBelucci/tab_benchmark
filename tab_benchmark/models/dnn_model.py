@@ -17,25 +17,24 @@ from tab_benchmark.dnns.callbacks import DefaultLogs
 from tab_benchmark.dnns.callbacks.evaluate_metric import EvaluateMetric
 from tab_benchmark.dnns.datasets import TabularDataModule, TabularDataset
 from tab_benchmark.dnns.modules import TabularModule
-from tab_benchmark.utils import sequence_to_list
+from tab_benchmark.utils import sequence_to_list, get_metric_fn
 
 
-def get_early_stopping_callback(eval_names, early_stopping_patience) -> list[tuple[type[Callback], dict]]:
+def get_early_stopping_callback(eval_name, eval_metric, early_stopping_patience) -> list[tuple[type[Callback], dict]]:
     if early_stopping_patience > 0:
-        if eval_names is None or len(eval_names) < 1:
-            return [
-                (EarlyStopping, dict(monitor='train_loss', patience=early_stopping_patience,
-                                     min_delta=0)),
-                (ModelCheckpoint, dict(monitor='train_loss', every_n_epochs=1, save_last=True)),
-            ]
-        else:  # last eval_set / eval_name is used for early stopping
-            return [
-                (EarlyStopping, dict(monitor=f'{eval_names[-1]}_loss',
-                                     patience=early_stopping_patience,
-                                     min_delta=0)),
-                (ModelCheckpoint, dict(monitor=f'{eval_names[-1]}_loss',
-                                       every_n_epochs=1, save_last=True)),
-            ]
+        if eval_metric == 'loss':
+            higher_is_better = False
+        else:
+            metric_fn, need_proba, higher_is_better = get_metric_fn(eval_metric)
+        if higher_is_better:
+            mode = 'max'
+        else:
+            mode = 'min'
+        return [
+            (EarlyStopping, dict(monitor=f'{eval_name}_default', patience=early_stopping_patience,
+                                 min_delta=0, mode=mode)),
+            (ModelCheckpoint, dict(monitor=f'{eval_name}_default', every_n_epochs=1, save_last=True, mode=mode)),
+        ]
     else:
         return []
 
@@ -186,7 +185,7 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
             task: str,
             cat_features: Optional[list[int | str]] = None,
             cat_dims: Optional[list[int]] = None,
-            delete_checkpoints: bool = True,
+            delete_checkpoints: bool = False,
             eval_set: Optional[Sequence[tuple[pd.DataFrame, pd.DataFrame]]] = None,
             eval_name: Optional[Sequence[str]] = None,
             report_to_ray: bool = False,
@@ -210,14 +209,10 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
         eval_set:
             Evaluation sets. The last set will be used as validation for early stopping.
         eval_name:
-            Names of the evaluation sets. If None, they will be named as 'eval_i', where i is the index of the set.
+            Names of the evaluation sets. If None, they will be named as 'validation_i', where i is the index of the set.
         """
         if isinstance(y, pd.Series):
             y = y.to_frame()
-        # we will consider that the last set of eval_set will be used as validation
-        # we will consider that the last metric of eval_metric will be used as validation
-        # if no eval_metric is provided, we use only the loss function
-        eval_metric = sequence_to_list(self.eval_metric) if self.eval_metric is not None else []
 
         cat_features = sequence_to_list(cat_features) if cat_features is not None else []
         if cat_features:
@@ -264,18 +259,30 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
                 lit_scheduler_config=self.torch_scheduler_tuple[2])
 
         # initialize callbacks
-        callbacks_tuples = get_early_stopping_callback(eval_name, self.early_stopping_patience)
+
+        # we will consider that the last set of eval_set will be used as validation
+        # we will consider that the last metric of eval_metric will be used as validation
+        # if no eval_metric is provided, we use only the loss function
+        # if no eval_set is provided, we use only the training set
+        eval_metric = sequence_to_list(self.eval_metric) if self.eval_metric is not None else []
+        eval_name = sequence_to_list(eval_name) if eval_name is not None else ['train']
+
+        callbacks_tuples = []
+        if eval_metric:
+            callbacks_tuples.append((EvaluateMetric, dict(eval_metric=eval_metric, eval_name=eval_name[-1],
+                                                          report_to_ray=report_to_ray, default_metric=eval_metric[-1])))
 
         if self.log_losses:
             if not eval_metric:
                 is_default_metric = True
+                eval_metric = ['loss']
             else:
                 is_default_metric = False
             callbacks_tuples.append((DefaultLogs, dict(report_to_ray=report_to_ray,
                                                        is_default_metric=is_default_metric)))
-        if eval_metric:
-            callbacks_tuples.append((EvaluateMetric, dict(eval_metric=eval_metric, eval_name=eval_name,
-                                                          report_to_ray=report_to_ray, default_metric=eval_metric[-1])))
+
+        callbacks_tuples.extend(get_early_stopping_callback(eval_name[-1], eval_metric[-1], self.early_stopping_patience))
+
         callbacks_tuples.extend(self.lit_callbacks_tuples)
         self.lit_callbacks_ = [fn(**kwargs) for fn, kwargs in callbacks_tuples]
 
@@ -291,7 +298,7 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
         # fit
         self.lit_trainer_.fit(self.lit_module_, self.lit_datamodule_)
 
-        # delete checkpoints
+        # load best model
         if self.use_best_model:
             if len(self.lit_trainer_.checkpoint_callbacks) > 1:
                 warn('More than one checkpoint callback found, using the one in trainer.checkpoint_callback')
@@ -306,6 +313,8 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
             else:
                 warn('No checkpoint callback found, cannot load best model, using last model instead.')
                 self.lit_module_.best_iteration_ = self.lit_trainer_.current_epoch
+
+        # delete checkpoints
         if delete_checkpoints:
             for checkpoint_callback in self.lit_trainer_.checkpoint_callbacks:
                 dirpath = checkpoint_callback.dirpath

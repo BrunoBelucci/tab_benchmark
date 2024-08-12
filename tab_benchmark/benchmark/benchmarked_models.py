@@ -33,7 +33,7 @@ def init_GLU_kwargs(model):
 
 models_dict.update(
     {
-        'MLPModel': (MLPModel, {}),
+        'MLPModel': (MLPModel, MLPModel.get_recommended_params()),
         'ResNetModel': (ResNetModel, {}),
         'TransformerModel': (TransformerModel, {}),
         'MLP_Deeper': (MLPModel, {'n_layers': 8}),

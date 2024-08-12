@@ -34,6 +34,7 @@ class EvaluateMetric(Callback):
             self.validation_predictions[dataset_name].append(outputs['y_pred'].detach().cpu())
 
     def on_validation_epoch_end(self, trainer, pl_module):
+        dict_to_log = {}
         for name, predictions in self.validation_predictions.items():
             y_pred = torch.vstack(predictions)
             y_true = trainer.datamodule.valid_datasets[name].y
@@ -53,10 +54,11 @@ class EvaluateMetric(Callback):
             if self.default_metric is not None:
                 scores['default'] = scores[self.default_metric]
 
-            dict_to_log = {f'{name}_{metric}': score for metric, score in scores.items()}
-
-            pl_module.log_dict(dict_to_log, on_epoch=True, on_step=False, prog_bar=True, logger=True)
-            if self.report_to_ray:
-                report(dict_to_log)
-
+            dict_to_log.update({f'{name}_{metric}': score for metric, score in scores.items()})
             predictions.clear()
+
+        pl_module.log_dict(dict_to_log, on_epoch=True, on_step=False, prog_bar=True, logger=True)
+        if self.report_to_ray:
+            # convert to numpy to avoid serialization issues
+            dict_to_log = {k: v.detach().cpu().numpy() for k, v in dict_to_log.items()}
+            report(dict_to_log)

@@ -88,6 +88,8 @@ class HPOExperiment(BaseExperiment):
         trainable = self.get_training_fn_for_hpo(is_openml=is_openml)
         model_cls = models_dict[model_nickname][0]
         search_space, default_values = model_cls.create_search_space()
+        model_params = model_params if model_params is not None else {}
+        search_space.update(model_params)
         fit_params = fit_params.copy() if fit_params is not None else {}
         fit_params['report_to_ray'] = True
         param_space = dict(

@@ -44,4 +44,6 @@ class DefaultLogs(Callback):
         if not trainer.sanity_checking:
             if self.report_to_ray:
                 metrics = trainer.callback_metrics
+                # convert all metrics to numpy
+                metrics = {k: v.detach().cpu().numpy() for k, v in metrics.items()}
                 report(metrics)
