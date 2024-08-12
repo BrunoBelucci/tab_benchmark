@@ -1,12 +1,14 @@
+from collections import defaultdict, OrderedDict
 from pathlib import Path
 from typing import Optional, Dict, Any
 import mlflow
+import numpy as np
 from lightgbm import LGBMRegressor as OriginalLGBMRegressor, LGBMClassifier as OriginalLGBMClassifier
-from lightgbm.basic import _is_numpy_1d_array, _to_string, _NUMERIC_TYPES, _is_numeric
-from lightgbm.callback import CallbackEnv
+from lightgbm.basic import _is_numpy_1d_array, _to_string, _NUMERIC_TYPES, _is_numeric, _log_info
+from lightgbm.callback import CallbackEnv, _EarlyStoppingCallback, _format_eval_result, EarlyStopException
 from ray import tune
 from ray.train import report
-from tab_benchmark.models.xgboost import n_estimators_gbdt, early_stopping_patience_gbdt
+from tab_benchmark.models.xgboost import n_estimators_gbdt, early_stopping_patience_gbdt, remove_old_models
 from tab_benchmark.models.factories import TabBenchmarkModelFactory
 import lightgbm.basic
 
@@ -32,6 +34,75 @@ def my_param_dict_to_str(data: Optional[Dict[str, Any]]) -> str:
 lightgbm.basic._param_dict_to_str = my_param_dict_to_str
 
 
+# Monkey patching the lightgbm to support early stopping with the best iteration and best score being set on booster
+class EarlyStoppingLGBM(_EarlyStoppingCallback):
+    # Original early stopping, but setting the best iteration and best score on booster as soon as they change
+    def __call__(self, env: CallbackEnv) -> None:
+        if env.iteration == env.begin_iteration:
+            self._init(env)
+        if not self.enabled:
+            return
+        if env.evaluation_result_list is None:
+            raise RuntimeError(
+                "early_stopping() callback enabled but no evaluation results found. This is a probably bug in LightGBM. "
+                "Please report it at https://github.com/microsoft/LightGBM/issues"
+            )
+        # self.best_score_list is initialized to an empty list
+        first_time_updating_best_score_list = self.best_score_list == []
+        for i in range(len(env.evaluation_result_list)):
+            score = env.evaluation_result_list[i][2]
+            if first_time_updating_best_score_list or self.cmp_op[i](score, self.best_score[i]):
+                self.best_score[i] = score
+                self.best_iter[i] = env.iteration
+
+                # CHANGE HERE
+                env.model.best_iteration = env.iteration + 1  # same as lgbm does internally after training
+                if not getattr(env.model, 'best_score', None):
+                    env.model.best_score = defaultdict(OrderedDict)
+                eval_name = env.evaluation_result_list[i][0]
+                metric_name = env.evaluation_result_list[i][1]
+                metric_name = metric_name.split(" ")[-1]
+                env.model.best_score[eval_name][metric_name] = score
+
+                if first_time_updating_best_score_list:
+                    self.best_score_list.append(env.evaluation_result_list)
+                else:
+                    self.best_score_list[i] = env.evaluation_result_list
+            # split is needed for "<dataset type> <metric>" case (e.g. "train l1")
+            eval_name_splitted = env.evaluation_result_list[i][1].split(" ")
+            if self.first_metric_only and self.first_metric != eval_name_splitted[-1]:
+                continue  # use only the first metric for early stopping
+            if self._is_train_set(
+                ds_name=env.evaluation_result_list[i][0],
+                eval_name=eval_name_splitted[0],
+                env=env,
+            ):
+                continue  # train data for lgb.cv or sklearn wrapper (underlying lgb.train)
+            elif env.iteration - self.best_iter[i] >= self.stopping_rounds:
+                if self.verbose:
+                    eval_result_str = "\t".join(
+                        [_format_eval_result(x, show_stdv=True) for x in self.best_score_list[i]]
+                    )
+                    _log_info(f"Early stopping, best iteration is:\n[{self.best_iter[i] + 1}]\t{eval_result_str}")
+                    if self.first_metric_only:
+                        _log_info(f"Evaluated only: {eval_name_splitted[-1]}")
+                raise EarlyStopException(self.best_iter[i], self.best_score_list[i])
+            self._final_iteration_check(env, eval_name_splitted, i)
+
+
+lightgbm.callback._EarlyStoppingCallback = EarlyStoppingLGBM
+
+
+def conditional_num_leaves(config):
+    model_params = config.get('model_params', None)
+    if model_params is None:
+        return 31
+    max_depth = model_params.get('max_depth', None)
+    if max_depth is None:
+        return 31
+    return np.random.randint(1, 2 ** max_depth)
+
+
 def create_search_space_lgbm():
     # In Well tunned... + doc
     # Not tunning n_estimators following discussion at
@@ -48,14 +119,15 @@ def create_search_space_lgbm():
         min_child_weight=tune.loguniform(1e-3, 20),
         subsample=tune.uniform(0.01, 1),
         subsample_freq=tune.randint(1, 11),
-        num_leaves=tune.randint(1, 4096),  # should be < 2^(max_depth)
+        # num_leaves=tune.randint(1, 4096),  # should be < 2^(max_depth)
+        num_leaves=tune.sample_from(conditional_num_leaves),
         min_child_samples=tune.randint(1, 1000000)
     )
     default_values = dict(
         learning_rate=0.1,
-        reg_lambda=0,
-        reg_alpha=0,
-        min_split_gain=0,
+        reg_lambda=1e-10,
+        reg_alpha=1e-10,
+        min_split_gain=1e-10,
         colsample_bytree=1.0,
         feature_fraction_bynode=1.0,
         max_depth=6,
@@ -63,7 +135,7 @@ def create_search_space_lgbm():
         min_child_weight=1e-3,
         subsample=1.0,
         subsample_freq=1,
-        num_leaves=31,
+        # num_leaves=31,
         min_child_samples=20
     )
     return search_space, default_values
@@ -74,7 +146,7 @@ def get_recommended_params_lgbm():
     default_values_from_search_space.update(dict(
         n_estimators=n_estimators_gbdt,
         auto_early_stopping=True,
-        early_stopping_rounds=early_stopping_patience_gbdt,
+        early_stopping_patience=early_stopping_patience_gbdt,
     ))
     return default_values_from_search_space
 
@@ -125,19 +197,63 @@ class LogToMLFlowLGBM:
         mlflow.log_metrics(log_dict, step=env.iteration)
 
 
+class TrainingCheckPointLGBM:
+    def __init__(self, directory, name='model', interval=100, save_top_k=1):
+        self.directory = directory
+        self.name = name
+        self.interval = interval
+        self.save_top_k = save_top_k
+
+    def __call__(self, env: CallbackEnv) -> None:
+        if env.iteration % self.interval != 0:
+            return
+        remove_old_models(self.directory, self.name, '.txt', self.save_top_k)
+        # None = save only best iterations
+        env.model.save_model(f'{self.directory}/{self.name}_{env.model.best_iteration}.txt', num_iteration=None)
+
+
+map_our_metric_to_lgbm_metric = {
+    ('logloss', 'binary_classification'): 'binary_logloss',
+    ('logloss', 'classification'): 'multi_logloss',
+    ('rmse', 'regression'): 'rmse',
+    ('rmse', 'multi_regression'): 'rmse',
+}
+
+
 def before_fit_lgbm(self, extra_arguments, **fit_arguments):
     report_to_ray = extra_arguments.get('report_to_ray')
     cat_features = extra_arguments.get('cat_features')
     eval_name = extra_arguments.get('eval_name')
+    task = extra_arguments.get('task')
+
     callbacks = fit_arguments.get('callbacks', [])
+
+    eval_metric = self.get_params().get('eval_metric', None)
+
     callbacks = callbacks if callbacks is not None else []
+
+    if self.early_stopping_patience > 0:
+        # for the moment we will leave the default early stopping callback
+        self.set_params(**{'early_stopping_rounds': self.early_stopping_patience})
+        # we will add a training checkpoint callback
+        callbacks.append(TrainingCheckPointLGBM(self.output_dir))
+
+    if eval_metric is not None:
+        eval_metric = map_our_metric_to_lgbm_metric[(eval_metric, task)]
+        self.set_params(**{'metric': eval_metric})
+    else:
+        eval_metric = self.get_params().get('metric', None)
+
     if cat_features is not None:
         fit_arguments['categorical_feature'] = cat_features
-    if report_to_ray:
-        callbacks.append(ReportToRayLGBM(default_metric=self.metric))
+
     if self.log_to_mlflow_if_running:
         if mlflow.active_run():
-            callbacks.append(LogToMLFlowLGBM(default_metric=self.metric))
+            callbacks.append(LogToMLFlowLGBM(default_metric=eval_metric))
+
+    if report_to_ray:
+        callbacks.append(ReportToRayLGBM(default_metric=eval_metric))
+
     fit_arguments['eval_names'] = eval_name
     fit_arguments['callbacks'] = callbacks
     return fit_arguments
@@ -145,35 +261,32 @@ def before_fit_lgbm(self, extra_arguments, **fit_arguments):
 
 LGBMRegressor = TabBenchmarkModelFactory.from_sk_cls(
     OriginalLGBMRegressor,
-    map_default_values_change={
-        'objective': 'regression',
-        'metric': 'l2'
-    },
-    has_auto_early_stopping=True,
     extended_init_kwargs={
         'categorical_encoder': 'ordinal',
         'categorical_type': 'category',
         'data_scaler': None,
     },
-    extra_dct={
+    map_default_values_change={
+        'objective': 'regression',
+        'eval_metric': 'rmse'
+    },
+    has_early_stopping=True, extra_dct={
         'create_search_space': staticmethod(create_search_space_lgbm),
         'get_recommended_params': staticmethod(get_recommended_params_lgbm),
         'before_fit': before_fit_lgbm
     }
 )
 
-
 LGBMClassifier = TabBenchmarkModelFactory.from_sk_cls(
     OriginalLGBMClassifier,
-    map_task_to_default_values={
-        'binary_classification': {'objective': 'binary', 'metric': 'binary_logloss'},
-        'classification': {'objective': 'multiclass', 'metric': 'multi_logloss'},
-    },
-    has_auto_early_stopping=True,
     extended_init_kwargs={
         'categorical_encoder': 'ordinal',
         'categorical_type': 'category',
         'data_scaler': None,
+    },
+    has_early_stopping=True, map_task_to_default_values={
+        'binary_classification': {'objective': 'binary', 'eval_metric': 'logloss'},
+        'classification': {'objective': 'multiclass', 'eval_metric': 'logloss'},
     },
     extra_dct={
         'create_search_space': staticmethod(create_search_space_lgbm),
