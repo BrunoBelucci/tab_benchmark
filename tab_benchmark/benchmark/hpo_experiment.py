@@ -1,5 +1,8 @@
 import argparse
+import os
 import time
+from pathlib import Path
+from typing import Optional
 from ray.tune import Tuner, randint
 import mlflow
 from tab_benchmark.benchmark.base_experiment import BaseExperiment, log_and_print_msg
@@ -38,6 +41,14 @@ class HPOExperiment(BaseExperiment):
         self.retrain_best_model = args.retrain_best_model
         self.max_concurrent = args.max_concurrent
 
+    def get_model(self, seed_model, output_dir: Optional[Path] = None, model_params=None, n_jobs=1,
+                  logging_to_mlflow=False, create_validation_set=False):
+        # When doing HPO with ray we want the output_dir to be configured relative to the ray storage
+        output_dir = Path.cwd() / output_dir.name
+        os.makedirs(output_dir, exist_ok=True)
+        print(output_dir)
+        return super().get_model(seed_model, output_dir, model_params, n_jobs, logging_to_mlflow, create_validation_set)
+
     def get_training_fn_for_hpo(self, is_openml=True):
         def training_fn(config):
             parent_run_uuid = config.pop('parent_run_uuid', None)
@@ -71,7 +82,7 @@ class HPOExperiment(BaseExperiment):
         trainable = self.get_training_fn_for_hpo(is_openml=is_openml)
         model_cls = models_dict[model_nickname][0]
         search_space, default_values = model_cls.create_search_space()
-        fit_params = fit_params if fit_params is not None else {}
+        fit_params = fit_params.copy() if fit_params is not None else {}
         fit_params['report_to_ray'] = True
         param_space = dict(
             seed_model=randint(0, 10000),  # seed for model, seed_model will be passed to the search algorithm
@@ -97,8 +108,9 @@ class HPOExperiment(BaseExperiment):
                                                                                                 max_concurrent)
         tuner = Tuner(trainable=trainable, param_space=param_space, tune_config=tune_config,
                       run_config=run_config)
-        # to test the trainable function uncomment the following 2 lines
+        # to test the trainable function uncomment the following 3 lines
         # param_space['model_params'] = default_values
+        # param_space['seed_model'] = 0
         # trainable(param_space)
         results = tuner.fit()
         best_result = results.get_best_result()

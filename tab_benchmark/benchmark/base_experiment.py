@@ -153,7 +153,10 @@ class BaseExperiment:
         self.task_samples = args.task_samples
 
         self.log_dir = args.log_dir
-        self.output_dir = args.output_dir
+        output_dir = args.output_dir
+        if isinstance(output_dir, str):
+            output_dir = Path(output_dir)
+        self.output_dir = output_dir
         self.mlflow_tracking_uri = args.mlflow_tracking_uri
         self.check_if_exists = not args.do_not_check_if_exists
         self.retry_on_oom = not args.do_not_retry_on_oom
@@ -198,11 +201,11 @@ class BaseExperiment:
                                       task_samples=self.task_samples, task_folds=self.task_folds))
         log_and_print_msg('Starting experiment...', **kwargs_to_log)
 
-    def get_model(self, seed_model, model_params=None, n_jobs=1,
+    def get_model(self, seed_model, output_dir=None, model_params=None, n_jobs=1,
                   logging_to_mlflow=False, create_validation_set=False):
         model_nickname = self.model_nickname
         models_dict = self.models_dict.copy()
-        model = get_model(model_nickname, seed_model, model_params, models_dict, n_jobs, output_dir=self.output_dir)
+        model = get_model(model_nickname, seed_model, model_params, models_dict, n_jobs, output_dir=output_dir)
         if create_validation_set:
             # we disable auto early stopping when creating a validation set, because we will use it to validate
             if hasattr(model, 'auto_early_stopping'):
@@ -237,8 +240,8 @@ class BaseExperiment:
 
         """
         try:
-            fit_params = fit_params if fit_params is not None else {}
-            model_params = model_params if model_params is not None else {}
+            fit_params = fit_params.copy() if fit_params is not None else {}
+            model_params = model_params.copy() if model_params is not None else {}
             # logging
             kwargs_to_log = dict(model_nickname=self.model_nickname, seed_model=seed_model, **kwargs)
             log_and_print_msg('Running...', **kwargs_to_log)
@@ -271,7 +274,7 @@ class BaseExperiment:
             # load model
             model = self.get_model(seed_model, model_params=model_params,
                                    n_jobs=n_jobs, logging_to_mlflow=logging_to_mlflow,
-                                   create_validation_set=create_validation_set)
+                                   create_validation_set=create_validation_set, output_dir=self.output_dir)
 
             # get metrics
             if task_name in ('classification', 'binary_classification'):
@@ -325,8 +328,8 @@ class BaseExperiment:
     def run_combination_with_mlflow(self, seed_model=0, n_jobs=1, create_validation_set=False,
                                     model_params=None, fit_params=None,
                                     parent_run_uuid=None, is_openml=True, return_results=False, **kwargs):
-        fit_params = fit_params if fit_params is not None else {}
-        model_params = model_params if model_params is not None else {}
+        fit_params = fit_params.copy() if fit_params is not None else {}
+        model_params = model_params.copy() if model_params is not None else {}
         experiment_name = kwargs.pop('experiment_name', self.experiment_name)
         mlflow_tracking_uri = kwargs.pop('mlflow_tracking_uri', self.mlflow_tracking_uri)
         check_if_exists = kwargs.pop('check_if_exists', self.check_if_exists)
