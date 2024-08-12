@@ -288,7 +288,7 @@ def fit_factory(cls):
         fit_arguments = bound_args.arguments
         del fit_arguments['self']
         extra_arguments = dict(task=task, cat_features=cat_features, eval_set=eval_set, eval_name=eval_name,
-                               report_to_ray=report_to_ray)
+                               report_to_ray=report_to_ray, init_model=init_model)
         # if any extra_arguments are in the parameters of the original fit method, we integrate them back
         for key, value in extra_arguments.copy().items():
             if key in cls_parameters:
@@ -348,6 +348,10 @@ class TabBenchmarkModelFactory(type):
             'fit': fit_factory(sk_cls),
             '__doc__': doc
         }
+        if has_early_stopping:
+            dct['has_early_stopping'] = True
+        else:
+            dct['has_early_stopping'] = False
         if extra_dct:
             dct.update(extra_dct)
         return type(name, (sk_cls, SkLearnExtension), dct)
