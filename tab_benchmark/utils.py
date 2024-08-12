@@ -109,27 +109,27 @@ def check_if_arg_in_args_kwargs_of_fn(fn, arg_name, *args, return_arg=False, **k
 
 def get_metric_fn(metric, n_classes=None):
     labels = list(range(n_classes)) if n_classes is not None else None
-    # map_metric_to_func[metric] = (function, need_proba)
+    # map_metric_to_func[metric] = (function, need_proba, higher_is_better)
     auc_fn = partial(roc_auc_score, multi_class='ovr', labels=labels)
     auc_fn.__name__ = 'auc'
     log_loss_fn = partial(log_loss, labels=labels)
     log_loss_fn.__name__ = 'logloss'
     map_metric_to_func = {
-        'mse': (mean_squared_error, False),
-        'rmse': (root_mean_squared_error, False),
-        'logloss': (log_loss_fn, True),
-        'r2_score': (r2_score, False),
-        'auc': (auc_fn, True)
+        'mse': (mean_squared_error, False, False),
+        'rmse': (root_mean_squared_error, False, False),
+        'logloss': (log_loss_fn, True, False),
+        'r2_score': (r2_score, False, True),
+        'auc': (auc_fn, True, True)
     }
-    metric_fn, need_proba = map_metric_to_func[metric]
-    return metric_fn, need_proba
+    metric_fn, need_proba, higher_is_better = map_metric_to_func[metric]
+    return metric_fn, need_proba, higher_is_better
 
 
 def evaluate_metric(y_true, y_pred, metric, n_classes=None):
     y_true = copy(y_true)
     y_pred = copy(y_pred)
     if isinstance(metric, str):
-        metric_fn, _ = get_metric_fn(metric, n_classes)
+        metric_fn, _, _ = get_metric_fn(metric, n_classes)
     else:
         metric_fn = metric
     if metric_fn.__name__ == 'auc':
@@ -170,7 +170,7 @@ def evaluate_set(model, eval_set: Sequence[pd.DataFrame], metrics: str | list[st
     y_pred_proba = None
     scores = {}
     for metric in metrics:
-        func, need_proba = get_metric_fn(metric, n_classes)
+        func, need_proba, _ = get_metric_fn(metric, n_classes)
         if need_proba:
             if y_pred_proba is None:
                 y_pred_ = model.predict_proba(X)
