@@ -5,6 +5,7 @@ import mlflow
 import os
 import logging
 import warnings
+import ray
 from distributed import WorkerPlugin, Worker, Client
 from tab_benchmark.benchmark.utils import treat_mlflow, get_model, load_openml_task, fit_model, evaluate_model, \
     load_own_task
@@ -201,10 +202,16 @@ class BaseExperiment:
                                       task_samples=self.task_samples, task_folds=self.task_folds))
         log_and_print_msg('Starting experiment...', **kwargs_to_log)
 
-    def get_model(self, seed_model, output_dir=None, model_params=None, n_jobs=1,
-                  logging_to_mlflow=False, create_validation_set=False):
+    def get_model(self, seed_model, model_params=None, n_jobs=1,
+                  logging_to_mlflow=False, create_validation_set=False, output_dir=None):
         model_nickname = self.model_nickname
         models_dict = self.models_dict.copy()
+        if output_dir is None:
+            if logging_to_mlflow:
+                output_dir = mlflow.get_artifact_uri()
+            else:
+                output_dir = self.output_dir
+            os.makedirs(output_dir, exist_ok=True)
         model = get_model(model_nickname, seed_model, model_params, models_dict, n_jobs, output_dir=output_dir)
         if create_validation_set:
             # we disable auto early stopping when creating a validation set, because we will use it to validate
@@ -274,7 +281,7 @@ class BaseExperiment:
             # load model
             model = self.get_model(seed_model, model_params=model_params,
                                    n_jobs=n_jobs, logging_to_mlflow=logging_to_mlflow,
-                                   create_validation_set=create_validation_set, output_dir=self.output_dir)
+                                   create_validation_set=create_validation_set)
 
             # get metrics
             if task_name in ('classification', 'binary_classification'):
@@ -301,6 +308,10 @@ class BaseExperiment:
                 validation_results = evaluate_model(model, (X_validation, y_validation), 'validation', metrics,
                                                     default_metric, n_classes, logging_to_mlflow)
                 results.update(validation_results)
+
+            if logging_to_mlflow:
+                mlflow.log_param('was_evaluated', True)
+
             results.update({
                 'model': model,
                 'task_name': task_name,
@@ -314,6 +325,7 @@ class BaseExperiment:
                 'n_classes': n_classes,
                 'metrics': metrics,
                 'default_metric': default_metric,
+                'was_evaluated': True,
             })
         except Exception as exception:
             if self.raise_on_fit_error:
@@ -360,7 +372,6 @@ class BaseExperiment:
             if experiment is None:
                 mlflow.create_experiment(experiment_name, artifact_location=str(self.output_dir))
             mlflow.set_experiment(experiment_name)
-            run_name = '_'.join([f'{k}={v}' for k, v in unique_params.items()])
             if parent_run_uuid is not None:
                 # check if parent run is active, if not start it
                 possible_parent_run = mlflow.active_run()
@@ -372,8 +383,15 @@ class BaseExperiment:
                 nested = True
             else:
                 nested = False
+
+            # If in a ray session, set name of the run as the trial name
+            if ray.train._internal.session._get_session():
+                train_context = ray.train.get_context()
+                run_name = train_context.get_trial_name()
+            else:
+                run_name = '_'.join([f'{k}={v}' for k, v in unique_params.items()])
+
             with mlflow.start_run(run_name=run_name, nested=nested) as run:
-                parent_run_uuid = run.info.run_uuid
                 mlflow.log_params(flatten_dict(unique_params))
                 mlflow.log_param('git_hash', get_git_revision_hash())
                 return self.run_combination(seed_model=seed_model, n_jobs=n_jobs,
