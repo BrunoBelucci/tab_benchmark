@@ -1,5 +1,6 @@
 import os
 from copy import deepcopy
+from pathlib import Path
 import mlflow
 import numpy as np
 import openml
@@ -211,6 +212,8 @@ def load_openml_task(task_id, task_repeat, task_sample, task_fold, create_valida
 def get_search_algorithm_tune_config_run_config(default_param_space, search_algorithm_str, n_trials,
                                                 timeout_experiment, timeout_trial, storage_path, metric, mode,
                                                 seed, max_concurrent):
+    if isinstance(storage_path, Path):
+        storage_path = str(storage_path.resolve())
     if search_algorithm_str == 'random_search':
         search_algorithm = BasicVariantGenerator(points_to_evaluate=[default_param_space], random_state=seed,
                                                  max_concurrent=max_concurrent)
