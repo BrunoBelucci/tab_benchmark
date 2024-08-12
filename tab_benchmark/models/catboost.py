@@ -34,7 +34,7 @@ def get_recommended_params_catboost():
     default_values_from_search_space.update(dict(
         n_estimators=n_estimators_gbdt,
         auto_early_stopping=True,
-        early_stopping_rounds=early_stopping_patience_gbdt,
+        early_stopping_patience=early_stopping_patience_gbdt,
     ))
     return default_values_from_search_space
 
@@ -70,16 +70,21 @@ output_dir_property = property(output_dir_get, output_dir_set)
 class ReportToRayCatboost:
     def __init__(self, eval_name, default_metric=None):
         super().__init__()
-        self.map_default_name_to_eval_name = {f'validation_{i}': name for i, name in enumerate(eval_name)}
+        if len(eval_name) > 1:
+            self.map_default_name_to_eval_name = {f'validation_{i}': name for i, name in enumerate(eval_name)}
+        else:
+            self.map_default_name_to_eval_name = {'validation': eval_name[0]}
+        self.map_default_name_to_eval_name['learn'] = 'train'
         self.default_metric = default_metric
 
     def after_iteration(self, info):
+        dict_to_report = {}
         for default_name, metrics in info.metrics.items():
             our_name = self.map_default_name_to_eval_name[default_name]
-            dict_to_report = {f'{our_name}_{metric}': value[-1] for metric, value in metrics.items()}
+            dict_to_report.update({f'{our_name}_{metric}': value[-1] for metric, value in metrics.items()})
             if self.default_metric:
                 dict_to_report[f'{our_name}_default'] = metrics[self.default_metric][-1]
-            report(dict_to_report)
+        report(dict_to_report)
         return True
 
 
@@ -96,43 +101,71 @@ class LogToMLFlowCatboost:
     def after_iteration(self, info):
         if info.iteration % self.log_every_n_steps != 0:
             return True
+        dict_to_log = {}
         for default_name, metrics in info.metrics.items():
             our_name = self.map_default_name_to_eval_name[default_name]
-            dict_to_log = {f'{our_name}_{metric}': value[-1] for metric, value in metrics.items()}
+            dict_to_log.update({f'{our_name}_{metric}': value[-1] for metric, value in metrics.items()})
             if self.default_metric:
                 dict_to_log[f'{our_name}_default'] = metrics[self.default_metric][-1]
-            dict_to_log['iteration'] = info.iteration
-            mlflow.log_metrics(dict_to_log, step=info.iteration)
+        dict_to_log['iteration'] = info.iteration
+        mlflow.log_metrics(dict_to_log, step=info.iteration)
         return True
+
+
+map_our_metric_to_catboost_metric = {
+    ('logloss', 'binary_classification'): 'Logloss',
+    ('logloss', 'classification'): 'MultiClass',
+    ('rmse', 'regression'): 'RMSE',
+    ('rmse', 'multi_regression'): 'MultiRMSE',
+}
 
 
 def before_fit_catboost(self, extra_arguments, **fit_arguments):
     cat_features = fit_arguments.get('cat_features')
     callbacks = fit_arguments.get('callbacks', [])
-    callbacks = callbacks if callbacks else []
+
     eval_name = extra_arguments.get('eval_name')
     report_to_ray = extra_arguments.get('report_to_ray')
+    task = extra_arguments.get('task')
+
+    eval_metric = self.get_params().get('eval_metric', None)
+    if eval_metric is not None:
+        eval_metric = map_our_metric_to_catboost_metric[(eval_metric, task)]
+        self.set_params(**{'eval_metric': eval_metric})
+
+    callbacks = callbacks if callbacks else []
+
     self.set_params(**{'cat_features': cat_features})
-    if report_to_ray:
-        self.callbacks.append(ReportToRayCatboost(eval_name, default_metric=self.get_param('eval_metric')))
+
+    if self.early_stopping_patience > 0:
+        # for the moment we will leave the default early stopping callback
+        self.set_params(**{'early_stopping_rounds': self.early_stopping_patience})
+        # we will add a parameters to allow saving snapshots
+        fit_arguments['save_snapshot'] = True
+        fit_arguments['snapshot_file'] = 'model-snapshot_0.cbm'
+        fit_arguments['snapshot_interval'] = 300
+
     if self.log_to_mlflow_if_running:
         if mlflow.active_run():
-            callbacks = [LogToMLFlowCatboost(eval_name, default_metric=self.get_param('eval_metric'))]
+            callbacks.append(LogToMLFlowCatboost(eval_name, default_metric=self.get_param('eval_metric')))
+
+    if report_to_ray:
+        callbacks.append(ReportToRayCatboost(eval_name, default_metric=self.get_param('eval_metric')))
+
     fit_arguments['callbacks'] = callbacks
     return fit_arguments
 
 
 CatBoostRegressor = TabBenchmarkModelFactory.from_sk_cls(
     OriginalCatBoostRegressor,
-    map_task_to_default_values={
-        'regression': {'loss_function': 'RMSE', 'eval_metric': 'RMSE'},
-        'multi_regression': {'loss_function': 'MultiRMSE', 'eval_metric': 'MultiRMSE'},
-    },
-    has_auto_early_stopping=True,
     extended_init_kwargs={
         'categorical_encoder': 'ordinal',
         'categorical_type': 'int32',
         'data_scaler': None,
+    },
+    has_early_stopping=True, map_task_to_default_values={
+        'regression': {'loss_function': 'RMSE', 'eval_metric': 'rmse'},
+        'multi_regression': {'loss_function': 'MultiRMSE', 'eval_metric': 'rmse'},
     },
     extra_dct={
         'n_jobs': n_jobs_property,
@@ -143,18 +176,17 @@ CatBoostRegressor = TabBenchmarkModelFactory.from_sk_cls(
     }
 )
 
-
 CatBoostClassifier = TabBenchmarkModelFactory.from_sk_cls(
     OriginalCatBoostClassifier,
-    map_task_to_default_values={
-        'classification': {'loss_function': 'MultiClass', 'eval_metric': 'MultiClass'},
-        'binary_classification': {'loss_function': 'Logloss', 'eval_metric': 'Logloss'},
-    },
-    has_auto_early_stopping=True,
     extended_init_kwargs={
         'categorical_encoder': 'ordinal',
         'categorical_type': 'int32',
         'data_scaler': None,
+    },
+    has_early_stopping=True,
+    map_task_to_default_values={
+        'classification': {'loss_function': 'MultiClass', 'eval_metric': 'logloss'},
+        'binary_classification': {'loss_function': 'Logloss', 'eval_metric': 'logloss'},
     },
     extra_dct={
         'n_jobs': n_jobs_property,

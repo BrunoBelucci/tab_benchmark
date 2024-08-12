@@ -118,6 +118,7 @@ class HPOExperiment(BaseExperiment):
         # param_space['model_params'] = default_values
         # param_space['seed_model'] = 0
         # trainable(param_space)
+        # raise
         results = tuner.fit()
         best_result = results.get_best_result()
         best_result_was_evaluated = best_result.metrics.get('was_evaluated', False)
@@ -137,7 +138,7 @@ class HPOExperiment(BaseExperiment):
             best_model_dir = Path(best_result.path) / self.output_dir.name
             # get saved models
             models = list(best_model_dir.glob('model_*'))
-            # sort (hopefully) by iteration -> only valid for xgboost for the moment
+            # sort (hopefully) by iteration -> ok for xgboost, catboost, lightgbm
             models.sort(key=lambda f: int(f.stem.split("_")[-1]))
             # get the last model
             best_model_file = models[-1]
