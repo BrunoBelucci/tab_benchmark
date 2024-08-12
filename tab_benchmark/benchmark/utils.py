@@ -9,7 +9,7 @@ from ray.tune import TuneConfig
 from ray.tune.schedulers import HyperBandForBOHB
 from ray.tune.search import BasicVariantGenerator
 from ray.tune.search.bohb import TuneBOHB
-from ray.train import RunConfig
+from ray.train import RunConfig, SyncConfig
 from sklearn.model_selection import StratifiedKFold, KFold
 from tab_benchmark.benchmark.benchmarked_models import models_dict as benchmarked_models_dict
 from tab_benchmark.datasets import get_dataset
@@ -38,6 +38,7 @@ def get_model(model_nickname, seed_model, model_params=None, models_dict=None, n
     if callable(model_default_params):
         model_default_params = model_default_params(model_class)
     model_default_params.update(model_params)
+    model_default_params['random_state'] = seed_model
     model = model_class(**model_default_params)
     if hasattr(model, 'n_jobs'):
         if isinstance(model, DNNModel) and n_jobs == 1:
@@ -224,8 +225,9 @@ def get_search_algorithm_tune_config_run_config(default_param_space, search_algo
         scheduler = HyperBandForBOHB(metric=metric, mode=mode)
     else:
         raise NotImplementedError(f"Search algorithm {search_algorithm_str} not implemented.")
+    sync_config = SyncConfig(sync_artifacts=True)
     tune_config = TuneConfig(mode=mode, metric=metric, search_alg=search_algorithm,
                              scheduler=scheduler, num_samples=n_trials, time_budget_s=timeout_experiment)
     run_config = RunConfig(stop={'time_total_s': timeout_trial}, storage_path=storage_path, log_to_file=True,
-                           failure_config=FailureConfig(fail_fast='raise'))
+                           failure_config=FailureConfig(fail_fast='raise'), sync_config=sync_config)
     return search_algorithm, tune_config, run_config
