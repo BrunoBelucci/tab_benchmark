@@ -244,7 +244,7 @@ def init_factory(
 def fit_factory(cls):
     @extends(cls.fit)
     def fit_fn(self, X, y, *args, task=None, cat_features=None, eval_set=None, eval_name=None,
-               report_to_ray=False, **kwargs):
+               report_to_ray=False, init_model=None, **kwargs):
 
         eval_set = sequence_to_list(eval_set) if eval_set is not None else []
         eval_name = sequence_to_list(eval_name) if eval_name is not None else []

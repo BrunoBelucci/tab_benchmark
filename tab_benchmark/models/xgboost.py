@@ -290,6 +290,7 @@ def before_fit_xgboost(self, extra_arguments, **fit_arguments):
     report_to_ray = extra_arguments.get('report_to_ray')
     eval_name = extra_arguments.get('eval_name')
     task = extra_arguments.get('task')
+    init_model = extra_arguments.get('init_model')
 
     eval_set = fit_arguments.get('eval_set')
     X_train = fit_arguments.get('X')
@@ -333,6 +334,7 @@ def before_fit_xgboost(self, extra_arguments, **fit_arguments):
         self.callbacks.append(ReportToRayXGBoost(eval_name, default_metric=self.eval_metric))
 
     fit_arguments['eval_set'] = eval_set
+    fit_arguments['xgb_model'] = init_model
     return fit_arguments
 
 
@@ -373,15 +375,20 @@ XGBClassifier = TabBenchmarkModelFactory.from_sk_cls(
     }
 )
 
-XGBRegressor = TabBenchmarkModelFactory.from_sk_cls(XGBRegressor, extended_init_kwargs={
-    'categorical_encoder': 'ordinal',
-    'categorical_type': 'category',
-    'data_scaler': None,
-}, map_default_values_change={
-    'objective': 'reg:squarederror',
-    'eval_metric': 'rmse'
-}, has_early_stopping=True, extra_dct={
-    'create_search_space': staticmethod(create_search_space_xgboost),
-    'get_recommended_params': staticmethod(get_recommended_params_xgboost),
-    'before_fit': before_fit_xgboost,
-})
+XGBRegressor = TabBenchmarkModelFactory.from_sk_cls(
+    XGBRegressor,
+    extended_init_kwargs={
+        'categorical_encoder': 'ordinal',
+        'categorical_type': 'category',
+        'data_scaler': None,
+    },
+    map_default_values_change={
+        'objective': 'reg:squarederror',
+        'eval_metric': 'rmse'
+    },
+    has_early_stopping=True, extra_dct={
+        'create_search_space': staticmethod(create_search_space_xgboost),
+        'get_recommended_params': staticmethod(get_recommended_params_xgboost),
+        'before_fit': before_fit_xgboost,
+    }
+)
