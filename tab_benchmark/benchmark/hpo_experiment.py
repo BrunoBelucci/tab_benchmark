@@ -3,18 +3,18 @@ import os
 import time
 from pathlib import Path
 from typing import Optional
+import ray
 from ray.tune import Tuner, randint
 import mlflow
 from tab_benchmark.benchmark.base_experiment import BaseExperiment, log_and_print_msg
 from tab_benchmark.benchmark.utils import treat_mlflow, get_search_algorithm_tune_config_run_config
 from tab_benchmark.utils import get_git_revision_hash, flatten_dict, extends
-from tab_benchmark.benchmark.benchmarked_models import models_dict
 
 
 class HPOExperiment(BaseExperiment):
     @extends(BaseExperiment.__init__)
-    def __init__(self, *args, search_algorithm='random_search', n_trials=30, timeout_experiment=10*60*60,
-                 timeout_trial=2*60*60, retrain_best_model=False, max_concurrent=0, **kwargs):
+    def __init__(self, *args, search_algorithm='random_search', n_trials=30, timeout_experiment=10 * 60 * 60,
+                 timeout_trial=2 * 60 * 60, retrain_best_model=False, max_concurrent=0, **kwargs):
         super().__init__(*args, **kwargs)
         self.search_algorithm = search_algorithm
         self.n_trials = n_trials
@@ -41,13 +41,15 @@ class HPOExperiment(BaseExperiment):
         self.retrain_best_model = args.retrain_best_model
         self.max_concurrent = args.max_concurrent
 
-    def get_model(self, seed_model, output_dir: Optional[Path] = None, model_params=None, n_jobs=1,
-                  logging_to_mlflow=False, create_validation_set=False):
-        # When doing HPO with ray we want the output_dir to be configured relative to the ray storage
-        output_dir = Path.cwd() / output_dir.name
-        os.makedirs(output_dir, exist_ok=True)
-        print(output_dir)
-        return super().get_model(seed_model, output_dir, model_params, n_jobs, logging_to_mlflow, create_validation_set)
+    def get_model(self, seed_model, model_params=None, n_jobs=1,
+                  logging_to_mlflow=False, create_validation_set=False, output_dir: Optional[Path] = None):
+        if output_dir is None:
+            if ray.train._internal.session._get_session():
+                # When doing HPO with ray we want the output_dir to be configured relative to the ray storage
+                output_dir = Path.cwd() / self.output_dir.name
+                os.makedirs(output_dir, exist_ok=True)
+            # Else we use the default output_dir (artifact location if mlflow or self.output_dir)
+        return super().get_model(seed_model, model_params, n_jobs, logging_to_mlflow, create_validation_set, output_dir)
 
     def get_training_fn_for_hpo(self, is_openml=True):
         def training_fn(config):
@@ -59,6 +61,7 @@ class HPOExperiment(BaseExperiment):
                                if metric.startswith('validation_') or metric.startswith('test_')}
             if parent_run_uuid:
                 mlflow.log_metrics(metrics_results, step=int(time.time_ns()), run_id=parent_run_uuid)
+            metrics_results['was_evaluated'] = True
             return metrics_results
 
         return training_fn
@@ -76,7 +79,10 @@ class HPOExperiment(BaseExperiment):
         timeout_experiment = kwargs.pop('timeout_experiment', self.timeout_experiment)
         timeout_trial = kwargs.pop('timeout_trial', self.timeout_trial)
         max_concurrent = kwargs.pop('max_concurrent', self.max_concurrent)
-        storage_path = self.output_dir
+        if logging_to_mlflow:
+            storage_path = mlflow.get_artifact_uri()
+        else:
+            storage_path = self.output_dir
         metric = 'validation_default'
         mode = 'min'
         trainable = self.get_training_fn_for_hpo(is_openml=is_openml)
@@ -114,15 +120,54 @@ class HPOExperiment(BaseExperiment):
         # trainable(param_space)
         results = tuner.fit()
         best_result = results.get_best_result()
-        if logging_to_mlflow:
-            mlflow.log_params(best_result.metrics['config']['model_params'])
-            metrics_results = {f'best_{metric}': value for metric, value in best_result.metrics.items()
+        best_result_was_evaluated = best_result.metrics.get('was_evaluated', False)
+        best_params_and_seed = best_result.metrics['config']['model_params'].copy()
+        best_params_and_seed['seed_best_model'] = best_result.metrics['config']['seed_model']
+        best_metric_results = {f'best_{metric}': value for metric, value in best_result.metrics.items()
                                if metric.startswith('validation_') or metric.startswith('test_')}
-            mlflow.log_metrics(metrics_results)
+        if not best_result_was_evaluated:
+            # if early stopping was used, the best model may not have been evaluated on the final validation and test
+            # sets, because of early stopping managed by the tuner scheduler,
+            # so we retrain them starting from the best model file
+            # OBS.: This may lead to minor differences between training the entire model from scratch
+            # for example, for xgboost, when we load the best model, the random state is not preserved, so the model
+            # will build trees differently than the original model would have built
+
+            # first we get the best model file
+            best_model_dir = Path(best_result.path) / self.output_dir.name
+            # get saved models
+            models = list(best_model_dir.glob('model_*'))
+            # sort (hopefully) by iteration -> only valid for xgboost for the moment
+            models.sort(key=lambda f: int(f.stem.split("_")[-1]))
+            # get the last model
+            best_model_file = models[-1]
+
+            # now we retrain the best model starting from the best model file
+            config = best_result.metrics['config']
+            config['fit_params']['report_to_ray'] = False
+            config['fit_params']['init_model'] = best_model_file
+            best_model_results = super(HPOExperiment, self).run_combination_with_mlflow(
+                create_validation_set=True, parent_run_uuid=parent_run_uuid, is_openml=is_openml, return_results=True,
+                **config)
+
+            # change best_metric_results with new results
+            best_metric_results = {f'best_{metric}': value for metric, value in best_model_results.items()
+                                   if metric.startswith('validation_') or metric.startswith('test_')}
+
+        if logging_to_mlflow:
+            mlflow.log_params(best_params_and_seed)
+            mlflow.log_metrics(best_metric_results)
         if retrain_best_model:
+            # retrain without the validation set
+            # for models that used early stopping, we will still create a validation set if auto_early_stopping is True,
+            # so maybe it is not the best idea to retrain them
+            # this is most useful for models that do not have early stopping and will benefit from a
+            # training set with the validation set included
+            config = best_result.metrics['config']
+            config['fit_params']['report_to_ray'] = False
             results = super(HPOExperiment, self).run_combination_with_mlflow(
                 create_validation_set=False, parent_run_uuid=parent_run_uuid, is_openml=is_openml, return_results=True,
-                **best_result.metrics['config'])
+                **config)
             metrics_results = {f'final_{metric}': value for metric, value in results.items()
                                if metric.startswith('validation_') or metric.startswith('test_')}
             if logging_to_mlflow:
@@ -191,14 +236,16 @@ class HPOExperiment(BaseExperiment):
                                                 model_params=model_params,
                                                 parent_run_uuid=parent_run_uuid, is_openml=is_openml,
                                                 logging_to_mlflow=logging_to_mlflow,
-                                                retrain_best_model=retrain_best_model, **kwargs)
+                                                retrain_best_model=retrain_best_model, return_results=return_results,
+                                                **kwargs)
         else:
             return self.run_combination_hpo(seed_model=seed_model, n_jobs=n_jobs,
                                             create_validation_set=create_validation_set,
                                             model_params=model_params,
                                             parent_run_uuid=parent_run_uuid, is_openml=is_openml,
                                             logging_to_mlflow=logging_to_mlflow,
-                                            retrain_best_model=retrain_best_model, **kwargs)
+                                            retrain_best_model=retrain_best_model, return_results=return_results,
+                                            **kwargs)
 
 
 if __name__ == '__main__':
