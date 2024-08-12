@@ -92,7 +92,7 @@ class LogToMLFlowXGBoost(TrainingCallback):
             dict_to_log.update({f'{our_name}_{metric}': value[-1] for metric, value in metrics.items()})
             if self.default_metric:
                 dict_to_log[f'{our_name}_default'] = metrics[self.default_metric][-1]
-        mlflow.log_metrics(dict_to_log)
+        mlflow.log_metrics(dict_to_log, step=epoch)
 
 
 def remove_old_models(path, name, extension, save_top_k):
@@ -323,7 +323,7 @@ def before_fit_xgboost(self, extra_arguments, **fit_arguments):
         early_stopping_callback = EarlyStopping(self.early_stopping_patience, metric_name=eval_metric,
                                                 maximize=higher_is_better)
         checkpoint_callback = TrainingCheckPoint(self.output_dir, eval_metric=eval_metric,
-                                                 maximize=higher_is_better, save_top_k=1)
+                                                 maximize=higher_is_better, save_top_k=1, as_pickle=False)
         self.callbacks.extend([checkpoint_callback, early_stopping_callback])
 
     if self.log_to_mlflow_if_running:
