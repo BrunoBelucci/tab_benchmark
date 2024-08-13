@@ -123,7 +123,9 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
             lit_trainer_params: Optional[dict] = None,
             continuous_type: Optional[type | str] = 'float32',
             categorical_type: Optional[type | str] = 'int64',
-            min_occurrences_to_add_category: int = 10
+            min_occurrences_to_add_category: int = 10,
+            lr: Optional[float] = None,
+            weight_decay: Optional[float] = None,
     ):
         self.max_epochs = max_epochs
         self.batch_size = batch_size
@@ -139,13 +141,15 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
         self.architecture_params = architecture_params if architecture_params else {}
         self.architecture_params_not_from_dataset = architecture_params_not_from_dataset if (
             architecture_params_not_from_dataset) else {}
-        self.torch_optimizer_tuple = torch_optimizer_tuple if torch_optimizer_tuple else (torch.optim.AdamW, {})
-        self.torch_scheduler_tuple = torch_scheduler_tuple if torch_scheduler_tuple else (None, {}, {})
+        self._torch_optimizer_tuple = torch_optimizer_tuple if torch_optimizer_tuple else (torch.optim.AdamW, {})
+        self._torch_scheduler_tuple = torch_scheduler_tuple if torch_scheduler_tuple else (None, {}, {})
         self.lit_module_class = lit_module_class
         self.lit_datamodule_class = lit_datamodule_class
         self.continuous_type = continuous_type
         self.categorical_type = categorical_type
         self.min_occurrences_to_add_category = min_occurrences_to_add_category
+        self.lr = lr
+        self.weight_decay = weight_decay
         self.lit_callbacks_tuples = lit_callbacks_tuples if lit_callbacks_tuples else []
         self.lit_trainer_params = lit_trainer_params if lit_trainer_params else {}
         self.lit_datamodule_ = None
@@ -161,6 +165,18 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
             raise ValueError(
                 'Either architecture_params or architecture_params_not_from_dataset must be specified, even if is'
                 'an empty dictionary.')
+
+    @property
+    def torch_optimizer_tuple(self):
+        if self.lr is not None:
+            self._torch_optimizer_tuple[1]['lr'] = self.lr
+        if self.weight_decay is not None:
+            self._torch_optimizer_tuple[1]['weight_decay'] = self.weight_decay
+        return self._torch_optimizer_tuple
+
+    @property
+    def torch_scheduler_tuple(self):
+        return self._torch_scheduler_tuple
 
     def initialize_datamodule(self, X, y, task, cat_features_idx, cat_dims, eval_set, eval_name):
         self.lit_datamodule_ = self.lit_datamodule_class(

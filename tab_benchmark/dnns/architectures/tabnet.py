@@ -48,14 +48,15 @@ class TabNet(TabNet_, BaseArchitecture):
     """
     params_defined_from_dataset = ['input_dim', 'categorical_features_idx', 'categorical_dims',
                                    'output_dim']
+
     def __init__(
             self,
             input_dim: int,
             output_dim: int,
-            n_d: int = 8,
-            n_a: int = 8,
-            n_steps: int = 3,
-            gamma: float = 1.3,
+            n_d: int = 64,
+            n_a: int = 64,
+            n_steps: int = 5,
+            gamma: float = 1.5,
             categorical_features_idx: Optional[list[int]] = None,
             categorical_dims: Optional[list[int]] = None,
             cat_emb_dim: int = 1,
@@ -63,9 +64,9 @@ class TabNet(TabNet_, BaseArchitecture):
             n_shared: int = 2,
             epsilon: float = 1e-15,
             virtual_batch_size: int = 1024,
-            momentum: float = 0.02,
+            momentum: float = 0.9,
             mask_type: str = "sparsemax",
-            lambda_sparse: float = 1e-3,
+            lambda_sparse: float = 1e-4,
     ):
         if categorical_features_idx is None:
             categorical_features_idx = []
@@ -86,7 +87,7 @@ class TabNet(TabNet_, BaseArchitecture):
         x_continuous_categorical[..., self.cat_idxs] = x_categorical
         x_continuous_categorical[..., self.continuous_idx] = x_continuous
         x = super().forward(x_continuous_categorical)
-        model_output = {'y_pred': x[0], 'M_loss': x[1]*self.lambda_sparse}
+        model_output = {'y_pred': x[0], 'M_loss': x[1] * self.lambda_sparse}
         return model_output
 
     @staticmethod

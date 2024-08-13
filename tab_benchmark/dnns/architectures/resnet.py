@@ -157,6 +157,7 @@ class ResNet(BaseArchitecture):
     """
     params_defined_from_dataset = ['continuous_features_idx', 'categorical_features_idx', 'categorical_dims',
                                    'output_dim']
+
     def __init__(
             self,
             continuous_features_idx: list[int],

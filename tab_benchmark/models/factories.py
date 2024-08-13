@@ -54,7 +54,6 @@ def init_factory(
         continuous_target_type: Optional[type | str] = 'float32',
         # dnn architecture
         dnn_architecture_cls=None,
-        add_lr_and_weight_decay_params=False
 ):
     map_task_to_default_values_outer = map_task_to_default_values
 
@@ -181,59 +180,25 @@ def init_factory(
         additional_params = {name: param for name, param in parameters.items() if name not in do_not_include_params}
         exclude_params = ['architecture_params', 'architecture_params_not_from_dataset', 'dnn_architecture_class',
                           'lit_module_class', 'lit_datamodule_class']
-        if add_lr_and_weight_decay_params:
-            @extends(init_fn_step_2, additional_params=additional_params.values(), exclude_params=exclude_params)
-            def init_fn_step_3(
-                    self,
-                    *args,
-                    lr: Optional[float] = None,
-                    weight_decay: Optional[float] = None,
-                    **kwargs
-            ):
-                architecture_params_not_from_dataset = {}
-                for key, value in kwargs.copy().items():
-                    if key in additional_params:
-                        setattr(self, key, value)
-                        architecture_params_not_from_dataset[key] = value
-                        del kwargs[key]
-                init_fn_step_2(self, *args, **kwargs)
-                self.lr = lr
-                self.weight_decay = weight_decay
-                self.architecture_params_not_from_dataset = architecture_params_not_from_dataset
-                self.dnn_architecture_class = dnn_architecture_cls
+        @extends(init_fn_step_2, additional_params=additional_params.values(), exclude_params=exclude_params)
+        def init_fn_step_3(
+                self,
+                *args,
+                **kwargs
+        ):
+            architecture_params_not_from_dataset = {}
+            for key, value in kwargs.copy().items():
+                if key in additional_params:
+                    setattr(self, key, value)
+                    architecture_params_not_from_dataset[key] = value
+                    del kwargs[key]
+            init_fn_step_2(self, *args, **kwargs)
+            self.architecture_params_not_from_dataset = architecture_params_not_from_dataset
+            self.dnn_architecture_class = dnn_architecture_cls
 
-            init_doc += (f"\n\nArchitecture documentation:\n\nParameters that can be defined from the dataset are "
-                         f"automatically set, they are: {dnn_architecture_cls.params_defined_from_dataset}\n\n")
-            init_doc += cleandoc(dnn_architecture_cls.__doc__)
-            init_doc += "\n"
-            init_doc += cleandoc("""
-            lr:
-                Learning rate.
-            weight_decay:
-                Weight decay.
-            """)
-        else:
-            @extends(dnn_architecture_cls.__init__, exclude_params=exclude_params)
-            def init_fn_step_3(self, *args, **kwargs):
-                init_fn_step_2(self, *args, **kwargs)
-                # hopefully this will only set parameters that are not defined from the dataset
-                fn_being_extended_parameters = signature(dnn_architecture_cls.__init__, eval_str=True).parameters
-                parameters = []
-                for i, (name, param) in enumerate(fn_being_extended_parameters.items()):
-                    if name in map_default_values_change:
-                        param = param.replace(default=map_default_values_change[name])
-                    if name not in exclude_params:
-                        parameters.append(param)
-                new_signature = signature(cls.__init__).replace(parameters=parameters)
-                bound_args = new_signature.bind(*args, **kwargs)
-                bound_args.apply_defaults()
-                self.architecture_params_not_from_dataset = bound_args.arguments
-                self.set_params(**bound_args.arguments)
-
-            init_doc += (f"\n\n Architecture documentation:\n\nParameters that can be defined from the dataset are "
-                         f"automatically set, they are: {exclude_params}\n\n")
-            init_doc += cleandoc(dnn_architecture_cls.__doc__)
-
+        init_doc += (f"\n\nArchitecture documentation:\n\nParameters that can be defined from the dataset are "
+                     f"automatically set, they are: {dnn_architecture_cls.params_defined_from_dataset}\n\n")
+        init_doc += cleandoc(dnn_architecture_cls.__doc__)
     else:
         init_fn_step_3 = init_fn_step_2
 
@@ -319,7 +284,7 @@ class TabBenchmarkModelFactory(type):
     @classmethod  # to be cleaner (not change the signature of __new__)
     def from_sk_cls(cls, sk_cls, extended_init_kwargs=None, map_default_values_change=None,
                     has_early_stopping=False, map_task_to_default_values=None,
-                    dnn_architecture_cls=None, add_lr_and_weight_decay_params=False, extra_dct=None):
+                    dnn_architecture_cls=None, extra_dct=None):
         extended_init_kwargs = extended_init_kwargs if extended_init_kwargs else {}
 
         if map_task_to_default_values:
@@ -335,7 +300,6 @@ class TabBenchmarkModelFactory(type):
                                          has_early_stopping=has_early_stopping,
                                          map_task_to_default_values=map_task_to_default_values,
                                          dnn_architecture_cls=dnn_architecture_cls,
-                                         add_lr_and_weight_decay_params=add_lr_and_weight_decay_params,
                                          **extended_init_kwargs)
         if dnn_architecture_cls is not None:
             name = dnn_architecture_cls.__name__ + 'Model'
