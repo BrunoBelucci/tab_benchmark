@@ -8,24 +8,31 @@ from ray.tune import Tuner, randint
 import mlflow
 from tab_benchmark.benchmark.base_experiment import BaseExperiment, log_and_print_msg
 from tab_benchmark.benchmark.utils import treat_mlflow, get_search_algorithm_tune_config_run_config
+from tab_benchmark.models.dnn_model import DNNModel
+from tab_benchmark.models.dnn_models import early_stopping_patience_dnn
+from tab_benchmark.models.xgboost import early_stopping_patience_gbdt
 from tab_benchmark.utils import get_git_revision_hash, flatten_dict, extends
 
 
 class HPOExperiment(BaseExperiment):
     @extends(BaseExperiment.__init__)
-    def __init__(self, *args, search_algorithm='random_search', n_trials=30, timeout_experiment=10 * 60 * 60,
+    def __init__(self, *args, search_algorithm='random_search', trial_scheduler=None, n_trials=30,
+                 timeout_experiment=10 * 60 * 60,
                  timeout_trial=2 * 60 * 60, retrain_best_model=False, max_concurrent=0, **kwargs):
         super().__init__(*args, **kwargs)
         self.search_algorithm = search_algorithm
+        self.trial_scheduler = trial_scheduler
         self.n_trials = n_trials
         self.timeout_experiment = timeout_experiment  # 10 hours
         self.timeout_trial = timeout_trial  # 2 hours
         self.retrain_best_model = retrain_best_model
         self.max_concurrent = max_concurrent
+        self.log_dir_dask = None
 
     def add_arguments_to_parser(self):
         super().add_arguments_to_parser()
         self.parser.add_argument('--search_algorithm', type=str, default=self.search_algorithm)
+        self.parser.add_argument('--trial_scheduler', type=str, default=self.trial_scheduler)
         self.parser.add_argument('--n_trials', type=int, default=self.n_trials)
         self.parser.add_argument('--timeout_experiment', type=int, default=self.timeout_experiment)
         self.parser.add_argument('--timeout_trial', type=int, default=self.timeout_trial)
@@ -35,6 +42,7 @@ class HPOExperiment(BaseExperiment):
     def unpack_parser(self):
         args = super().unpack_parser()
         self.search_algorithm = args.search_algorithm
+        self.trial_scheduler = args.trial_scheduler
         self.n_trials = args.n_trials
         self.timeout_experiment = args.timeout_experiment
         self.timeout_trial = args.timeout_trial
@@ -77,6 +85,7 @@ class HPOExperiment(BaseExperiment):
         experiment_name = kwargs.pop('experiment_name', self.experiment_name)
         parent_run_uuid = kwargs.pop('parent_run_uuid', None)
         search_algorithm_str = kwargs.pop('search_algorithm', self.search_algorithm)
+        trial_scheduler_str = kwargs.pop('trial_scheduler', self.trial_scheduler)
         n_trials = kwargs.pop('n_trials', self.n_trials)
         timeout_experiment = kwargs.pop('timeout_experiment', self.timeout_experiment)
         timeout_trial = kwargs.pop('timeout_trial', self.timeout_trial)
@@ -106,8 +115,14 @@ class HPOExperiment(BaseExperiment):
             model_params=default_values,
         )
         param_space.update(kwargs)
+        if issubclass(model_cls, DNNModel):
+            max_t = early_stopping_patience_dnn
+        else:
+            max_t = early_stopping_patience_gbdt
         search_algorithm, tune_config, run_config = get_search_algorithm_tune_config_run_config(default_param_space,
                                                                                                 search_algorithm_str,
+                                                                                                trial_scheduler_str,
+                                                                                                max_t,
                                                                                                 n_trials,
                                                                                                 timeout_experiment,
                                                                                                 timeout_trial,
@@ -193,6 +208,7 @@ class HPOExperiment(BaseExperiment):
         check_if_exists = kwargs.pop('check_if_exists', self.check_if_exists)
         model_nickname = kwargs.pop('model_nickname', self.model_nickname)
         search_algorithm = kwargs.pop('search_algorithm', self.search_algorithm)
+        trial_scheduler = kwargs.pop('trial_scheduler', self.trial_scheduler)
         n_trials = kwargs.pop('n_trials', self.n_trials)
         timeout_experiment = kwargs.pop('timeout_experiment', self.timeout_experiment)
         timeout_trial = kwargs.pop('timeout_trial', self.timeout_trial)
@@ -207,7 +223,7 @@ class HPOExperiment(BaseExperiment):
                 'pct_validation': kwargs.pop('pct_validation', self.pct_validation),
             })
         unique_params = dict(model_nickname=model_nickname, model_params=model_params, seed_model=seed_model,
-                             search_algorithm=search_algorithm, n_trials=n_trials,
+                             search_algorithm=search_algorithm, trial_scheduler=trial_scheduler, n_trials=n_trials,
                              timeout_experiment=timeout_experiment, timeout_trial=timeout_trial, **kwargs)
         possible_existent_run, logging_to_mlflow = treat_mlflow(experiment_name, mlflow_tracking_uri, check_if_exists,
                                                                 **unique_params)

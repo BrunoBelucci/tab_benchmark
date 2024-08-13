@@ -340,6 +340,8 @@ def create_search_space_tabnet():
 
 
 class TabNetModel(DNNModel):
+    __doc__ = DNNModel.__doc__
+
     @extends(DNNModel.__init__)
     def __init__(self, *args, gamma_sched=None, step_sched=None, **kwargs):
         super().__init__()
