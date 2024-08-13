@@ -53,6 +53,8 @@ class HPOExperiment(BaseExperiment):
 
     def get_training_fn_for_hpo(self, is_openml=True):
         def training_fn(config):
+            # setup logger on ray worker
+            self.setup_logger(log_dir=self.log_dir_dask, filemode='a')
             parent_run_uuid = config.pop('parent_run_uuid', None)
             results = super(HPOExperiment, self).run_combination_with_mlflow(
                 create_validation_set=True, parent_run_uuid=parent_run_uuid, is_openml=is_openml, return_results=True,
@@ -181,6 +183,10 @@ class HPOExperiment(BaseExperiment):
     def run_combination_with_mlflow(self, seed_model=0, n_jobs=1, create_validation_set=True,
                                     model_params=None,
                                     parent_run_uuid=None, is_openml=True, return_results=False, **kwargs):
+        # setup logger to local dir on dask worker (will not have effect if running from main)
+        self.log_dir_dask = Path.cwd() / self.log_dir
+        self.setup_logger(log_dir=self.log_dir_dask, filemode='w')
+
         model_params = model_params if model_params is not None else {}
         experiment_name = kwargs.pop('experiment_name', self.experiment_name)
         mlflow_tracking_uri = kwargs.pop('mlflow_tracking_uri', self.mlflow_tracking_uri)

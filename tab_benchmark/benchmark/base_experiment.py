@@ -97,6 +97,7 @@ class BaseExperiment:
         self.models_dict = models_dict if models_dict else benchmarked_models_dict.copy()
         self.raise_on_fit_error = raise_on_fit_error
         self.client = None
+        self.logger_filename = None
 
     def add_arguments_to_parser(self):
         self.parser.add_argument('--experiment_name', type=str, default=self.experiment_name)
@@ -174,33 +175,27 @@ class BaseExperiment:
             self.add_arguments_to_parser()
             self.unpack_parser()
 
-    def create_logger(self):
-        os.makedirs(self.log_dir, exist_ok=True)
-        self.output_dir = self.output_dir / self.experiment_name
-        os.makedirs(self.output_dir, exist_ok=True)
-        name = self.experiment_name
-        if (self.log_dir / f'{name}.log').exists():
-            file_names = sorted(self.log_dir.glob(f'{name}_????.log'))
-            if file_names:
-                file_name = file_names[-1].name
-                id_file = int(file_name.split('_')[-1].split('.')[0])
-                name = f'{name}_{id_file + 1:04d}'
-            else:
-                name = name + '_0001'
-        logging.basicConfig(filename=self.log_dir / f'{name}.log',
-                            format='%(asctime)s - %(levelname)s\n%(message)s\n',
-                            level=logging.INFO, filemode='w')
-        kwargs_to_log = dict(experiment_name=self.experiment_name, model_nickname=self.model_nickname,
-                             seeds_model=self.seeds_model)
-        if self.using_own_resampling:
-            kwargs_to_log.update(dict(datasets_names_or_ids=self.datasets_names_or_ids,
-                                      seeds_datasets=self.seeds_datasets,
-                                      resample_strategy=self.resample_strategy, k_folds=self.k_folds, folds=self.folds,
-                                      pct_test=self.pct_test))
+    def setup_logger(self, log_dir=None, filemode='w'):
+        if log_dir is None:
+            log_dir = self.log_dir
+        os.makedirs(log_dir, exist_ok=True)
+        if self.logger_filename is None:
+            name = self.experiment_name
+            if (log_dir / f'{name}.log').exists():
+                file_names = sorted(log_dir.glob(f'{name}_????.log'))
+                if file_names:
+                    file_name = file_names[-1].name
+                    id_file = int(file_name.split('_')[-1].split('.')[0])
+                    name = f'{name}_{id_file + 1:04d}'
+                else:
+                    name = name + '_0001'
+            logger_filename = f'{name}.log'
+            self.logger_filename = logger_filename
         else:
-            kwargs_to_log.update(dict(tasks_ids=self.tasks_ids, task_repeats=self.task_repeats,
-                                      task_samples=self.task_samples, task_folds=self.task_folds))
-        log_and_print_msg('Starting experiment...', **kwargs_to_log)
+            logger_filename = self.logger_filename
+        logging.basicConfig(filename=log_dir / logger_filename,
+                            format='%(asctime)s - %(levelname)s\n%(message)s\n',
+                            level=logging.INFO, filemode=filemode)
 
     def get_model(self, seed_model, model_params=None, n_jobs=1,
                   logging_to_mlflow=False, create_validation_set=False, output_dir=None):
@@ -473,7 +468,20 @@ class BaseExperiment:
             self.using_own_resampling = False
         else:
             raise ValueError("You must provide either datasets_names_or_ids or tasks_ids, but not both.")
-        self.create_logger()
+        self.output_dir = self.output_dir / self.experiment_name
+        os.makedirs(self.output_dir, exist_ok=True)
+        self.setup_logger()
+        kwargs_to_log = dict(experiment_name=self.experiment_name, model_nickname=self.model_nickname,
+                             seeds_model=self.seeds_model)
+        if self.using_own_resampling:
+            kwargs_to_log.update(dict(datasets_names_or_ids=self.datasets_names_or_ids,
+                                      seeds_datasets=self.seeds_datasets,
+                                      resample_strategy=self.resample_strategy, k_folds=self.k_folds, folds=self.folds,
+                                      pct_test=self.pct_test))
+        else:
+            kwargs_to_log.update(dict(tasks_ids=self.tasks_ids, task_repeats=self.task_repeats,
+                                      task_samples=self.task_samples, task_folds=self.task_folds))
+        log_and_print_msg('Starting experiment...', **kwargs_to_log)
         if self.dask_cluster_type is not None:
             client = self.setup_dask(self.n_workers, self.dask_cluster_type, self.slurm_config_name, self.dask_address)
         else:
