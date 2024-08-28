@@ -1,89 +1,73 @@
 from __future__ import annotations
 import os
+from abc import ABC, abstractmethod
 from copy import deepcopy
 from pathlib import Path
-from typing import Optional
-import numpy as np
+from typing import Optional, Sequence
 import pandas as pd
-from tab_benchmark.models.sk_learn_extension import SkLearnExtension
+from sklearn.base import BaseEstimator
+from tab_benchmark.preprocess import create_data_preprocess_pipeline, create_target_preprocess_pipeline
 from tab_benchmark.utils import extends, train_test_split_forced, sequence_to_list
-from inspect import cleandoc, signature
+from inspect import cleandoc, signature, Signature
 from tab_benchmark.utils import check_same_keys
 
 
-def fn_to_add_auto_early_stopping(self, X, y, task, eval_set, eval_name):
-    if self.auto_early_stopping:
-        if task == 'classification' or task == 'binary_classification':
-            stratify = y
-        else:
-            stratify = None
-        X, X_valid, y, y_valid = train_test_split_forced(
-            X, y,
-            test_size_pct=self.early_stopping_validation_size,
-            # random_state=self.random_seed,  this will be ensured by set_seeds
-            stratify=stratify
-        )
-        eval_set = eval_set if eval_set else []
-        eval_set = sequence_to_list(eval_set)
-        eval_set.append((X_valid, y_valid))
-        eval_name = eval_name if eval_name else []
-        eval_name = sequence_to_list(eval_name)
-        eval_name.append('validation_es')
-    return X, y, eval_set, eval_name
+class TabBenchmarkModel(ABC, BaseEstimator):
+    """
+    Class of every model in the tab_benchmark package, it adds some preprocessing functionalities with the method
+    create_preprocess_pipeline, and it standardizes the fit method. It adds the following parameters to the __init__
+    method of the original class:
 
-
-def init_factory(
-        cls,
-        map_default_values_change=None,
-        has_early_stopping: bool = False,
-        map_task_to_default_values=None,
-        # preprocessing
-        categorical_imputer: Optional[str | int | float] = 'most_frequent',
-        continuous_imputer: Optional[str | int | float] = 'median',
-        categorical_encoder: Optional[str] = 'one_hot',
-        handle_unknown_categories: bool = True,
-        variance_threshold: Optional[float] = 0.0,
-        data_scaler: Optional[str] = 'standard',
-        categorical_type: Optional[type | str] = 'float32',
-        continuous_type: Optional[type | str] = 'float32',
-        target_imputer: Optional[str | int | float] = None,
-        categorical_target_encoder: Optional[str] = 'ordinal',  # only used in classification
-        categorical_target_min_frequency: Optional[int | float] = 10,  # only used in classification
-        continuous_target_scaler: Optional[str] = 'standard',  # only used in regression
-        categorical_target_type: Optional[type | str] = 'float32',
-        continuous_target_type: Optional[type | str] = 'float32',
-        # dnn architecture
-        dnn_architecture_cls=None,
-):
-    map_task_to_default_values_outer = map_task_to_default_values
-
-    @extends(cls.__init__, map_default_values_change=map_default_values_change)
-    def init_fn_step_1(
+    Parameters
+    ----------
+    categorical_imputer:
+        Imputer strategy for categorical features.
+    continuous_imputer:
+        Imputer strategy for continuous features.
+    categorical_encoder:
+        Encoder strategy for categorical features.
+    handle_unknown_categories:
+        Whether to handle unknown categories.
+    variance_threshold:
+        Threshold for variance.
+    data_scaler:
+        Scaler strategy for data.
+    categorical_type:
+        Data type for categorical features.
+    continuous_type:
+        Data type for continuous features.
+    target_imputer:
+        Imputer strategy for target.
+    categorical_target_encoder:
+        Encoder strategy for target.
+    categorical_target_min_frequency:
+        Minimum frequency for target.
+    continuous_target_scaler:
+        Scaler strategy for target.
+    categorical_target_type:
+        Data type for target.
+    continuous_target_type:
+        Data type for target.
+    """
+    def __init__(
             self,
-            *args,
-            map_task_to_default_values=None,
-            categorical_imputer: Optional[str | int | float] = categorical_imputer,
-            continuous_imputer: Optional[str | int | float] = continuous_imputer,
-            categorical_encoder: Optional[str] = categorical_encoder,
-            handle_unknown_categories: bool = handle_unknown_categories,
-            variance_threshold: Optional[float] = variance_threshold,
-            data_scaler: Optional[str] = data_scaler,
-            categorical_type: Optional[np.dtype | str] = categorical_type,
-            continuous_type: Optional[np.dtype] = continuous_type,
-            target_imputer: Optional[str | int | float] = target_imputer,
-            categorical_target_encoder: Optional[str] = categorical_target_encoder,  # only used in classification
-            categorical_target_min_frequency: Optional[int | float] = categorical_target_min_frequency,
-            # only used in classification
-            continuous_target_scaler: Optional[str] = continuous_target_scaler,  # only used in regression
-            categorical_target_type: Optional[np.dtype] = categorical_target_type,
-            continuous_target_type: Optional[np.dtype] = continuous_target_type,
-            # any output of model will be written here
+            *,
+            categorical_imputer: Optional[str | int | float] = 'most_frequent',
+            continuous_imputer: Optional[str | int | float] = 'median',
+            categorical_encoder: Optional[str] = 'one_hot',
+            handle_unknown_categories: bool = True,
+            variance_threshold: Optional[float] = 0.0,
+            data_scaler: Optional[str] = 'standard',
+            categorical_type: Optional[type | str] = 'float32',
+            continuous_type: Optional[type | str] = 'float32',
+            target_imputer: Optional[str | int | float] = None,
+            categorical_target_encoder: Optional[str] = 'ordinal',  # only used in classification
+            categorical_target_min_frequency: Optional[int | float] = 10,  # only used in classification
+            continuous_target_scaler: Optional[str] = 'standard',  # only used in regression
+            categorical_target_type: Optional[type | str] = 'float32',
+            continuous_target_type: Optional[type | str] = 'float32',
             output_dir: Optional[str | os.PathLike] = Path.cwd(),
-            **kwargs
     ):
-        cls.__init__(self, *args, **kwargs)
-        self.map_task_to_default_values = map_task_to_default_values if map_task_to_default_values else \
-            map_task_to_default_values_outer
         self.categorical_imputer = categorical_imputer
         self.continuous_imputer = continuous_imputer
         self.categorical_encoder = categorical_encoder
@@ -101,221 +85,290 @@ def init_factory(
         self.categorical_target_type = categorical_target_type
         self.continuous_target_type = continuous_target_type
         self.output_dir = output_dir
-        self.data_preprocess_pipeline_ = None
         self.target_preprocess_pipeline_ = None
-        self.model_pipeline_ = None
-        self.task_ = None
-        self.cat_features_ = None
+        self.data_preprocess_pipeline_ = None
 
-    init_doc = cleandoc("""Wrapper around scikit-learn class.
-
-        Parameters
-        ----------
-        map_task_to_default_values:
-            Mapping from task to default values.
-        categorical_imputer:
-            Imputer strategy for categorical features.
-        continuous_imputer:
-            Imputer strategy for continuous features.
-        categorical_encoder:
-            Encoder strategy for categorical features.
-        handle_unknown_categories:
-            Whether to handle unknown categories.
-        variance_threshold:
-            Threshold for variance.
-        data_scaler:
-            Scaler strategy for data.
-        categorical_type:
-            Data type for categorical features.
-        continuous_type:
-            Data type for continuous features.
-        target_imputer:
-            Imputer strategy for target.
-        categorical_target_encoder:
-            Encoder strategy for target.
-        categorical_target_min_frequency:
-            Minimum frequency for target.
-        continuous_target_scaler:
-            Scaler strategy for target.
-        categorical_target_type:
-            Data type for target.
-        continuous_target_type:
-            Data type for target.
-        """)
-
-    if has_early_stopping:
-        @extends(init_fn_step_1)
-        def init_fn_step_2(self, *args, auto_early_stopping: bool = True, early_stopping_validation_size=0.1,
-                           early_stopping_patience: int = 0,
-                           log_to_mlflow_if_running: bool = True, eval_metric: Optional[str] = None,
-                           **kwargs):
-            self.auto_early_stopping = auto_early_stopping
-            self.early_stopping_validation_size = early_stopping_validation_size
-            self.early_stopping_patience = early_stopping_patience
-            self.log_to_mlflow_if_running = log_to_mlflow_if_running
-            self.eval_metric = eval_metric
-            init_fn_step_1(self, *args, **kwargs)
-
-        init_doc += "\n"
-        init_doc += cleandoc("""
-        auto_early_stopping:
-            Whether to use early stopping automatically, i.e., split the training data into training and validation sets
-            and stop training when the validation score does not improve anymore.
-        early_stopping_validation_size:
-            Size of the validation set when using auto early stopping.
-        log_to_mlflow_if_running:
-            Whether to log intermediate results to MLflow if it is running.
-        eval_metric:
-            Evaluation metric. If None, the default metric of the model will be used. This metric can be any defined
-            in get_metric_fn, and if there is an equivalent metric in the model, it will be used.
-        """)
-
-    else:
-        init_fn_step_2 = init_fn_step_1
-
-    if dnn_architecture_cls is not None:
-        do_not_include_params = dnn_architecture_cls.params_defined_from_dataset
-        do_not_include_params = do_not_include_params + ['self']
-        parameters = signature(dnn_architecture_cls.__init__).parameters
-        additional_params = {name: param for name, param in parameters.items() if name not in do_not_include_params}
-        exclude_params = ['architecture_params', 'architecture_params_not_from_dataset', 'dnn_architecture_class',
-                          'lit_module_class', 'lit_datamodule_class']
-        @extends(init_fn_step_2, additional_params=additional_params.values(), exclude_params=exclude_params)
-        def init_fn_step_3(
-                self,
-                *args,
-                **kwargs
-        ):
-            architecture_params_not_from_dataset = {}
-            for key, value in kwargs.copy().items():
-                if key in additional_params:
-                    setattr(self, key, value)
-                    architecture_params_not_from_dataset[key] = value
-                    del kwargs[key]
-            init_fn_step_2(self, *args, **kwargs)
-            self.architecture_params_not_from_dataset = architecture_params_not_from_dataset
-            self.dnn_architecture_class = dnn_architecture_cls
-
-        init_doc += (f"\n\nArchitecture documentation:\n\nParameters that can be defined from the dataset are "
-                     f"automatically set, they are: {dnn_architecture_cls.params_defined_from_dataset}\n\n")
-        init_doc += cleandoc(dnn_architecture_cls.__doc__)
-    else:
-        init_fn_step_3 = init_fn_step_2
-
-    init_doc += "\n\nOriginal documentation:\n\n" + cleandoc(cls.__doc__)
-    return init_fn_step_3, init_doc
-
-
-def fit_factory(cls):
-    @extends(cls.fit)
-    def fit_fn(self, X, y, *args, task=None, cat_features=None, eval_set=None, eval_name=None,
-               report_to_ray=False, init_model=None, **kwargs):
-
-        eval_set = sequence_to_list(eval_set) if eval_set is not None else []
-        eval_name = sequence_to_list(eval_name) if eval_name is not None else []
-        if eval_set and not eval_name:
-            eval_name = [f'validation_{i}' for i in range(len(eval_set))]
-        if len(eval_set) != len(eval_name):
-            raise AttributeError('eval_set and eval_name should have the same length')
-
-        if isinstance(y, pd.Series):
-            y = y.to_frame()
-
-        if cat_features:
-            # if we pass cat_features as column names, we can ensure that they are in the dataframe
-            # (and not dropped during preprocessing)
-            if isinstance(cat_features[0], str):
-                cat_features_without_dropped = deepcopy(cat_features)
-                for feature in cat_features:
-                    if feature not in X.columns:
-                        cat_features_without_dropped.remove(feature)
-                cat_features = cat_features_without_dropped
-
-        if self.map_task_to_default_values is not None:
-            if task is not None:
-                if task in self.map_task_to_default_values:
-                    for key, value in self.map_task_to_default_values[task].items():
-                        if self.get_params()[key] == 'default':
-                            self.set_params(**{key: value})
-            else:
-                raise (ValueError('This model has map_task_to_default_values, which means it has some values that are '
-                                  'task dependent. You must provide the task when calling fit.'))
-
-        if hasattr(self, 'auto_early_stopping'):
-            X, y, eval_set, eval_name = fn_to_add_auto_early_stopping(self, X, y, task, eval_set, eval_name)
-
-        # if we have a before_fit method, we call it here
-        # it can modify the arguments of fit that will be passed to the original fit method
-        # this way we can integrate for example the modifications on eval_set, eval_name etc
-        cls_signature = signature(cls.fit)
-        bound_args = cls_signature.bind_partial(self, X, y, *args, **kwargs)
-        cls_parameters = cls_signature.parameters
-        fit_arguments = bound_args.arguments
-        del fit_arguments['self']
-        extra_arguments = dict(task=task, cat_features=cat_features, eval_set=eval_set, eval_name=eval_name,
-                               report_to_ray=report_to_ray, init_model=init_model)
-        # if any extra_arguments are in the parameters of the original fit method, we integrate them back
-        for key, value in extra_arguments.copy().items():
-            if key in cls_parameters:
-                fit_arguments[key] = value
-                del extra_arguments[key]
-
-        if hasattr(self, 'before_fit'):
-            # fn takes extra_arguments and fit_arguments and returns fit_arguments (possibly modified)
-            fit_arguments = self.before_fit(extra_arguments, **fit_arguments)
-
-        return cls.fit(self, **fit_arguments)
-
-    doc = cleandoc("""Wrapper around the fit method of the scikit-learn class.
+    @abstractmethod
+    def fit(
+            self,
+            X: pd.DataFrame,
+            y: pd.DataFrame | pd.Series,
+            task: Optional[str] = None,
+            cat_features: Optional[list[str]] = None,
+            eval_set: Optional[list[tuple]] = None,
+            eval_name: Optional[list[str]] = None,
+            report_to_ray: bool = False,
+            init_model: Optional[str | Path] = None,
+            *args,
+            **kwargs
+    ):
+        """
+        Fit the model with a common interface. It expects the following parameters besides the ones in the original
+        fit method of the model:
 
         Parameters
         ----------
+        X:
+            Features.
+        y:
+            Target.
         task:
-            Task type.
+            Task type. Can be 'classification', 'binary_classification', 'regression', 'multi_regression'.
         cat_features:
             Categorical features.
-        """)
-    doc += "\n\nOriginal documentation:\n\n"
-    fit_fn.__doc__ = doc + cls.fit.__doc__
-    return fit_fn
+        eval_set:
+            Evaluation set.
+        eval_name:
+            Evaluation name.
+        report_to_ray:
+            Whether to report to Ray for tuning.
+        init_model:
+            Initial model to start from.
+        """
+        pass
+
+    def create_preprocess_pipeline(
+            self,
+            task: str,
+            categorical_features_names: Optional[Sequence[int | str]] = None,
+            continuous_features_names: Optional[Sequence[int | str]] = None,
+            orderly_features_names: Optional[Sequence[int | str]] = None,
+    ):
+        self.data_preprocess_pipeline_ = create_data_preprocess_pipeline(
+            categorical_features_names=categorical_features_names,
+            continuous_features_names=continuous_features_names,
+            orderly_features_names=orderly_features_names,
+            categorical_imputer=self.categorical_imputer,
+            continuous_imputer=self.continuous_imputer,
+            categorical_encoder=self.categorical_encoder,
+            handle_unknown_categories=self.handle_unknown_categories,
+            variance_threshold=self.variance_threshold,
+            scaler=self.data_scaler,
+            categorical_type=self.categorical_type,
+            continuous_type=self.continuous_type,
+        )
+        self.target_preprocess_pipeline_ = create_target_preprocess_pipeline(
+            task=task,
+            imputer=self.target_imputer,
+            categorical_encoder=self.categorical_target_encoder,
+            categorical_min_frequency=self.categorical_target_min_frequency,
+            continuous_scaler=self.continuous_target_scaler,
+            categorical_type=self.categorical_target_type,
+            continuous_type=self.continuous_target_type,
+        )
 
 
-class TabBenchmarkModelFactory(type):
-    @classmethod  # to be cleaner (not change the signature of __new__)
-    def from_sk_cls(cls, sk_cls, extended_init_kwargs=None, map_default_values_change=None,
-                    has_early_stopping=False, map_task_to_default_values=None,
-                    dnn_architecture_cls=None, extra_dct=None):
-        extended_init_kwargs = extended_init_kwargs if extended_init_kwargs else {}
+def early_stopping_init(self, *, auto_early_stopping: bool = True, early_stopping_validation_size=0.1,
+                        early_stopping_patience: int = 0, log_to_mlflow_if_running: bool = True,
+                        eval_metric: Optional[str] = None):
+    """
+    auto_early_stopping:
+            Whether to use early stopping automatically, i.e., split the training data into training and validation sets
+            and stop training when the validation score does not improve anymore.
+    early_stopping_validation_size:
+        Size of the validation set when using auto early stopping.
+    early_stopping_patience:
+        Patience for early stopping.
+    log_to_mlflow_if_running:
+        Whether to log intermediate results to MLflow if it is running.
+    eval_metric:
+        Evaluation metric. If None, the default metric of the model will be used. This metric can be any defined
+        in get_metric_fn, and if there is an equivalent metric in the model, it will be used.
+    """
+    self.auto_early_stopping = auto_early_stopping
+    self.early_stopping_validation_size = early_stopping_validation_size
+    self.early_stopping_patience = early_stopping_patience
+    self.log_to_mlflow_if_running = log_to_mlflow_if_running
+    self.eval_metric = eval_metric
 
-        if map_task_to_default_values:
-            map_default_values_change = map_default_values_change if map_default_values_change else {}
-            dicts = list(map_task_to_default_values.values())
-            if not check_same_keys(*dicts):
-                raise ValueError('All dictionaries in map_task_to_default_values must have the same keys.')
-            keys = dicts[0].keys()
-            for key in keys:
-                map_default_values_change[key] = 'default'
 
-        init_fn, init_doc = init_factory(sk_cls, map_default_values_change=map_default_values_change,
-                                         has_early_stopping=has_early_stopping,
-                                         map_task_to_default_values=map_task_to_default_values,
-                                         dnn_architecture_cls=dnn_architecture_cls,
-                                         **extended_init_kwargs)
-        if dnn_architecture_cls is not None:
-            name = dnn_architecture_cls.__name__ + 'Model'
-            doc = init_doc
+def fn_to_add_auto_early_stopping(auto_early_stopping, early_stopping_validation_size,
+                                  X, y, task, eval_set, eval_name):
+    if auto_early_stopping:
+        if task == 'classification' or task == 'binary_classification':
+            stratify = y
         else:
-            name = sk_cls.__name__
-            doc = init_doc
-        dct = {
-            '__init__': init_fn,
-            'fit': fit_factory(sk_cls),
-            '__doc__': doc
-        }
-        if has_early_stopping:
-            dct['has_early_stopping'] = True
-        else:
-            dct['has_early_stopping'] = False
-        if extra_dct:
-            dct.update(extra_dct)
-        return type(name, (sk_cls, SkLearnExtension), dct)
+            stratify = None
+        X, X_valid, y, y_valid = train_test_split_forced(
+            X, y,
+            test_size_pct=early_stopping_validation_size,
+            # random_state=random_seed,  this will be ensured by set_seeds
+            stratify=stratify
+        )
+        eval_set = eval_set if eval_set else []
+        eval_set = sequence_to_list(eval_set)
+        eval_set.append((X_valid, y_valid))
+        eval_name = eval_name if eval_name else []
+        eval_name = sequence_to_list(eval_name)
+        eval_name.append('validation_es')
+    return X, y, eval_set, eval_name
+
+
+def sklearn_factory(sklearn_cls, has_early_stopping=False, default_values=None,
+                    map_task_to_default_values=None, before_fit_method=None, extra_dct=None):
+    default_values = default_values.copy() if default_values else {}
+    map_task_to_default_values = map_task_to_default_values.copy() if map_task_to_default_values else {}
+    extra_dct = extra_dct.copy() if extra_dct else {}
+
+    if map_task_to_default_values:
+        dicts = list(map_task_to_default_values.values())
+        if not check_same_keys(*dicts):
+            raise ValueError('All dictionaries in map_task_to_default_values must have the same keys.')
+        keys = dicts[0].keys()
+        for key in keys:
+            default_values[key] = 'default'
+
+    # init parameters and doc
+    sklearn_parameters = {name: param for name, param in signature(sklearn_cls.__init__).parameters.items()}
+    sklearn_var_keyword_parameter = {name: param for name, param in sklearn_parameters.items()
+                                     if param.kind == param.VAR_KEYWORD}
+    if sklearn_var_keyword_parameter:
+        for key in sklearn_var_keyword_parameter:
+            del sklearn_parameters[key]
+    tab_benchmark_model_parameters = {name: param for name, param in
+                                      signature(TabBenchmarkModel.__init__).parameters.items() if name != 'self'}
+    early_stopping_parameters = {name: param for name, param in signature(early_stopping_init).parameters.items()
+                                 if name != 'self'}
+    extra_parameters = tab_benchmark_model_parameters
+
+    sklearn_doc = cleandoc(sklearn_cls.__doc__)
+    tab_benchmark_doc = cleandoc(TabBenchmarkModel.__doc__)
+    early_stopping_doc = cleandoc(early_stopping_init.__doc__)
+    init_doc = tab_benchmark_doc
+
+    if has_early_stopping:
+        extra_parameters.update(early_stopping_parameters)
+        init_doc += '\n' + early_stopping_doc
+    init_doc += '\n\n Original documentation:\n\n' + sklearn_doc
+
+    # remove parameters from sklearn_cls that are in extra_parameters
+    for name, param in extra_parameters.items():
+        if name in sklearn_parameters:
+            sklearn_parameters.pop(name)
+
+    init_parameters = sklearn_parameters
+    init_parameters.update(extra_parameters)
+    if sklearn_var_keyword_parameter:
+        init_parameters.update(sklearn_var_keyword_parameter)
+    if default_values:
+        for name, value in default_values.items():
+            init_parameters[name] = init_parameters[name].replace(default=value)
+
+    # fit parameters and doc
+    tab_benchmark_fit_parameters = {name: param for name, param in signature(TabBenchmarkModel.fit).parameters.items()
+                                    if name not in ('args', 'kwargs')}
+    tab_benchmark_fit_doc = cleandoc(TabBenchmarkModel.fit.__doc__)
+    sklearn_fit_parameters = {name: param for name, param in signature(sklearn_cls.fit).parameters.items()
+                              if name != 'self'}
+    sklearn_fit_doc = cleandoc(sklearn_cls.fit.__doc__)
+
+    # remove parameters from sklearn_cls that are in tab_benchmark_fit_parameters
+    for name, param in tab_benchmark_fit_parameters.items():
+        if name in sklearn_fit_parameters:
+            sklearn_fit_parameters.pop(name)
+
+    fit_parameters = tab_benchmark_fit_parameters
+    fit_parameters.update(sklearn_fit_parameters)
+    fit_doc = tab_benchmark_fit_doc + '\n\n Original documentation:\n\n' + sklearn_fit_doc
+
+    sklearn_fit_signature = signature(sklearn_cls.fit)
+
+    # CLASS DEFINITION
+    class TabBenchmarkSklearn(TabBenchmarkModel, sklearn_cls):
+        def __init__(self, *args, **kwargs):
+            bind_args = signature(self.__init__).bind(*args, **kwargs)
+            bind_args.apply_defaults()
+            arguments = bind_args.arguments
+            sklearn_cls_arguments = {name: arguments.pop(name) for name in list(arguments.keys())
+                                     if name not in extra_parameters}
+            sklearn_cls.__init__(self, **sklearn_cls_arguments)
+            if has_early_stopping:
+                early_stopping_arguments = {name: arguments.pop(name) for name in list(arguments.keys())
+                                            if name in early_stopping_parameters}
+                early_stopping_init(self, **early_stopping_arguments)
+            TabBenchmarkModel.__init__(self, **arguments)
+            if map_task_to_default_values:
+                self.map_task_to_default_values = map_task_to_default_values
+
+        def fit(self, X, y, task=None, cat_features=None, eval_set=None, eval_name=None, report_to_ray=False,
+                init_model=None, *args, **kwargs):
+            eval_set = sequence_to_list(eval_set) if eval_set is not None else []
+            eval_name = sequence_to_list(eval_name) if eval_name is not None else []
+            if eval_set and not eval_name:
+                eval_name = [f'validation_{i}' for i in range(len(eval_set))]
+            if len(eval_set) != len(eval_name):
+                raise AttributeError('eval_set and eval_name should have the same length')
+
+            if isinstance(y, pd.Series):
+                y = y.to_frame()
+
+            if cat_features:
+                # if we pass cat_features as column names, we can ensure that they are in the dataframe
+                # (and not dropped during preprocessing)
+                if isinstance(cat_features[0], str):
+                    cat_features_without_dropped = deepcopy(cat_features)
+                    for feature in cat_features:
+                        if feature not in X.columns:
+                            cat_features_without_dropped.remove(feature)
+                    cat_features = cat_features_without_dropped
+
+            if hasattr(self, 'map_task_to_default_values'):
+                if task is not None:
+                    if task in self.map_task_to_default_values:
+                        for key, value in self.map_task_to_default_values[task].items():
+                            if self.get_params()[key] == 'default':
+                                self.set_params(**{key: value})
+                else:
+                    raise (
+                        ValueError('This model has map_task_to_default_values, which means it has some values that are '
+                                   'task dependent. You must provide the task when calling fit.'))
+
+            if hasattr(self, 'auto_early_stopping'):
+                X, y, eval_set, eval_name = fn_to_add_auto_early_stopping(
+                    self.auto_early_stopping, self.early_stopping_validation_size, X, y, task, eval_set, eval_name)
+
+            # # if we have a before_fit method, we call it here
+            # # it can modify the arguments of fit that will be passed to the original fit method
+            # # this way we can integrate for example the modifications on eval_set, eval_name etc
+            # cls_signature = signature(cls.fit)
+            # bound_args = cls_signature.bind_partial(self, X, y, *args, **kwargs)
+            # cls_parameters = cls_signature.parameters
+            # fit_arguments = bound_args.arguments
+            # del fit_arguments['self']
+            # extra_arguments = dict(task=task, cat_features=cat_features, eval_set=eval_set, eval_name=eval_name,
+            #                        report_to_ray=report_to_ray, init_model=init_model)
+            # # if any extra_arguments are in the parameters of the original fit method, we integrate them back
+            # for key, value in extra_arguments.copy().items():
+            #     if key in cls_parameters:
+            #         fit_arguments[key] = value
+            #         del extra_arguments[key]
+
+            # if we have a before_fit method, we call it here
+            if hasattr(self, 'before_fit'):
+                # fn takes all arguments passed to the fit function and returns fit_arguments (possibly modified)
+                # we also incorporate the *args in the **kwargs
+                bound_args = sklearn_fit_signature.bind_partial(self, X, y, *args, **kwargs)
+                arg_and_kwargs = bound_args.arguments
+                del arg_and_kwargs['self'], arg_and_kwargs['X'], arg_and_kwargs['y']
+                fit_arguments = self.before_fit(X, y, task=task, cat_features=cat_features, eval_set=eval_set,
+                                                eval_name=eval_name, report_to_ray=report_to_ray,
+                                                init_model=init_model, **arg_and_kwargs)
+                return sklearn_cls.fit(self, **fit_arguments)
+            # otherwise we assume that we will only call the original fit method with X, u, *args, **kwargs
+            else:
+                return sklearn_cls.fit(self, X, y, *args, **kwargs)
+    # END OF CLASS DEFINITION
+
+    if before_fit_method:
+        TabBenchmarkSklearn.before_fit = before_fit_method
+
+    if extra_dct:
+        for key, value in extra_dct.items():
+            setattr(TabBenchmarkSklearn, key, value)
+
+    TabBenchmarkSklearn.__init__.__signature__ = Signature(parameters=list(init_parameters.values()))
+    TabBenchmarkSklearn.fit.__signature__ = Signature(parameters=list(fit_parameters.values()))
+    TabBenchmarkSklearn.__doc__ = init_doc
+    TabBenchmarkSklearn.fit.__doc__ = fit_doc
+    name = f'TabBenchmark{sklearn_cls.__name__}'
+    return type(name, (TabBenchmarkSklearn,), {})

@@ -8,7 +8,7 @@ import numpy
 from xgboost import XGBClassifier as OriginalXGBClassifier, XGBRegressor as OriginalXGBRegressor, XGBModel, collective
 from xgboost.callback import (TrainingCallback, _Model, TrainingCheckPoint as OriginalTrainingCheckPoint,
                               EarlyStopping as OriginalEarlyStopping, _Score, _ScoreList)
-from tab_benchmark.models.factories import TabBenchmarkModelFactory
+from tab_benchmark.models.factories import sklearn_factory
 from tab_benchmark.utils import extends, get_metric_fn
 from ray import tune
 from ray.train import report
@@ -285,18 +285,10 @@ map_our_metric_to_xgboost_metric = {
 }
 
 
-def before_fit_xgboost(self, extra_arguments, **fit_arguments):
-    cat_features = extra_arguments.get('cat_features')
-    report_to_ray = extra_arguments.get('report_to_ray')
-    eval_name = extra_arguments.get('eval_name')
-    task = extra_arguments.get('task')
-    init_model = extra_arguments.get('init_model')
+def before_fit_xgboost(self, X, y, task=None, cat_features=None, eval_set=None, eval_name=None, report_to_ray=False,
+                       init_model=None, **arg_and_kwargs):
 
-    eval_set = fit_arguments.get('eval_set')
-    X_train = fit_arguments.get('X')
-    y_train = fit_arguments.get('y')
-
-    eval_set.insert(0, (X_train, y_train))
+    eval_set.insert(0, (X, y))
     eval_name.insert(0, 'train')
 
     if cat_features is not None:
@@ -333,8 +325,13 @@ def before_fit_xgboost(self, extra_arguments, **fit_arguments):
     if report_to_ray:
         self.callbacks.append(ReportToRayXGBoost(eval_name, default_metric=self.eval_metric))
 
-    fit_arguments['eval_set'] = eval_set
-    fit_arguments['xgb_model'] = init_model
+    fit_arguments = dict(
+        X=X,
+        y=y,
+        eval_set=eval_set,
+        xgb_model=init_model,
+    )
+    fit_arguments.update(arg_and_kwargs)
     return fit_arguments
 
 
@@ -357,38 +354,39 @@ class XGBRegressor(OriginalXGBRegressor):
 
 
 # Now we wrap them with our API
-XGBClassifier = TabBenchmarkModelFactory.from_sk_cls(
+XGBClassifier = sklearn_factory(
     XGBClassifier,
-    extended_init_kwargs={
+    has_early_stopping=True,
+    default_values={
         'categorical_encoder': 'ordinal',
         'categorical_type': 'category',
         'data_scaler': None,
+        'eval_metric': 'logloss'
     },
-    has_early_stopping=True, map_task_to_default_values={
-        'classification': {'objective': 'multi:softmax', 'eval_metric': 'mlogloss'},
-        'binary_classification': {'objective': 'binary:logistic', 'eval_metric': 'logloss'},
+    map_task_to_default_values={
+        'classification': {'objective': 'multi:softmax'},
+        'binary_classification': {'objective': 'binary:logistic'},
     },
+    before_fit_method=before_fit_xgboost,
     extra_dct={
         'create_search_space': staticmethod(create_search_space_xgboost),
         'get_recommended_params': staticmethod(get_recommended_params_xgboost),
-        'before_fit': before_fit_xgboost,
     }
 )
 
-XGBRegressor = TabBenchmarkModelFactory.from_sk_cls(
+XGBRegressor = sklearn_factory(
     XGBRegressor,
-    extended_init_kwargs={
+    has_early_stopping=True,
+    default_values={
         'categorical_encoder': 'ordinal',
         'categorical_type': 'category',
         'data_scaler': None,
-    },
-    map_default_values_change={
         'objective': 'reg:squarederror',
         'eval_metric': 'rmse'
     },
-    has_early_stopping=True, extra_dct={
+    before_fit_method=before_fit_xgboost,
+    extra_dct={
         'create_search_space': staticmethod(create_search_space_xgboost),
         'get_recommended_params': staticmethod(get_recommended_params_xgboost),
-        'before_fit': before_fit_xgboost,
     }
 )

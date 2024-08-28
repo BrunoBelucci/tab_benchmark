@@ -106,14 +106,13 @@ def fit_model(model_class, model_kwargs, X_train, y_train, cat_features_names, c
             model_kwargs['categorical_target_min_frequency'] = 1
         model = model_class(**model_kwargs)
         model.create_preprocess_pipeline(task, cat_features_names, cont_features_names, orderly_features_names)
-        model.create_model_pipeline()
         data_preprocess_pipeline_ = model.data_preprocess_pipeline_
         target_preprocess_pipeline_ = model.target_preprocess_pipeline_
         X_train = data_preprocess_pipeline_.fit_transform(X_train)
         y_train = target_preprocess_pipeline_.fit_transform(y_train)
         if X_test is not None and y_test is not None:
             X_test = data_preprocess_pipeline_.transform(X_test)
-            y_test = target_preprocess_pipeline_.transform(y_test.to_frame())
+            y_test = target_preprocess_pipeline_.transform(y_test)
         model.fit(X_train, y_train, task=task, cat_features=cat_features_names)
         return model, X_test, y_test
     else:
