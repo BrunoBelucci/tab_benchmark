@@ -29,7 +29,7 @@ def fn_to_add_auto_early_stopping(self, X, y, task, eval_set, eval_name):
         eval_name = eval_name if eval_name else []
         eval_name = sequence_to_list(eval_name)
         eval_name.append('validation_es')
-    return eval_set, eval_name
+    return X, y, eval_set, eval_name
 
 
 def init_factory(
@@ -242,7 +242,7 @@ def fit_factory(cls):
                                   'task dependent. You must provide the task when calling fit.'))
 
         if hasattr(self, 'auto_early_stopping'):
-            eval_set, eval_name = fn_to_add_auto_early_stopping(self, X, y, task, eval_set, eval_name)
+            X, y, eval_set, eval_name = fn_to_add_auto_early_stopping(self, X, y, task, eval_set, eval_name)
 
         # if we have a before_fit method, we call it here
         # it can modify the arguments of fit that will be passed to the original fit method
