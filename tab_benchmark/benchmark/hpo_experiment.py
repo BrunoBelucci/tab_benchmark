@@ -213,15 +213,6 @@ class HPOExperiment(BaseExperiment):
         timeout_experiment = kwargs.pop('timeout_experiment', self.timeout_experiment)
         timeout_trial = kwargs.pop('timeout_trial', self.timeout_trial)
         retrain_best_model = kwargs.pop('retrain_best_model', self.retrain_best_model)
-        if not is_openml:
-            kwargs.update({
-                'resample_strategy': kwargs.pop('resample_strategy', self.resample_strategy),
-                'n_folds': kwargs.pop('n_folds', self.k_folds),
-                'pct_test': kwargs.pop('pct_test', self.pct_test),
-                'validation_resample_strategy': kwargs.pop('validation_resample_strategy',
-                                                           self.validation_resample_strategy),
-                'pct_validation': kwargs.pop('pct_validation', self.pct_validation),
-            })
         unique_params = dict(model_nickname=model_nickname, model_params=model_params, seed_model=seed_model,
                              search_algorithm=search_algorithm, trial_scheduler=trial_scheduler, n_trials=n_trials,
                              timeout_experiment=timeout_experiment, timeout_trial=timeout_trial, **kwargs)
