@@ -69,9 +69,7 @@ def treat_mlflow(experiment_name, mlflow_tracking_uri, check_if_exists, **kwargs
 
 
 def fit_model(model, X, y, cat_ind, att_names, task_name, train_indices, test_indices, validation_indices=None,
-              logging_to_mlflow=False, **kwargs):
-    if logging_to_mlflow:
-        mlflow.log_param('task_name', task_name)
+              **kwargs):
     X_train = X.iloc[train_indices]
     y_train = y.iloc[train_indices]
     X_test = X.iloc[test_indices]
@@ -126,7 +124,8 @@ def evaluate_model(model, eval_set, eval_name, metrics, default_metric=None, n_c
 
 
 def load_own_task(dataset_name_or_id, seed_dataset, resample_strategy, n_folds, pct_test, fold,
-                  create_validation_set=False, validation_resample_strategy='next_fold', pct_validation=0.1):
+                  create_validation_set=False, validation_resample_strategy='next_fold', pct_validation=0.1,
+                  logging_to_mlflow=False):
     dataset, task_name, target = get_dataset(dataset_name_or_id)
     X, y, cat_ind, att_names = dataset.get_data(target=target)
     if resample_strategy == 'hold_out':
@@ -179,10 +178,14 @@ def load_own_task(dataset_name_or_id, seed_dataset, resample_strategy, n_folds, 
             raise NotImplementedError
     else:
         validation_indices = None
+    if logging_to_mlflow:
+        mlflow.log_param('task_name', task_name)
+        mlflow.log_param('dataset_name', dataset.name)
     return X, y, cat_ind, att_names, task_name, train_indices, test_indices, validation_indices
 
 
-def load_openml_task(task_id, task_repeat, task_sample, task_fold, create_validation_set=False):
+def load_openml_task(task_id, task_repeat, task_sample, task_fold, create_validation_set=False,
+                     logging_to_mlflow=False):
     task = openml.tasks.get_task(task_id)
     split = task.get_train_test_split_indices(task_fold, task_repeat, task_sample)
     train_indices = split.train
@@ -209,6 +212,9 @@ def load_openml_task(task_id, task_repeat, task_sample, task_fold, create_valida
         validation_indices = None
     dataset = task.get_dataset()
     X, y, cat_ind, att_names = dataset.get_data(target=task.target_name)
+    if logging_to_mlflow:
+        mlflow.log_param('task_name', task_name)
+        mlflow.log_param('dataset_name', dataset.name)
     return X, y, cat_ind, att_names, task_name, train_indices, test_indices, validation_indices
 
 

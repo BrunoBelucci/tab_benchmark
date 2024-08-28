@@ -255,7 +255,7 @@ class BaseExperiment:
                 task_fold = kwargs['task_fold']
                 X, y, cat_ind, att_names, task_name, train_indices, test_indices, validation_indices = (
                     load_openml_task(task_id, task_repeat, task_sample, task_fold,
-                                     create_validation_set=create_validation_set)
+                                     create_validation_set=create_validation_set, logging_to_mlflow=logging_to_mlflow)
                 )
             else:
                 dataset_name_or_id = kwargs['dataset_name_or_id']
@@ -270,7 +270,7 @@ class BaseExperiment:
                     load_own_task(dataset_name_or_id, seed_dataset, resample_strategy, n_folds, pct_test, fold,
                                   create_validation_set=create_validation_set,
                                   validation_resample_strategy=validation_resample_strategy,
-                                  pct_validation=pct_validation)
+                                  pct_validation=pct_validation, logging_to_mlflow=logging_to_mlflow)
                 )
 
             # load model
@@ -294,7 +294,7 @@ class BaseExperiment:
             # data here is already preprocessed
             model, X_train, y_train, X_test, y_test, X_validation, y_validation = fit_model(
                 model, X, y, cat_ind, att_names, task_name, train_indices, test_indices, validation_indices,
-                logging_to_mlflow, **fit_params)
+                **fit_params)
 
             # evaluate model
             results = evaluate_model(model, (X_test, y_test), 'test', metrics, default_metric, n_classes,
@@ -341,15 +341,6 @@ class BaseExperiment:
         mlflow_tracking_uri = kwargs.pop('mlflow_tracking_uri', self.mlflow_tracking_uri)
         check_if_exists = kwargs.pop('check_if_exists', self.check_if_exists)
         model_nickname = kwargs.pop('model_nickname', self.model_nickname)
-        if not is_openml:
-            kwargs.update({
-                'resample_strategy': kwargs.pop('resample_strategy', self.resample_strategy),
-                'n_folds': kwargs.pop('n_folds', self.k_folds),
-                'pct_test': kwargs.pop('pct_test', self.pct_test),
-                'validation_resample_strategy': kwargs.pop('validation_resample_strategy',
-                                                           self.validation_resample_strategy),
-                'pct_validation': kwargs.pop('pct_validation', self.pct_validation),
-            })
         unique_params = dict(model_nickname=model_nickname, model_params=model_params, seed_model=seed_model,
                              create_validation_set=create_validation_set, fit_params=fit_params, **kwargs)
         possible_existent_run, logging_to_mlflow = treat_mlflow(experiment_name, mlflow_tracking_uri, check_if_exists,
@@ -429,15 +420,24 @@ class BaseExperiment:
                     for fold in self.folds:
                         for dataset_name_or_id in self.datasets_names_or_ids:
                             if client is not None:
-                                futures.append(client.submit(self.run_combination_with_mlflow,
-                                                             seed_model=seed_model,
-                                                             dataset_name_or_id=dataset_name_or_id,
-                                                             seed_dataset=seed_dataset, fold=fold, n_jobs=self.n_jobs,
-                                                             is_openml=False))
+                                futures.append(client.submit(
+                                    self.run_combination_with_mlflow,
+                                    seed_model=seed_model,
+                                    dataset_name_or_id=dataset_name_or_id,
+                                    seed_dataset=seed_dataset, fold=fold, n_jobs=self.n_jobs,
+                                    is_openml=False, resample_strategy=self.resample_strategy,
+                                    n_folds=self.k_folds, pct_test=self.pct_test,
+                                    validation_resample_strategy=self.validation_resample_strategy,
+                                    pct_validation=self.pct_validation
+                                ))
                             else:
                                 self.run_combination_with_mlflow(
                                     seed_model=seed_model, dataset_name_or_id=dataset_name_or_id,
-                                    seed_dataset=seed_dataset, fold=fold, n_jobs=self.n_jobs, is_openml=False)
+                                    seed_dataset=seed_dataset, fold=fold, n_jobs=self.n_jobs, is_openml=False,
+                                    resample_strategy=self.resample_strategy,
+                                    n_folds=self.k_folds, pct_test=self.pct_test,
+                                    validation_resample_strategy=self.validation_resample_strategy,
+                                    pct_validation=self.pct_validation)
         else:
             for task_repeat in self.task_repeats:
                 for task_sample in self.task_samples:
