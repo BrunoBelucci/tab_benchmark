@@ -2,9 +2,11 @@ from __future__ import annotations
 import os
 import pickle
 from copy import deepcopy
-from typing import Optional, cast
+from typing import Optional, cast, Dict, Any
 import mlflow
 import numpy
+import numpy as np
+from sklearn.base import BaseEstimator
 from xgboost import XGBClassifier as OriginalXGBClassifier, XGBRegressor as OriginalXGBRegressor, XGBModel, collective
 from xgboost.callback import (TrainingCallback, _Model, TrainingCheckPoint as OriginalTrainingCheckPoint,
                               EarlyStopping as OriginalEarlyStopping, _Score, _ScoreList)
@@ -286,10 +288,11 @@ map_our_metric_to_xgboost_metric = {
 
 
 def before_fit_xgboost(self, X, y, task=None, cat_features=None, eval_set=None, eval_name=None, report_to_ray=False,
-                       init_model=None, **arg_and_kwargs):
+                       init_model=None, **args_and_kwargs):
 
     eval_set.insert(0, (X, y))
     eval_name.insert(0, 'train')
+    fit_arguments = args_and_kwargs.copy() if args_and_kwargs else {}
 
     if cat_features is not None:
         self.set_params(**{'enable_categorical': True})
@@ -325,13 +328,12 @@ def before_fit_xgboost(self, X, y, task=None, cat_features=None, eval_set=None, 
     if report_to_ray:
         self.callbacks.append(ReportToRayXGBoost(eval_name, default_metric=self.eval_metric))
 
-    fit_arguments = dict(
+    fit_arguments.update(dict(
         X=X,
         y=y,
         eval_set=eval_set,
         xgb_model=init_model,
-    )
-    fit_arguments.update(arg_and_kwargs)
+    ))
     return fit_arguments
 
 
@@ -353,6 +355,36 @@ class XGBRegressor(OriginalXGBRegressor):
         XGBModel.__init__(self, *args, **kwargs)
 
 
+# we redefine get_params because I do not understand why it is defined recursively
+def get_params(self, deep: bool = True) -> Dict[str, Any]:
+    # pylint: disable=attribute-defined-outside-init
+    """Get parameters."""
+    # Based on: https://stackoverflow.com/questions/59248211
+    # The basic flow in `get_params` is:
+    # 0. Return parameters in subclass first, by using inspect.
+    # 1. Return parameters in `XGBModel` (the base class).
+    # 2. Return whatever in `**kwargs`.
+    # 3. Merge them.
+    params = BaseEstimator.get_params(self, deep)
+    # params = super(self.__class__, self).get_params(deep)
+    # cp = copy.copy(self)
+    # cp.__class__ = cp.__class__.__bases__[0]
+    # params.update(cp.__class__.get_params(cp, deep))
+    # if kwargs is a dict, update params accordingly
+    if hasattr(self, "kwargs") and isinstance(self.kwargs, dict):
+        params.update(self.kwargs)
+    if isinstance(params["random_state"], np.random.RandomState):
+        params["random_state"] = params["random_state"].randint(
+            np.iinfo(np.int32).max
+        )
+    elif isinstance(params["random_state"], np.random.Generator):
+        params["random_state"] = int(
+            params["random_state"].integers(np.iinfo(np.int32).max)
+        )
+
+    return params
+
+
 # Now we wrap them with our API
 XGBClassifier = sklearn_factory(
     XGBClassifier,
@@ -371,6 +403,7 @@ XGBClassifier = sklearn_factory(
     extra_dct={
         'create_search_space': staticmethod(create_search_space_xgboost),
         'get_recommended_params': staticmethod(get_recommended_params_xgboost),
+        'get_params': get_params,
     }
 )
 
@@ -388,5 +421,6 @@ XGBRegressor = sklearn_factory(
     extra_dct={
         'create_search_space': staticmethod(create_search_space_xgboost),
         'get_recommended_params': staticmethod(get_recommended_params_xgboost),
+        'get_params': get_params,
     }
 )
