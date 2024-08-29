@@ -55,7 +55,12 @@ def reorder_columns(X, orderly_features_names):
     orderly_features_without_dropped = deepcopy(orderly_features_names)
     for feature in orderly_features_names:
         if feature not in X.columns:
+            # feature could have be transformed by one-hot encoding, so it could be present in the format
+            # 'feature_name_i' where i is the index of the category
+            index_of_feature = orderly_features_without_dropped.index(feature)
             orderly_features_without_dropped.remove(feature)
+            one_hot_features = [col for col in X.columns if col.startswith(f'{feature}_')]
+            orderly_features_without_dropped[index_of_feature:index_of_feature] = one_hot_features
     return X[orderly_features_without_dropped]
 
 
