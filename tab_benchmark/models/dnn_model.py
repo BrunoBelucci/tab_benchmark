@@ -205,6 +205,7 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
             eval_set: Optional[Sequence[tuple[pd.DataFrame, pd.DataFrame]]] = None,
             eval_name: Optional[Sequence[str]] = None,
             report_to_ray: bool = False,
+            init_model: Optional[Path | str] = None,
     ):
         """Fit the model.
 
@@ -225,7 +226,12 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
         eval_set:
             Evaluation sets. The last set will be used as validation for early stopping.
         eval_name:
-            Names of the evaluation sets. If None, they will be named as 'validation_i', where i is the index of the set.
+            Names of the evaluation sets. If None, they will be named as 'validation_i', where i is the index of
+            the set.
+        report_to_ray:
+            If True, it will report the metrics to Ray Tune. Default is False.
+        init_model:
+            Path to a lightning model checkpoint to initialize the model and resume training. Default is None.
         """
         if isinstance(y, pd.Series):
             y = y.to_frame()
@@ -314,8 +320,13 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
         trainer_kwargs.update(self.lit_trainer_params)
         self.lit_trainer_ = L.Trainer(**trainer_kwargs, callbacks=self.lit_callbacks_)
 
+        if init_model:
+            ckpt_path = init_model
+        else:
+            ckpt_path = None
+
         # fit
-        self.lit_trainer_.fit(self.lit_module_, self.lit_datamodule_)
+        self.lit_trainer_.fit(self.lit_module_, self.lit_datamodule_, ckpt_path=ckpt_path)
 
         # load best model
         if self.use_best_model:

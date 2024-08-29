@@ -27,7 +27,7 @@ def before_fit_dnn(self, X, y, task=None, cat_features=None, eval_set=None, eval
             self.lit_trainer_params['logger'] = MLFlowLogger(run_id=run.info.run_id,
                                                              tracking_uri=mlflow.get_tracking_uri())
     fit_arguments.update(dict(X=X, y=y, task=task, cat_features=cat_features, eval_set=eval_set, eval_name=eval_name,
-                              report_to_ray=report_to_ray))
+                              report_to_ray=report_to_ray, init_model=init_model))
     return fit_arguments
 
 
