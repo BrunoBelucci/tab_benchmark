@@ -5,6 +5,8 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Optional, Sequence
 import pandas as pd
+
+from tab_benchmark.models.dnn_model import DNNModel
 from tab_benchmark.preprocess import create_data_preprocess_pipeline, create_target_preprocess_pipeline
 from tab_benchmark.utils import train_test_split_forced, sequence_to_list
 from inspect import cleandoc, signature, Signature
@@ -203,6 +205,70 @@ def fn_to_add_auto_early_stopping(auto_early_stopping, early_stopping_validation
     return X, y, eval_set, eval_name
 
 
+def dnn_architecture_init(self, dnn_architecture_cls, **kwargs):
+    if hasattr(dnn_architecture_cls, 'params_defined_from_dataset'):
+        architecture_params_not_from_dataset = kwargs.copy()
+        architecture_params = {}
+    else:
+        architecture_params_not_from_dataset = {}
+        architecture_params = kwargs.copy()
+    for key, value in kwargs.items():
+        setattr(self, key, value)
+    return architecture_params, architecture_params_not_from_dataset
+
+
+def dnn_model_factory(dnn_architecture_cls, default_values=None, map_task_to_default_values=None,
+                      before_fit_method=None, extra_dct=None):
+    default_values = default_values.copy() if default_values else {}
+
+    dnn_parameters = {name: param for name, param in signature(dnn_architecture_cls.__init__).parameters.items()
+                      if name != 'self'}
+    if hasattr(dnn_architecture_cls, 'params_defined_from_dataset'):
+        dnn_parameters_from_dataset = dnn_architecture_cls.params_defined_from_dataset
+    else:
+        dnn_parameters_from_dataset = []
+
+    for param in dnn_parameters_from_dataset:
+        dnn_parameters.pop(param, None)
+
+    dnn_architecture_class = default_values.get('dnn_architecture_class', dnn_architecture_cls)
+    default_values['dnn_architecture_class'] = dnn_architecture_class
+
+    TabBenchmarkSklearn = sklearn_factory(DNNModel, has_early_stopping=True, default_values=default_values,
+                                          map_task_to_default_values=map_task_to_default_values,
+                                          before_fit_method=before_fit_method, extra_dct=extra_dct)
+
+    class TabBenchmarkDNN(TabBenchmarkSklearn):
+        def __init__(self, *args, **kwargs):
+            bind_args = signature(TabBenchmarkDNN.__init__).bind(self, *args, **kwargs)
+            bind_args.apply_defaults()
+            arguments = bind_args.arguments
+            arguments.pop('self', None)
+
+            dnn_arguments = {name: arguments.pop(name) for name in list(arguments.keys())
+                             if name in dnn_parameters}
+            architecture_params, architecture_params_not_from_dataset = dnn_architecture_init(self,
+                                                                                              dnn_architecture_cls,
+                                                                                              **dnn_arguments)
+            arguments['architecture_params'] = architecture_params
+            arguments['architecture_params_not_from_dataset'] = architecture_params_not_from_dataset
+            TabBenchmarkSklearn.__init__(self, **arguments)
+
+    # TabBenchmarkSklearn parameters without 'architecture_params', 'architecture_params_not_from_dataset'
+    tab_benchmark_dnn_parameters = {name: param for name, param in
+                                    signature(TabBenchmarkSklearn.__init__).parameters.items()
+                                    if name not in ('architecture_params', 'architecture_params_not_from_dataset')}
+    self_parameter = tab_benchmark_dnn_parameters.pop('self')
+    tab_benchmark_dnn_parameters = {**{'self': self_parameter}, **dnn_parameters, **tab_benchmark_dnn_parameters}
+    TabBenchmarkDNN.__init__.__signature__ = Signature(parameters=list(tab_benchmark_dnn_parameters.values()))
+    TabBenchmarkDNN.__doc__ = (
+            TabBenchmarkSklearn.__doc__ + '\n\nArchitecture Documentation:\n\n'
+            + f'Parameters that are automatically defined from the dataset are:{dnn_parameters_from_dataset}\n\n'
+            + cleandoc(dnn_architecture_cls.__doc__))
+    name = f'TabBenchmark{dnn_architecture_cls.__name__}'
+    return type(name, (TabBenchmarkDNN,), {'__doc__': TabBenchmarkDNN.__doc__})
+
+
 def sklearn_factory(sklearn_cls, has_early_stopping=False, default_values=None,
                     map_task_to_default_values=None, before_fit_method=None, extra_dct=None):
     default_values = default_values.copy() if default_values else {}
@@ -238,7 +304,7 @@ def sklearn_factory(sklearn_cls, has_early_stopping=False, default_values=None,
     if has_early_stopping:
         extra_parameters.update(early_stopping_parameters)
         init_doc += '\n' + early_stopping_doc
-    init_doc += '\n\n Original documentation:\n\n' + sklearn_doc
+    init_doc += '\n\nOriginal documentation:\n\n' + sklearn_doc
 
     # remove parameters from sklearn_cls that are in extra_parameters
     for name, param in extra_parameters.items():
@@ -268,16 +334,17 @@ def sklearn_factory(sklearn_cls, has_early_stopping=False, default_values=None,
 
     fit_parameters = tab_benchmark_fit_parameters
     fit_parameters.update(sklearn_fit_parameters)
-    fit_doc = tab_benchmark_fit_doc + '\n\n Original documentation:\n\n' + sklearn_fit_doc
+    fit_doc = tab_benchmark_fit_doc + '\n\nOriginal documentation:\n\n' + sklearn_fit_doc
 
     sklearn_fit_signature = signature(sklearn_cls.fit)
 
     # CLASS DEFINITION
     class TabBenchmarkSklearn(TabBenchmarkModel, sklearn_cls):
         def __init__(self, *args, **kwargs):
-            bind_args = signature(self.__init__).bind(*args, **kwargs)
+            bind_args = signature(TabBenchmarkSklearn.__init__).bind(self, *args, **kwargs)
             bind_args.apply_defaults()
             arguments = bind_args.arguments
+            arguments.pop('self', None)
             sklearn_cls_arguments = {name: arguments.pop(name) for name in list(arguments.keys())
                                      if name not in extra_parameters}
             sklearn_cls.__init__(self, **sklearn_cls_arguments)
@@ -327,22 +394,6 @@ def sklearn_factory(sklearn_cls, has_early_stopping=False, default_values=None,
                 X, y, eval_set, eval_name = fn_to_add_auto_early_stopping(
                     self.auto_early_stopping, self.early_stopping_validation_size, X, y, task, eval_set, eval_name)
 
-            # # if we have a before_fit method, we call it here
-            # # it can modify the arguments of fit that will be passed to the original fit method
-            # # this way we can integrate for example the modifications on eval_set, eval_name etc
-            # cls_signature = signature(cls.fit)
-            # bound_args = cls_signature.bind_partial(self, X, y, *args, **kwargs)
-            # cls_parameters = cls_signature.parameters
-            # fit_arguments = bound_args.arguments
-            # del fit_arguments['self']
-            # extra_arguments = dict(task=task, cat_features=cat_features, eval_set=eval_set, eval_name=eval_name,
-            #                        report_to_ray=report_to_ray, init_model=init_model)
-            # # if any extra_arguments are in the parameters of the original fit method, we integrate them back
-            # for key, value in extra_arguments.copy().items():
-            #     if key in cls_parameters:
-            #         fit_arguments[key] = value
-            #         del extra_arguments[key]
-
             # if we have a before_fit method, we call it here
             if hasattr(self, 'before_fit'):
                 # fn takes all arguments passed to the fit function and returns fit_arguments (possibly modified)
@@ -354,11 +405,10 @@ def sklearn_factory(sklearn_cls, has_early_stopping=False, default_values=None,
                                                 eval_name=eval_name, report_to_ray=report_to_ray,
                                                 init_model=init_model, **arg_and_kwargs)
                 return sklearn_cls.fit(self, **fit_arguments)
-            # otherwise we assume that we will only call the original fit method with X, u, *args, **kwargs
+            # otherwise we assume that we will only call the original fit method with X, y, *args, **kwargs
             else:
                 return sklearn_cls.fit(self, X, y, *args, **kwargs)
     # END OF CLASS DEFINITION
-
     if before_fit_method:
         TabBenchmarkSklearn.before_fit = before_fit_method
 
@@ -368,7 +418,7 @@ def sklearn_factory(sklearn_cls, has_early_stopping=False, default_values=None,
 
     TabBenchmarkSklearn.__init__.__signature__ = Signature(parameters=list(init_parameters.values()))
     TabBenchmarkSklearn.fit.__signature__ = Signature(parameters=list(fit_parameters.values()))
-    TabBenchmarkSklearn.__doc__ = init_doc
+    # TabBenchmarkSklearn.__doc__ = init_doc
     TabBenchmarkSklearn.fit.__doc__ = fit_doc
     name = f'TabBenchmark{sklearn_cls.__name__}'
-    return type(name, (TabBenchmarkSklearn,), {})
+    return type(name, (TabBenchmarkSklearn,), {'__doc__': init_doc})

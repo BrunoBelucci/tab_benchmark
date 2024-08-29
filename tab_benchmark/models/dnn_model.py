@@ -240,7 +240,10 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
             cat_features_idx = []
 
         if cat_dims is None:
-            cat_dims = [X.iloc[:, idx].nunique() for idx in cat_features_idx]
+            # we will get the dimensions including the possible eval_set
+            X_all = pd.concat([X] + [set[0] for set in eval_set] if eval_set is not None else [], axis=0)
+            cat_dims = [X_all.iloc[:, idx].nunique() for idx in cat_features_idx]
+            del X_all
 
         for i, col_index in enumerate(cat_features_idx):
             if X[X.columns[col_index]].value_counts().min() < self.min_occurrences_to_add_category:

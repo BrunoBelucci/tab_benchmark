@@ -11,19 +11,23 @@ from tab_benchmark.dnns.architectures.transformer import Transformer
 from tab_benchmark.dnns.modules import TabNetModule
 from tab_benchmark.dnns.utils.external.node.lib.facebook_optimizer.optimizer import QHAdam
 from tab_benchmark.models.dnn_model import DNNModel
-from tab_benchmark.models.factories import TabBenchmarkModelFactory
+from tab_benchmark.models.factories import dnn_model_factory
 from tab_benchmark.utils import extends
 
 early_stopping_patience_dnn = 40
 max_epochs_dnn = 300
 
 
-def before_fit_dnn(self, extra_arguments, **fit_arguments):
+def before_fit_dnn(self, X, y, task=None, cat_features=None, eval_set=None, eval_name=None, report_to_ray=False,
+                   init_model=None, **args_and_kwargs):
+    fit_arguments = args_and_kwargs.copy() if args_and_kwargs else {}
     if self.log_to_mlflow_if_running:
         run = mlflow.active_run()
         if run:
             self.lit_trainer_params['logger'] = MLFlowLogger(run_id=run.info.run_id,
                                                              tracking_uri=mlflow.get_tracking_uri())
+    fit_arguments.update(dict(X=X, y=y, task=task, cat_features=cat_features, eval_set=eval_set, eval_name=eval_name,
+                              report_to_ray=report_to_ray))
     return fit_arguments
 
 
@@ -62,29 +66,26 @@ def get_recommended_params_dnn(create_search_space_dnn_fn):
     return default_values_from_search_space
 
 
-MLPModel = TabBenchmarkModelFactory.from_sk_cls(
-    DNNModel,
-    extended_init_kwargs={
+MLPModel = dnn_model_factory(
+    MLP,
+    default_values={
         'categorical_type': 'int64',
         'categorical_encoder': 'ordinal',
         'categorical_target_type': 'int64',
         'data_scaler': 'standard',
     },
-    has_early_stopping=True,
     map_task_to_default_values={
         'classification': {'loss_fn': torch.nn.functional.cross_entropy},
         'binary_classification': {'loss_fn': torch.nn.functional.cross_entropy},
         'regression': {'loss_fn': torch.nn.functional.mse_loss},
         'multi_regression': {'loss_fn': torch.nn.functional.mse_loss},
     },
-    dnn_architecture_cls=MLP,
+    before_fit_method=before_fit_dnn,
     extra_dct={
         'create_search_space': staticmethod(create_search_space_mlp),
         'get_recommended_params': staticmethod(partial(get_recommended_params_dnn, create_search_space_mlp)),
-        'before_fit': before_fit_dnn,
     }
 )
-
 
 def create_search_space_resnet():
     # Based on Gorishniy, Yury, Ivan Rubachev, Valentin Khrulkov, and Artem Babenko.
@@ -113,26 +114,24 @@ def create_search_space_resnet():
     return search_space, default_values
 
 
-ResNetModel = TabBenchmarkModelFactory.from_sk_cls(
-    DNNModel,
-    extended_init_kwargs={
+ResNetModel = dnn_model_factory(
+    ResNet,
+    default_values={
         'categorical_type': 'int64',
         'categorical_encoder': 'ordinal',
         'categorical_target_type': 'int64',
         'data_scaler': 'standard',
     },
-    has_early_stopping=True,
     map_task_to_default_values={
         'classification': {'loss_fn': torch.nn.functional.cross_entropy},
         'binary_classification': {'loss_fn': torch.nn.functional.cross_entropy},
         'regression': {'loss_fn': torch.nn.functional.mse_loss},
         'multi_regression': {'loss_fn': torch.nn.functional.mse_loss},
     },
-    dnn_architecture_cls=ResNet,
+    before_fit_method=before_fit_dnn,
     extra_dct={
         'create_search_space': staticmethod(create_search_space_resnet),
         'get_recommended_params': staticmethod(partial(get_recommended_params_dnn, create_search_space_resnet)),
-        'before_fit': before_fit_dnn,
     }
 )
 
@@ -162,26 +161,24 @@ def create_search_space_transformer():
     return search_space, default_values
 
 
-TransformerModel = TabBenchmarkModelFactory.from_sk_cls(
-    DNNModel,
-    extended_init_kwargs={
+TransformerModel = dnn_model_factory(
+    Transformer,
+    default_values={
         'categorical_type': 'int64',
         'categorical_encoder': 'ordinal',
         'categorical_target_type': 'int64',
         'data_scaler': 'standard',
     },
-    has_early_stopping=True,
     map_task_to_default_values={
         'classification': {'loss_fn': torch.nn.functional.cross_entropy},
         'binary_classification': {'loss_fn': torch.nn.functional.cross_entropy},
         'regression': {'loss_fn': torch.nn.functional.mse_loss},
         'multi_regression': {'loss_fn': torch.nn.functional.mse_loss},
     },
-    dnn_architecture_cls=Transformer,
+    before_fit_method=before_fit_dnn,
     extra_dct={
         'create_search_space': staticmethod(create_search_space_transformer),
         'get_recommended_params': staticmethod(partial(get_recommended_params_dnn, create_search_space_transformer)),
-        'before_fit': before_fit_dnn,
     }
 )
 
@@ -203,29 +200,25 @@ def create_search_space_node():
     return search_space, default_values
 
 
-NodeModel = TabBenchmarkModelFactory.from_sk_cls(
-    DNNModel,
-    extended_init_kwargs={
+NodeModel = dnn_model_factory(
+    Node,
+    default_values={
         'categorical_type': 'float32',
         'categorical_encoder': 'ordinal',
         'categorical_target_type': 'int64',
         'data_scaler': 'standard',
-    },
-    map_default_values_change={
         'torch_optimizer_tuple': deepcopy((QHAdam, dict(nus=(0.7, 1.0), betas=(0.95, 0.998))))
     },
-    has_early_stopping=True,
     map_task_to_default_values={
         'classification': {'loss_fn': torch.nn.functional.cross_entropy},
         'binary_classification': {'loss_fn': torch.nn.functional.cross_entropy},
         'regression': {'loss_fn': torch.nn.functional.mse_loss},
         'multi_regression': {'loss_fn': torch.nn.functional.mse_loss},
     },
-    dnn_architecture_cls=Node,
+    before_fit_method=before_fit_dnn,
     extra_dct={
         'create_search_space': staticmethod(create_search_space_node),
         'get_recommended_params': staticmethod(partial(get_recommended_params_dnn, create_search_space_node)),
-        'before_fit': before_fit_dnn,
     }
 )
 
@@ -257,55 +250,47 @@ def create_search_space_saint():
     return search_space, default_values
 
 
-SaintModel = TabBenchmarkModelFactory.from_sk_cls(
-    DNNModel,
-    extended_init_kwargs={
+SaintModel = dnn_model_factory(
+    Saint,
+    default_values={
         'categorical_type': 'float32',
         'categorical_encoder': 'ordinal',
         'categorical_target_type': 'int64',
         'data_scaler': 'standard',
-    },
-    map_default_values_change={
         'torch_optimizer_tuple': deepcopy((torch.optim.AdamW, {'lr': 1e-4, 'weight_decay': 1e-2}))
     },
-    has_early_stopping=True,
     map_task_to_default_values={
         'classification': {'loss_fn': torch.nn.functional.cross_entropy},
         'binary_classification': {'loss_fn': torch.nn.functional.cross_entropy},
         'regression': {'loss_fn': torch.nn.functional.mse_loss},
         'multi_regression': {'loss_fn': torch.nn.functional.mse_loss},
     },
-    dnn_architecture_cls=Saint,
+    before_fit_method=before_fit_dnn,
     extra_dct={
         'create_search_space': staticmethod(create_search_space_saint),
         'get_recommended_params': staticmethod(partial(get_recommended_params_dnn, create_search_space_saint)),
-        'before_fit': before_fit_dnn,
     }
 )
 
-TabTransformerModel = TabBenchmarkModelFactory.from_sk_cls(
-    DNNModel,
-    extended_init_kwargs={
+TabTransformerModel = dnn_model_factory(
+    TabTransformer,
+    default_values={
         'categorical_type': 'float32',
         'categorical_encoder': 'ordinal',
         'categorical_target_type': 'int64',
         'data_scaler': 'standard',
-    },
-    map_default_values_change={
         'torch_optimizer_tuple': deepcopy((torch.optim.AdamW, {'lr': 1e-4, 'weight_decay': 1e-2}))
     },
-    has_early_stopping=True,
     map_task_to_default_values={
         'classification': {'loss_fn': torch.nn.functional.cross_entropy},
         'binary_classification': {'loss_fn': torch.nn.functional.cross_entropy},
         'regression': {'loss_fn': torch.nn.functional.mse_loss},
         'multi_regression': {'loss_fn': torch.nn.functional.mse_loss},
     },
-    dnn_architecture_cls=TabTransformer,
+    before_fit_method=before_fit_dnn,
     extra_dct={
         'create_search_space': staticmethod(create_search_space_saint),
         'get_recommended_params': staticmethod(partial(get_recommended_params_dnn, create_search_space_saint)),
-        'before_fit': before_fit_dnn,
     }
 )
 
@@ -357,15 +342,13 @@ class TabNetModel(DNNModel):
         return self._torch_optimizer_tuple
 
 
-TabNetModel = TabBenchmarkModelFactory.from_sk_cls(
-    TabNetModel,
-    extended_init_kwargs={
+TabNetModel = dnn_model_factory(
+    TabNet,
+    default_values={
         'categorical_type': 'float32',
         'categorical_encoder': 'ordinal',
         'categorical_target_type': 'int64',
         'data_scaler': 'standard',
-    },
-    map_default_values_change={
         'torch_optimizer_tuple': deepcopy((torch.optim.Adam, dict(lr=0.02))),
         'torch_scheduler_tuple': deepcopy(
             (torch.optim.lr_scheduler.StepLR,
@@ -378,17 +361,15 @@ TabNetModel = TabBenchmarkModelFactory.from_sk_cls(
         }),
         'lit_module_class': TabNetModule,
     },
-    has_early_stopping=True,
     map_task_to_default_values={
         'classification': {'loss_fn': torch.nn.functional.cross_entropy},
         'binary_classification': {'loss_fn': torch.nn.functional.cross_entropy},
         'regression': {'loss_fn': torch.nn.functional.mse_loss},
         'multi_regression': {'loss_fn': torch.nn.functional.mse_loss},
     },
-    dnn_architecture_cls=TabNet,
+    before_fit_method=before_fit_dnn,
     extra_dct={
         'create_search_space': staticmethod(create_search_space_tabnet),
         'get_recommended_params': staticmethod(partial(get_recommended_params_dnn, create_search_space_tabnet)),
-        'before_fit': before_fit_dnn,
     }
 )
