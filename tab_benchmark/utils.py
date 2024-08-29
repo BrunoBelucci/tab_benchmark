@@ -344,9 +344,9 @@ def train_test_split_forced(train_data, train_target, test_size_pct, random_stat
             if isinstance(only_1_member_class, tuple):
                 only_1_member_class = only_1_member_class[0]
             index_of_only_1_member_class = train_target[train_target.iloc[:, 0] == only_1_member_class].index[0]
-            train_data = pd.concat([train_data, pd.DataFrame(train_data.loc[index_of_only_1_member_class]).T]).\
+            train_data = pd.concat([train_data, train_data.loc[[index_of_only_1_member_class]]]).\
                 reset_index(drop=True)
-            train_target = pd.concat([train_target, pd.DataFrame(train_target.loc[index_of_only_1_member_class]).T]).\
+            train_target = pd.concat([train_target, train_target.loc[[index_of_only_1_member_class]]]).\
                 reset_index(drop=True)
         if stratify is not None:
             stratify = train_target
