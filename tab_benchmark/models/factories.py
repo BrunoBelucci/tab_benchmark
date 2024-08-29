@@ -5,14 +5,13 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Optional, Sequence
 import pandas as pd
-from sklearn.base import BaseEstimator
 from tab_benchmark.preprocess import create_data_preprocess_pipeline, create_target_preprocess_pipeline
-from tab_benchmark.utils import extends, train_test_split_forced, sequence_to_list
+from tab_benchmark.utils import train_test_split_forced, sequence_to_list
 from inspect import cleandoc, signature, Signature
 from tab_benchmark.utils import check_same_keys
 
 
-class TabBenchmarkModel(ABC, BaseEstimator):
+class TabBenchmarkModel(ABC):
     """
     Class of every model in the tab_benchmark package, it adds some preprocessing functionalities with the method
     create_preprocess_pipeline, and it standardizes the fit method. It adds the following parameters to the __init__
@@ -316,7 +315,8 @@ def sklearn_factory(sklearn_cls, has_early_stopping=False, default_values=None,
                 if task is not None:
                     if task in self.map_task_to_default_values:
                         for key, value in self.map_task_to_default_values[task].items():
-                            if self.get_params()[key] == 'default':
+                            param = self.get_params().get(key, None)
+                            if param == 'default' or param is None:
                                 self.set_params(**{key: value})
                 else:
                     raise (

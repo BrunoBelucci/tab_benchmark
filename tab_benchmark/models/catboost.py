@@ -3,7 +3,7 @@ from catboost import CatBoostRegressor as OriginalCatBoostRegressor, CatBoostCla
 from ray import tune
 from ray.train import report
 from tab_benchmark.models.xgboost import n_estimators_gbdt, early_stopping_patience_gbdt
-from tab_benchmark.models.factories import TabBenchmarkModelFactory
+from tab_benchmark.models.factories import sklearn_factory
 
 
 def create_search_space_catboost():
@@ -120,13 +120,10 @@ map_our_metric_to_catboost_metric = {
 }
 
 
-def before_fit_catboost(self, extra_arguments, **fit_arguments):
-    cat_features = fit_arguments.get('cat_features')
-    callbacks = fit_arguments.get('callbacks', [])
-
-    eval_name = extra_arguments.get('eval_name')
-    report_to_ray = extra_arguments.get('report_to_ray')
-    task = extra_arguments.get('task')
+def before_fit_catboost(self, X, y, task=None, cat_features=None, eval_set=None, eval_name=None, report_to_ray=False,
+                        init_model=None, **args_and_kwargs):
+    callbacks = args_and_kwargs.get('callbacks', [])
+    fit_arguments = args_and_kwargs.copy() if args_and_kwargs else {}
 
     eval_metric = self.get_params().get('eval_metric', None)
     if eval_metric is not None:
@@ -140,10 +137,13 @@ def before_fit_catboost(self, extra_arguments, **fit_arguments):
     if self.early_stopping_patience > 0:
         # for the moment we will leave the default early stopping callback
         self.set_params(**{'early_stopping_rounds': self.early_stopping_patience})
-        # we will add a parameters to allow saving snapshots
-        fit_arguments['save_snapshot'] = True
-        fit_arguments['snapshot_file'] = 'model-snapshot_0.cbm'
-        fit_arguments['snapshot_interval'] = 300
+        # we will add a parameters to allow saving snapshots (if they are not already being used)
+        save_snapshot = fit_arguments.get('save_snapshot', True)
+        snapshot_file = fit_arguments.get('snapshot_file', 'model-snapshot_0.cbm')
+        snapshot_interval = fit_arguments.get('snapshot_interval', 300)
+        fit_arguments['save_snapshot'] = save_snapshot
+        fit_arguments['snapshot_file'] = snapshot_file
+        fit_arguments['snapshot_interval'] = snapshot_interval
 
     if self.log_to_mlflow_if_running:
         if mlflow.active_run():
@@ -153,46 +153,48 @@ def before_fit_catboost(self, extra_arguments, **fit_arguments):
         callbacks.append(ReportToRayCatboost(eval_name, default_metric=self.get_param('eval_metric')))
 
     fit_arguments['callbacks'] = callbacks
+    fit_arguments.update(dict(X=X, y=y, eval_set=eval_set, init_model=init_model))
     return fit_arguments
 
-
-CatBoostRegressor = TabBenchmarkModelFactory.from_sk_cls(
+# catboost loosely follow the sklearn pattern, it does not inherit from BaseEstimator or the Mixin classes
+CatBoostRegressor = sklearn_factory(
     OriginalCatBoostRegressor,
-    extended_init_kwargs={
+    has_early_stopping=True,
+    default_values={
         'categorical_encoder': 'ordinal',
         'categorical_type': 'int32',
         'data_scaler': None,
     },
-    has_early_stopping=True, map_task_to_default_values={
+    map_task_to_default_values={
         'regression': {'loss_function': 'RMSE', 'eval_metric': 'rmse'},
         'multi_regression': {'loss_function': 'MultiRMSE', 'eval_metric': 'rmse'},
     },
+    before_fit_method=before_fit_catboost,
     extra_dct={
         'n_jobs': n_jobs_property,
         'output_dir': output_dir_property,
         'create_search_space': staticmethod(create_search_space_catboost),
         'get_recommended_params': staticmethod(get_recommended_params_catboost),
-        'before_fit': before_fit_catboost
     }
 )
 
-CatBoostClassifier = TabBenchmarkModelFactory.from_sk_cls(
+CatBoostClassifier = sklearn_factory(
     OriginalCatBoostClassifier,
-    extended_init_kwargs={
+    has_early_stopping=True,
+    default_values={
         'categorical_encoder': 'ordinal',
         'categorical_type': 'int32',
         'data_scaler': None,
     },
-    has_early_stopping=True,
     map_task_to_default_values={
         'classification': {'loss_function': 'MultiClass', 'eval_metric': 'logloss'},
         'binary_classification': {'loss_function': 'Logloss', 'eval_metric': 'logloss'},
     },
+    before_fit_method=before_fit_catboost,
     extra_dct={
         'n_jobs': n_jobs_property,
         'output_dir': output_dir_property,
         'create_search_space': staticmethod(create_search_space_catboost),
         'get_recommended_params': staticmethod(get_recommended_params_catboost),
-        'before_fit': before_fit_catboost
     }
 )

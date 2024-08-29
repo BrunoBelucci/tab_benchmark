@@ -9,7 +9,7 @@ from lightgbm.callback import CallbackEnv, _EarlyStoppingCallback, _format_eval_
 from ray import tune
 from ray.train import report
 from tab_benchmark.models.xgboost import n_estimators_gbdt, early_stopping_patience_gbdt, remove_old_models
-from tab_benchmark.models.factories import TabBenchmarkModelFactory
+from tab_benchmark.models.factories import sklearn_factory
 import lightgbm.basic
 
 
@@ -73,9 +73,9 @@ class EarlyStoppingLGBM(_EarlyStoppingCallback):
             if self.first_metric_only and self.first_metric != eval_name_splitted[-1]:
                 continue  # use only the first metric for early stopping
             if self._is_train_set(
-                ds_name=env.evaluation_result_list[i][0],
-                eval_name=eval_name_splitted[0],
-                env=env,
+                    ds_name=env.evaluation_result_list[i][0],
+                    eval_name=eval_name_splitted[0],
+                    env=env,
             ):
                 continue  # train data for lgb.cv or sklearn wrapper (underlying lgb.train)
             elif env.iteration - self.best_iter[i] >= self.stopping_rounds:
@@ -220,15 +220,15 @@ map_our_metric_to_lgbm_metric = {
 }
 
 
-def before_fit_lgbm(self, extra_arguments, **fit_arguments):
-    report_to_ray = extra_arguments.get('report_to_ray')
-    cat_features = extra_arguments.get('cat_features')
-    eval_name = extra_arguments.get('eval_name')
-    task = extra_arguments.get('task')
+def before_fit_lgbm(self, X, y, task=None, cat_features=None, eval_set=None,
+                    eval_name=None, report_to_ray=None,
+                    init_model=None, **args_and_kwargs):
 
-    callbacks = fit_arguments.get('callbacks', [])
+    callbacks = args_and_kwargs.get('callbacks', [])
 
     eval_metric = self.get_params().get('eval_metric', None)
+
+    fit_arguments = args_and_kwargs.copy() if args_and_kwargs else {}
 
     callbacks = callbacks if callbacks is not None else []
 
@@ -256,41 +256,42 @@ def before_fit_lgbm(self, extra_arguments, **fit_arguments):
 
     fit_arguments['eval_names'] = eval_name
     fit_arguments['callbacks'] = callbacks
+    fit_arguments.update(dict(X=X, y=y, eval_set=eval_set, init_model=init_model))
     return fit_arguments
 
 
-LGBMRegressor = TabBenchmarkModelFactory.from_sk_cls(
+LGBMRegressor = sklearn_factory(
     OriginalLGBMRegressor,
-    extended_init_kwargs={
+    has_early_stopping=True,
+    default_values={
         'categorical_encoder': 'ordinal',
         'categorical_type': 'category',
         'data_scaler': None,
-    },
-    map_default_values_change={
         'objective': 'regression',
         'eval_metric': 'rmse'
     },
-    has_early_stopping=True, extra_dct={
+    before_fit_method=before_fit_lgbm,
+    extra_dct={
         'create_search_space': staticmethod(create_search_space_lgbm),
         'get_recommended_params': staticmethod(get_recommended_params_lgbm),
-        'before_fit': before_fit_lgbm
     }
 )
 
-LGBMClassifier = TabBenchmarkModelFactory.from_sk_cls(
+LGBMClassifier = sklearn_factory(
     OriginalLGBMClassifier,
-    extended_init_kwargs={
+    has_early_stopping=True,
+    default_values={
         'categorical_encoder': 'ordinal',
         'categorical_type': 'category',
         'data_scaler': None,
     },
-    has_early_stopping=True, map_task_to_default_values={
+    map_task_to_default_values={
         'binary_classification': {'objective': 'binary', 'eval_metric': 'logloss'},
         'classification': {'objective': 'multiclass', 'eval_metric': 'logloss'},
     },
+    before_fit_method=before_fit_lgbm,
     extra_dct={
         'create_search_space': staticmethod(create_search_space_lgbm),
         'get_recommended_params': staticmethod(get_recommended_params_lgbm),
-        'before_fit': before_fit_lgbm
     }
 )

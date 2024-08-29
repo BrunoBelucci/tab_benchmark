@@ -5,39 +5,39 @@ from sklearn.ensemble import (ExtraTreesRegressor, ExtraTreesClassifier, Gradien
                               GradientBoostingClassifier, RandomForestClassifier, RandomForestRegressor)
 from sklearn.kernel_ridge import KernelRidge
 from sklearn.svm import NuSVC, NuSVR
-from tab_benchmark.models.factories import TabBenchmarkModelFactory
+from tab_benchmark.models.factories import sklearn_factory
 
 # Linear models
-LinearRegression = TabBenchmarkModelFactory.from_sk_cls(LinearRegression, {})
-LogisticRegressionCV = TabBenchmarkModelFactory.from_sk_cls(LogisticRegressionCV, {})
-RidgeCV = TabBenchmarkModelFactory.from_sk_cls(RidgeCV, {})
-RidgeClassifierCV = TabBenchmarkModelFactory.from_sk_cls(RidgeClassifierCV, {})
-LassoCV = TabBenchmarkModelFactory.from_sk_cls(LassoCV, {})
-MultiTaskLassoCV = TabBenchmarkModelFactory.from_sk_cls(MultiTaskLassoCV, {})
-ElasticNetCV = TabBenchmarkModelFactory.from_sk_cls(ElasticNetCV, {})
-MultiTaskElasticNetCV = TabBenchmarkModelFactory.from_sk_cls(MultiTaskElasticNetCV, {})
+LinearRegression = sklearn_factory(LinearRegression)
+LogisticRegressionCV = sklearn_factory(LogisticRegressionCV)
+RidgeCV = sklearn_factory(RidgeCV)
+RidgeClassifierCV = sklearn_factory(RidgeClassifierCV)
+LassoCV = sklearn_factory(LassoCV)
+MultiTaskLassoCV = sklearn_factory(MultiTaskLassoCV)
+ElasticNetCV = sklearn_factory(ElasticNetCV)
+MultiTaskElasticNetCV = sklearn_factory(MultiTaskElasticNetCV)
 
 
 # Tree models
-DecisionTreeClassifier = TabBenchmarkModelFactory.from_sk_cls(DecisionTreeClassifier, {})
-DecisionTreeRegressor = TabBenchmarkModelFactory.from_sk_cls(DecisionTreeRegressor, {})
-ExtraTreeClassifier = TabBenchmarkModelFactory.from_sk_cls(ExtraTreeClassifier, {})
-ExtraTreeRegressor = TabBenchmarkModelFactory.from_sk_cls(ExtraTreeRegressor, {})
+DecisionTreeClassifier = sklearn_factory(DecisionTreeClassifier)
+DecisionTreeRegressor = sklearn_factory(DecisionTreeRegressor)
+ExtraTreeClassifier = sklearn_factory(ExtraTreeClassifier)
+ExtraTreeRegressor = sklearn_factory(ExtraTreeRegressor)
 
 # Ensemble models
-ExtraTreesRegressor = TabBenchmarkModelFactory.from_sk_cls(ExtraTreesRegressor, {})
-ExtraTreesClassifier = TabBenchmarkModelFactory.from_sk_cls(ExtraTreesClassifier, {})
-GradientBoostingRegressor = TabBenchmarkModelFactory.from_sk_cls(GradientBoostingRegressor, {})
-GradientBoostingClassifier = TabBenchmarkModelFactory.from_sk_cls(GradientBoostingClassifier, {})
-RandomForestRegressor = TabBenchmarkModelFactory.from_sk_cls(RandomForestRegressor, {})
-RandomForestClassifier = TabBenchmarkModelFactory.from_sk_cls(RandomForestClassifier, {})
+ExtraTreesRegressor = sklearn_factory(ExtraTreesRegressor)
+ExtraTreesClassifier = sklearn_factory(ExtraTreesClassifier)
+GradientBoostingRegressor = sklearn_factory(GradientBoostingRegressor)
+GradientBoostingClassifier = sklearn_factory(GradientBoostingClassifier)
+RandomForestRegressor = sklearn_factory(RandomForestRegressor)
+RandomForestClassifier = sklearn_factory(RandomForestClassifier)
 
 # Kernel models
-KernelRidge = TabBenchmarkModelFactory.from_sk_cls(KernelRidge, {})
+KernelRidge = sklearn_factory(KernelRidge)
 
 # SVM models
-NuSVC = TabBenchmarkModelFactory.from_sk_cls(NuSVC, {})
-NuSVR = TabBenchmarkModelFactory.from_sk_cls(NuSVR, {})
+NuSVC = sklearn_factory(NuSVC)
+NuSVR = sklearn_factory(NuSVR)
 
 all_models = [LinearRegression, LogisticRegressionCV, RidgeCV, RidgeClassifierCV, LassoCV, MultiTaskLassoCV,
               ElasticNetCV, MultiTaskElasticNetCV, DecisionTreeClassifier, DecisionTreeRegressor, ExtraTreeClassifier,
