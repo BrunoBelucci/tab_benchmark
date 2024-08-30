@@ -9,6 +9,7 @@ mlflow_tracking_uri="http://clust1.ceremade.dauphine.lan:5002/"
 task_folds="0 1"
 tasks_ids="7592 31 24"
 n_workers=3
+eval "$(conda shell.bash hook)"
 conda activate tab_benchmark
 python $base_experiment_location --experiment_name $experiment_name --log_dir $log_dir \
  --dask_cluster_type $dask_cluster_type --slurm_config_name $slurm_config_name --models_nickname $models_nickname \
