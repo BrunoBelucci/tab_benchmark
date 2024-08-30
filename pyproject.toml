@@ -51,7 +51,7 @@ dependencies = [
     "torch",
     "lightning",
     "matplotlib",
-    "numpy",
+    "numpy<2.0",
     "pandas",
     "scikit-learn",
     "scikit-posthocs",
