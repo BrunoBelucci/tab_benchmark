@@ -27,11 +27,14 @@ class LoggingSetter(WorkerPlugin):
         logging.basicConfig(**self.logging_config)
 
 
-def log_and_print_msg(fist_line, **kwargs):
-    fist_line = f"{fist_line}\n"
-    fist_line += "".join([f"{key}: {value}\n" for key, value in kwargs.items()])
-    print(fist_line)
-    logging.info(fist_line)
+def log_and_print_msg(first_line, **kwargs):
+    slurm_job_id = os.getenv('SLURM_JOB_ID', None)
+    if slurm_job_id is not None:
+        first_line = f"SLURM_JOB_ID: {slurm_job_id}\n{first_line}"
+    first_line = f"{first_line}\n"
+    first_line += "".join([f"{key}: {value}\n" for key, value in kwargs.items()])
+    print(first_line)
+    logging.info(first_line)
 
 
 class BaseExperiment:
@@ -195,16 +198,8 @@ class BaseExperiment:
         else:
             logger_filename = self.logger_filename
         logging.basicConfig(filename=log_dir / logger_filename,
-                            format='%(asctime)s - %(levelname)s - Slurm Job: %(slurm_job_id)s \n%(message)s\n',
+                            format='%(asctime)s - %(levelname)s\n%(message)s\n',
                             level=logging.INFO, filemode=filemode)
-        old_record_factory = logging.getLogRecordFactory()
-
-        def slurm_record_factory(*args, **kwargs):
-            record = old_record_factory(*args, **kwargs)
-            record.slurm_job_id = os.environ.get('SLURM_JOB_ID', 'unknown')
-            return record
-
-        logging.setLogRecordFactory(slurm_record_factory)
 
     def get_model(self, model_nickname, seed_model, model_params=None, n_jobs=1,
                   logging_to_mlflow=False, create_validation_set=False, output_dir=None):
@@ -394,6 +389,8 @@ class BaseExperiment:
             with mlflow.start_run(run_name=run_name, nested=nested) as run:
                 mlflow.log_params(flatten_dict(unique_params))
                 mlflow.log_param('git_hash', get_git_revision_hash())
+                mlflow.log_param('SLURM_JOB_ID', os.getenv('SLURM_JOB_ID', None))
+                mlflow.log_param('SLURMD_NODENAME', os.getenv('SLURMD_NODENAME', None))
                 return self.run_combination(n_jobs=n_jobs,
                                             create_validation_set=create_validation_set,
                                             model_params=model_params, fit_params=fit_params,
