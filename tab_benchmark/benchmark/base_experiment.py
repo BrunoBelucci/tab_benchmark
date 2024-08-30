@@ -409,7 +409,7 @@ class BaseExperiment:
                 cluster = SLURMCluster(config_name=slurm_config_name)
             else:
                 raise ValueError("cluster_type must be either 'local' or 'slurm'.")
-            cluster.scale(n_workers)
+            cluster.adapt(minimum=0, maximum=n_workers)
             client = cluster.get_client()
         plugin = LoggingSetter(logging_config={'level': logging.INFO})
         client.register_plugin(plugin)
