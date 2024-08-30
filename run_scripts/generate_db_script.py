@@ -1,5 +1,6 @@
 import argparse
 from pathlib import Path
+from inspect import cleandoc
 
 
 def generate_postgres_db_script(
@@ -15,7 +16,7 @@ def generate_postgres_db_script(
         wall_time='364-23:59:59',
 ):
     log_file = database_dir / (db_name + '.log')
-    sh_content = f"""
+    sh_content = cleandoc(f"""
     if [ ! -d {str(database_dir.absolute())} ]; then
         conda run -n {conda_env} initdb -D {str(database_dir.absolute())}
         echo "host	all	all	samenet	trust" >> {str(database_dir.absolute())}/pg_hba.conf
@@ -23,21 +24,23 @@ def generate_postgres_db_script(
     conda run -n {conda_env} pg_ctl -D {str(database_dir.absolute())} -l {str(log_file.absolute())} -o "-h 0.0.0.0 -p {db_port}" start
     conda run -n {conda_env} createdb {db_name} -p {db_port}
     conda run -n {conda_env} mlflow server --backend-store-uri postgresql://localhost:{db_port}/{db_name} -h 0.0.0.0 -p {mlflow_port}
-    """
+    """)
     if generate_sbatch:
-        sbatch_content = f"""#!/bin/sh
+        sbatch_content = cleandoc(f"""
+        #!/bin/sh
         #SBATCH -c {n_cores}
         #SBATCH -w {clust_name}
         #SBATCH --job-name={job_name}
         #SBATCH --output={output_job_dir}
         #SBATCH --error={error_job_dir}
         #SBATCH --time={wall_time}
-        """
+        """)
         file_content = sbatch_content + sh_content
         file_ext = '.sbatch'
     else:
         file_content = sh_content
         file_ext = '.sh'
+    file_content = file_content + '\n'
     file_path = file_dir / (file_name + file_ext)
     with open(file_path, 'w') as file:
         file.write(file_content)
