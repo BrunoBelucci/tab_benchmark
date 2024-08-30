@@ -1,5 +1,5 @@
 import mlflow
-from catboost import CatBoostRegressor as OriginalCatBoostRegressor, CatBoostClassifier as OriginalCatBoostClassifier
+from catboost import CatBoostRegressor, CatBoostClassifier
 from ray import tune
 from ray.train import report
 from tab_benchmark.models.xgboost import n_estimators_gbdt, early_stopping_patience_gbdt
@@ -157,8 +157,8 @@ def before_fit_catboost(self, X, y, task=None, cat_features=None, eval_set=None,
     return fit_arguments
 
 # catboost loosely follow the sklearn pattern, it does not inherit from BaseEstimator or the Mixin classes
-CatBoostRegressor = sklearn_factory(
-    OriginalCatBoostRegressor,
+TabBenchmarkCatBoostRegressor = sklearn_factory(
+    CatBoostRegressor,
     has_early_stopping=True,
     default_values={
         'categorical_encoder': 'ordinal',
@@ -178,8 +178,8 @@ CatBoostRegressor = sklearn_factory(
     }
 )
 
-CatBoostClassifier = sklearn_factory(
-    OriginalCatBoostClassifier,
+TabBenchmarkCatBoostClassifier = sklearn_factory(
+    CatBoostClassifier,
     has_early_stopping=True,
     default_values={
         'categorical_encoder': 'ordinal',

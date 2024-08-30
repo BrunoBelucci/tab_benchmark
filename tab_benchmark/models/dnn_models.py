@@ -66,7 +66,7 @@ def get_recommended_params_dnn(create_search_space_dnn_fn):
     return default_values_from_search_space
 
 
-MLPModel = dnn_model_factory(
+TabBenchmarkMLP = dnn_model_factory(
     MLP,
     default_values={
         'categorical_type': 'int64',
@@ -114,7 +114,7 @@ def create_search_space_resnet():
     return search_space, default_values
 
 
-ResNetModel = dnn_model_factory(
+TabBenchmarkResNet = dnn_model_factory(
     ResNet,
     default_values={
         'categorical_type': 'int64',
@@ -161,7 +161,7 @@ def create_search_space_transformer():
     return search_space, default_values
 
 
-TransformerModel = dnn_model_factory(
+TabBenchmarkTransformer = dnn_model_factory(
     Transformer,
     default_values={
         'categorical_type': 'int64',
@@ -200,7 +200,7 @@ def create_search_space_node():
     return search_space, default_values
 
 
-NodeModel = dnn_model_factory(
+TabBenchmarkNode = dnn_model_factory(
     Node,
     default_values={
         'categorical_type': 'float32',
@@ -250,7 +250,7 @@ def create_search_space_saint():
     return search_space, default_values
 
 
-SaintModel = dnn_model_factory(
+TabBenchmarkSaint = dnn_model_factory(
     Saint,
     default_values={
         'categorical_type': 'float32',
@@ -272,7 +272,7 @@ SaintModel = dnn_model_factory(
     }
 )
 
-TabTransformerModel = dnn_model_factory(
+TabBenchmarkTabTransformer = dnn_model_factory(
     TabTransformer,
     default_values={
         'categorical_type': 'float32',
@@ -342,7 +342,7 @@ class TabNetModel(DNNModel):
         return self._torch_optimizer_tuple
 
 
-TabNetModel = dnn_model_factory(
+TabBenchmarkTabNet = dnn_model_factory(
     TabNet,
     default_values={
         'categorical_type': 'float32',

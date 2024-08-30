@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any
 import mlflow
 import numpy as np
-from lightgbm import LGBMRegressor as OriginalLGBMRegressor, LGBMClassifier as OriginalLGBMClassifier
+from lightgbm import LGBMRegressor, LGBMClassifier
 from lightgbm.basic import _is_numpy_1d_array, _to_string, _NUMERIC_TYPES, _is_numeric, _log_info
 from lightgbm.callback import CallbackEnv, _EarlyStoppingCallback, _format_eval_result, EarlyStopException
 from ray import tune
@@ -260,8 +260,8 @@ def before_fit_lgbm(self, X, y, task=None, cat_features=None, eval_set=None,
     return fit_arguments
 
 
-LGBMRegressor = sklearn_factory(
-    OriginalLGBMRegressor,
+TabBenchmarkLGBMRegressor = sklearn_factory(
+    LGBMRegressor,
     has_early_stopping=True,
     default_values={
         'categorical_encoder': 'ordinal',
@@ -277,8 +277,8 @@ LGBMRegressor = sklearn_factory(
     }
 )
 
-LGBMClassifier = sklearn_factory(
-    OriginalLGBMClassifier,
+TabBenchmarkLGBMClassifier = sklearn_factory(
+    LGBMClassifier,
     has_early_stopping=True,
     default_values={
         'categorical_encoder': 'ordinal',

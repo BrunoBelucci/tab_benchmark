@@ -87,7 +87,6 @@ def fit_model(model, X, y, cat_ind, att_names, task_name, train_indices, test_in
         raise ValueError('Model class and task do not match')
     # safer to preprocess and fit the model separately
     model.create_preprocess_pipeline(task_name, cat_features_names, cont_features_names, att_names)
-    model.create_model_pipeline()
     data_preprocess_pipeline_ = model.data_preprocess_pipeline_
     target_preprocess_pipeline_ = model.target_preprocess_pipeline_
     X_train = data_preprocess_pipeline_.fit_transform(X_train)

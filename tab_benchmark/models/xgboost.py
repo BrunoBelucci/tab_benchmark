@@ -7,7 +7,7 @@ import mlflow
 import numpy
 import numpy as np
 from sklearn.base import BaseEstimator
-from xgboost import XGBClassifier as OriginalXGBClassifier, XGBRegressor as OriginalXGBRegressor, XGBModel, collective
+from xgboost import XGBClassifier, XGBRegressor, XGBModel, collective
 from xgboost.callback import (TrainingCallback, _Model, TrainingCheckPoint as OriginalTrainingCheckPoint,
                               EarlyStopping as OriginalEarlyStopping, _Score, _ScoreList)
 from tab_benchmark.models.factories import sklearn_factory
@@ -339,16 +339,16 @@ def before_fit_xgboost(self, X, y, task=None, cat_features=None, eval_set=None, 
 
 # Just to get the parameters of the XGBModel, because XGBClassifier and XGBRegressor do not show them
 # This will initialize exactly the same way as XGBClassifier and XGBRegressor.
-class XGBClassifier(OriginalXGBClassifier):
-    __doc__ = OriginalXGBClassifier.__doc__
+class XGBClassifier(XGBClassifier):
+    __doc__ = XGBClassifier.__doc__
 
     @extends(XGBModel.__init__, map_default_values_change={'objective': 'binary:logistic'})
     def __init__(self, *args, **kwargs):
         XGBModel.__init__(self, *args, **kwargs)
 
 
-class XGBRegressor(OriginalXGBRegressor):
-    __doc__ = OriginalXGBRegressor.__doc__
+class XGBRegressor(XGBRegressor):
+    __doc__ = XGBRegressor.__doc__
 
     @extends(XGBModel.__init__, map_default_values_change={'objective': 'reg:squarederror'})
     def __init__(self, *args, **kwargs):
@@ -386,7 +386,7 @@ def get_params(self, deep: bool = True) -> Dict[str, Any]:
 
 
 # Now we wrap them with our API
-XGBClassifier = sklearn_factory(
+TabBenchmarkXGBClassifier = sklearn_factory(
     XGBClassifier,
     has_early_stopping=True,
     default_values={
@@ -407,7 +407,7 @@ XGBClassifier = sklearn_factory(
     }
 )
 
-XGBRegressor = sklearn_factory(
+TabBenchmarkXGBRegressor = sklearn_factory(
     XGBRegressor,
     has_early_stopping=True,
     default_values={

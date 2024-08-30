@@ -37,7 +37,7 @@ class BaseExperiment:
     def __init__(
             self,
             # model specific
-            model_nickname=None, seeds_models=None, n_jobs=1,
+            models_nickname=None, seeds_models=None, n_jobs=1,
             # when performing our own resampling
             datasets_names_or_ids=None, seeds_datasets=None,
             resample_strategy='k-fold_cv', k_folds=10, folds=None, pct_test=0.2,
@@ -59,7 +59,7 @@ class BaseExperiment:
             slurm_config_name=None,
             dask_address=None,
     ):
-        self.model_nickname = model_nickname
+        self.models_nickname = models_nickname
         self.seeds_model = seeds_models if seeds_models else [0]
         self.n_jobs = n_jobs
 
@@ -101,8 +101,8 @@ class BaseExperiment:
 
     def add_arguments_to_parser(self):
         self.parser.add_argument('--experiment_name', type=str, default=self.experiment_name)
-        self.parser.add_argument('--model_nickname', type=str, choices=self.models_dict.keys(),
-                                 default=self.model_nickname)
+        self.parser.add_argument('--models_nickname', type=str, choices=self.models_dict.keys(),
+                                 nargs='*', default=self.models_nickname)
         self.parser.add_argument('--seeds_model', nargs='*', type=int, default=self.seeds_model)
         self.parser.add_argument('--n_jobs', type=int, default=self.n_jobs)
 
@@ -136,7 +136,7 @@ class BaseExperiment:
     def unpack_parser(self):
         args = self.parser.parse_args()
         self.experiment_name = args.experiment_name
-        self.model_nickname = args.model_nickname
+        self.models_nickname = args.models_nickname
         self.n_jobs = args.n_jobs
 
         self.datasets_names_or_ids = args.datasets_names_or_ids
@@ -197,10 +197,10 @@ class BaseExperiment:
                             format='%(asctime)s - %(levelname)s\n%(message)s\n',
                             level=logging.INFO, filemode=filemode)
 
-    def get_model(self, seed_model, model_params=None, n_jobs=1,
+    def get_model(self, model_nickname, seed_model, model_params=None, n_jobs=1,
                   logging_to_mlflow=False, create_validation_set=False, output_dir=None):
-        model_nickname = self.model_nickname
         models_dict = self.models_dict.copy()
+
         if output_dir is None:
             if logging_to_mlflow:
                 output_dir = mlflow.get_artifact_uri()
@@ -218,16 +218,18 @@ class BaseExperiment:
                 # will be logged after
                 del model_params['loss_fn']
             mlflow.log_params(model_params)
+            # just to make it easier to filter after
+            if model_nickname.find('TabBenchmark') != -1:
+                mlflow.log_param('model_name', model_nickname[len('TabBenchmark'):])
         return model
 
-    def run_combination(self, seed_model=0, n_jobs=1, create_validation_set=False,
+    def run_combination(self, n_jobs=1, create_validation_set=False,
                         model_params=None, is_openml=True, logging_to_mlflow=False,
                         fit_params=None, return_results=False, **kwargs):
         """
 
         Parameters
         ----------
-        seed_model
         n_jobs
         create_validation_set
         model_params
@@ -245,8 +247,10 @@ class BaseExperiment:
             fit_params = fit_params.copy() if fit_params is not None else {}
             model_params = model_params.copy() if model_params is not None else {}
             # logging
-            kwargs_to_log = dict(model_nickname=self.model_nickname, seed_model=seed_model, **kwargs)
+            kwargs_to_log = dict(**kwargs.copy())
             log_and_print_msg('Running...', **kwargs_to_log)
+            model_nickname = kwargs.pop('model_nickname')
+            seed_model = kwargs.pop('seed_model', 0)
             # load data
             if is_openml:
                 task_id = kwargs['task_id']
@@ -274,7 +278,7 @@ class BaseExperiment:
                 )
 
             # load model
-            model = self.get_model(seed_model, model_params=model_params,
+            model = self.get_model(model_nickname, seed_model, model_params=model_params,
                                    n_jobs=n_jobs, logging_to_mlflow=logging_to_mlflow,
                                    create_validation_set=create_validation_set)
 
@@ -332,7 +336,7 @@ class BaseExperiment:
             if return_results:
                 return results
 
-    def run_combination_with_mlflow(self, seed_model=0, n_jobs=1, create_validation_set=False,
+    def run_combination_with_mlflow(self, n_jobs=1, create_validation_set=False,
                                     model_params=None, fit_params=None,
                                     parent_run_uuid=None, is_openml=True, return_results=False, **kwargs):
         fit_params = fit_params.copy() if fit_params is not None else {}
@@ -340,9 +344,8 @@ class BaseExperiment:
         experiment_name = kwargs.pop('experiment_name', self.experiment_name)
         mlflow_tracking_uri = kwargs.pop('mlflow_tracking_uri', self.mlflow_tracking_uri)
         check_if_exists = kwargs.pop('check_if_exists', self.check_if_exists)
-        model_nickname = kwargs.pop('model_nickname', self.model_nickname)
-        unique_params = dict(model_nickname=model_nickname, model_params=model_params, seed_model=seed_model,
-                             create_validation_set=create_validation_set, fit_params=fit_params, **kwargs)
+        unique_params = dict(model_params=model_params, create_validation_set=create_validation_set,
+                             fit_params=fit_params, **kwargs)
         possible_existent_run, logging_to_mlflow = treat_mlflow(experiment_name, mlflow_tracking_uri, check_if_exists,
                                                                 **unique_params)
 
@@ -380,14 +383,14 @@ class BaseExperiment:
             with mlflow.start_run(run_name=run_name, nested=nested) as run:
                 mlflow.log_params(flatten_dict(unique_params))
                 mlflow.log_param('git_hash', get_git_revision_hash())
-                return self.run_combination(seed_model=seed_model, n_jobs=n_jobs,
+                return self.run_combination(n_jobs=n_jobs,
                                             create_validation_set=create_validation_set,
                                             model_params=model_params, fit_params=fit_params,
                                             is_openml=is_openml,
                                             logging_to_mlflow=logging_to_mlflow, return_results=return_results,
                                             **kwargs)
         else:
-            return self.run_combination(seed_model=seed_model, n_jobs=n_jobs,
+            return self.run_combination(n_jobs=n_jobs,
                                         create_validation_set=create_validation_set,
                                         model_params=model_params, fit_params=fit_params,
                                         is_openml=is_openml,
@@ -415,47 +418,50 @@ class BaseExperiment:
         if client is not None:
             futures = []
         if self.using_own_resampling:
-            for seed_dataset in self.seeds_datasets:
-                for seed_model in self.seeds_model:
-                    for fold in self.folds:
-                        for dataset_name_or_id in self.datasets_names_or_ids:
-                            if client is not None:
-                                futures.append(client.submit(
-                                    self.run_combination_with_mlflow,
-                                    seed_model=seed_model,
-                                    dataset_name_or_id=dataset_name_or_id,
-                                    seed_dataset=seed_dataset, fold=fold, n_jobs=self.n_jobs,
-                                    is_openml=False, resample_strategy=self.resample_strategy,
-                                    n_folds=self.k_folds, pct_test=self.pct_test,
-                                    validation_resample_strategy=self.validation_resample_strategy,
-                                    pct_validation=self.pct_validation
-                                ))
-                            else:
-                                self.run_combination_with_mlflow(
-                                    seed_model=seed_model, dataset_name_or_id=dataset_name_or_id,
-                                    seed_dataset=seed_dataset, fold=fold, n_jobs=self.n_jobs, is_openml=False,
-                                    resample_strategy=self.resample_strategy,
-                                    n_folds=self.k_folds, pct_test=self.pct_test,
-                                    validation_resample_strategy=self.validation_resample_strategy,
-                                    pct_validation=self.pct_validation)
-        else:
-            for task_repeat in self.task_repeats:
-                for task_sample in self.task_samples:
+            for model_nickname in self.models_nickname:
+                for seed_dataset in self.seeds_datasets:
                     for seed_model in self.seeds_model:
-                        for task_fold in self.task_folds:
-                            for task_id in self.tasks_ids:
+                        for fold in self.folds:
+                            for dataset_name_or_id in self.datasets_names_or_ids:
                                 if client is not None:
-                                    futures.append(client.submit(self.run_combination_with_mlflow,
-                                                                 seed_model=seed_model, task_id=task_id,
-                                                                 task_repeat=task_repeat,
-                                                                 task_sample=task_sample, task_fold=task_fold,
-                                                                 n_jobs=self.n_jobs, is_openml=True))
+                                    futures.append(client.submit(
+                                        self.run_combination_with_mlflow,
+                                        seed_model=seed_model,
+                                        dataset_name_or_id=dataset_name_or_id,
+                                        seed_dataset=seed_dataset, fold=fold, n_jobs=self.n_jobs,
+                                        is_openml=False, resample_strategy=self.resample_strategy,
+                                        n_folds=self.k_folds, pct_test=self.pct_test,
+                                        validation_resample_strategy=self.validation_resample_strategy,
+                                        pct_validation=self.pct_validation, model_nickname=model_nickname))
                                 else:
-                                    self.run_combination_with_mlflow(seed_model=seed_model,
-                                                                     task_id=task_id, task_repeat=task_repeat,
-                                                                     task_sample=task_sample,
-                                                                     task_fold=task_fold,
-                                                                     n_jobs=self.n_jobs, is_openml=True)
+                                    self.run_combination_with_mlflow(
+                                        seed_model=seed_model, dataset_name_or_id=dataset_name_or_id,
+                                        seed_dataset=seed_dataset, fold=fold, n_jobs=self.n_jobs, is_openml=False,
+                                        resample_strategy=self.resample_strategy,
+                                        n_folds=self.k_folds, pct_test=self.pct_test,
+                                        validation_resample_strategy=self.validation_resample_strategy,
+                                        pct_validation=self.pct_validation, model_nickname=model_nickname)
+        else:
+            for model_nickname in self.models_nickname:
+                for task_repeat in self.task_repeats:
+                    for task_sample in self.task_samples:
+                        for seed_model in self.seeds_model:
+                            for task_fold in self.task_folds:
+                                for task_id in self.tasks_ids:
+                                    if client is not None:
+                                        futures.append(client.submit(self.run_combination_with_mlflow,
+                                                                     seed_model=seed_model, task_id=task_id,
+                                                                     task_repeat=task_repeat,
+                                                                     task_sample=task_sample, task_fold=task_fold,
+                                                                     n_jobs=self.n_jobs, is_openml=True,
+                                                                     model_nickname=model_nickname))
+                                    else:
+                                        self.run_combination_with_mlflow(seed_model=seed_model,
+                                                                         task_id=task_id, task_repeat=task_repeat,
+                                                                         task_sample=task_sample,
+                                                                         task_fold=task_fold,
+                                                                         n_jobs=self.n_jobs, is_openml=True,
+                                                                         model_nickname=model_nickname)
         if client is not None:
             client.gather(futures)
             client.close()
@@ -471,7 +477,7 @@ class BaseExperiment:
         self.output_dir = self.output_dir / self.experiment_name
         os.makedirs(self.output_dir, exist_ok=True)
         self.setup_logger()
-        kwargs_to_log = dict(experiment_name=self.experiment_name, model_nickname=self.model_nickname,
+        kwargs_to_log = dict(experiment_name=self.experiment_name, models_nickname=self.models_nickname,
                              seeds_model=self.seeds_model)
         if self.using_own_resampling:
             kwargs_to_log.update(dict(datasets_names_or_ids=self.datasets_names_or_ids,
