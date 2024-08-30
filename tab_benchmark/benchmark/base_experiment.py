@@ -11,7 +11,7 @@ from tab_benchmark.benchmark.utils import treat_mlflow, get_model, load_openml_t
     load_own_task
 from tab_benchmark.benchmark.benchmarked_models import models_dict as benchmarked_models_dict
 from tab_benchmark.utils import get_git_revision_hash, flatten_dict
-from dask.distributed import LocalCluster
+from dask.distributed import LocalCluster, get_worker
 from dask_jobqueue import SLURMCluster
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
@@ -200,11 +200,13 @@ class BaseExperiment:
     def get_model(self, model_nickname, seed_model, model_params=None, n_jobs=1,
                   logging_to_mlflow=False, create_validation_set=False, output_dir=None):
         models_dict = self.models_dict.copy()
-
         if output_dir is None:
-            if logging_to_mlflow:
-                output_dir = mlflow.get_artifact_uri()
-            else:
+            # if running on a worker, we use the worker's local directory
+            try:
+                worker = get_worker()
+                output_dir = Path(worker.local_directory) / self.output_dir.name
+            except ValueError:
+                # if running on the main process, we use the output_dir
                 output_dir = self.output_dir
             os.makedirs(output_dir, exist_ok=True)
         model = get_model(model_nickname, seed_model, model_params, models_dict, n_jobs, output_dir=output_dir)
