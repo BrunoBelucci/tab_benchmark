@@ -18,6 +18,13 @@ from tqdm.auto import tqdm
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
 
+class SlurmJobFormatter(logging.Formatter):
+    def format(self, record):
+        slurm_job_id = os.environ.get('SLURM_JOB_ID', 'unknown')
+        record.slurm_job_id = slurm_job_id
+        return super().format(record)
+
+
 class LoggingSetter(WorkerPlugin):
     def __init__(self, logging_config=None):
         self.logging_config = logging_config if logging_config is not None else {}
@@ -195,7 +202,7 @@ class BaseExperiment:
         else:
             logger_filename = self.logger_filename
         logging.basicConfig(filename=log_dir / logger_filename,
-                            format='%(asctime)s - %(levelname)s\n%(message)s\n',
+                            format='%(asctime)s - %(levelname)s - Slurm Job: %(slurm_job_id)s \n%(message)s\n',
                             level=logging.INFO, filemode=filemode)
 
     def get_model(self, model_nickname, seed_model, model_params=None, n_jobs=1,
