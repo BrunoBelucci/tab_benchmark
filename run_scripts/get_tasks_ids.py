@@ -14,4 +14,4 @@ if __name__ == '__main__':
     parser.add_argument('--tasks_names', nargs='+', type=str)
     args = parser.parse_args()
     tasks_ids = get_tasks_ids(args.tasks_names)
-    print(tasks_ids)
+    print(*tasks_ids, sep=' ')
