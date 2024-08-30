@@ -11,8 +11,9 @@ from tab_benchmark.benchmark.utils import treat_mlflow, get_model, load_openml_t
     load_own_task
 from tab_benchmark.benchmark.benchmarked_models import models_dict as benchmarked_models_dict
 from tab_benchmark.utils import get_git_revision_hash, flatten_dict
-from dask.distributed import LocalCluster, get_worker
+from dask.distributed import LocalCluster, get_worker, as_completed
 from dask_jobqueue import SLURMCluster
+from tqdm.auto import tqdm
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
@@ -465,6 +466,10 @@ class BaseExperiment:
                                                                          n_jobs=self.n_jobs, is_openml=True,
                                                                          model_nickname=model_nickname)
         if client is not None:
+            print('Models are being trained and evaluated in parallel, check the logs for real time information.')
+            for future in tqdm(as_completed(futures), total=len(futures)):
+                pass
+            # ensure all futures are done
             client.gather(futures)
             client.close()
 
