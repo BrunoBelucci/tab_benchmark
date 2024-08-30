@@ -1,5 +1,6 @@
 base_experiment_location="/home/users/belucci/tab_benchmark/tab_benchmark/benchmark/base_experiment.py"
 experiment_name="xgboost_test"
+output_dir="/home/users/belucci/tab_benchmark/results"
 log_dir="/home/users/belucci/tab_benchmark/results/logs"
 dask_cluster_type="slurm"
 slurm_config_name="slurm-single-core-process-cpu"
@@ -14,4 +15,4 @@ conda activate tab_benchmark
 python $base_experiment_location --experiment_name $experiment_name --log_dir $log_dir \
  --dask_cluster_type $dask_cluster_type --slurm_config_name $slurm_config_name --models_nickname $models_nickname \
 --n_jobs $n_jobs --mlflow_tracking_uri $mlflow_tracking_uri --task_folds $task_folds --tasks_ids $tasks_ids \
---n_workers $n_workers
+--n_workers $n_workers --output_dir $output_dir
