@@ -17,7 +17,9 @@ from dask.distributed import LocalCluster, get_worker, as_completed
 from dask_jobqueue import SLURMCluster
 from tqdm.auto import tqdm
 from multiprocessing import cpu_count
-from torch.cuda import set_per_process_memory_fraction
+from torch.cuda import (set_per_process_memory_fraction, max_memory_reserved, max_memory_allocated,
+                        reset_peak_memory_stats)
+from resource import getrusage, RUSAGE_SELF
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
@@ -279,6 +281,7 @@ class BaseExperiment:
                 # workers // n_gpus (number of workers in this GPU)
                 fraction_of_gpu_being_used = 1 / (self.n_workers // self.n_gpus)
                 set_per_process_memory_fraction(fraction_of_gpu_being_used)
+                reset_peak_memory_stats()
             start_time = time.perf_counter()
             fit_params = fit_params.copy() if fit_params is not None else {}
             model_params = model_params.copy() if model_params is not None else {}
@@ -346,6 +349,11 @@ class BaseExperiment:
 
             if logging_to_mlflow:
                 mlflow.log_param('was_evaluated', True)
+                # in MB (in linux getrusage seems to returns in KB)
+                mlflow.log_metric('max_memory_used', getrusage(RUSAGE_SELF).ru_maxrss / 1000)
+                if self.n_gpus > 0:
+                    mlflow.log_metric('max_memory_reserved', max_memory_reserved() / (1024 ** 2))  # in MB
+                    mlflow.log_metric('max_memory_allocated', max_memory_allocated() / (1024 ** 2))  # in MB
 
             results.update({
                 'model': model,
