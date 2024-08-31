@@ -92,7 +92,7 @@ class BaseExperiment:
         self.dask_cluster_type = dask_cluster_type
         self.n_workers = n_workers
         self.dask_memory = dask_memory
-        self.dask_job_extra_directives = dask_job_extra_directives
+        self.dask_job_extra_directives = dask_job_extra_directives if dask_job_extra_directives else []
         self.dask_address = dask_address
 
         self.experiment_name = experiment_name
