@@ -1,5 +1,6 @@
 from __future__ import annotations
 import argparse
+import time
 from pathlib import Path
 import mlflow
 import os
@@ -257,6 +258,7 @@ class BaseExperiment:
 
         """
         try:
+            start_time = time.perf_counter()
             fit_params = fit_params.copy() if fit_params is not None else {}
             model_params = model_params.copy() if model_params is not None else {}
             # logging
@@ -342,10 +344,12 @@ class BaseExperiment:
         except Exception as exception:
             if self.raise_on_fit_error:
                 raise exception
-            log_and_print_msg('Error while running', **kwargs_to_log)
+            total_time = time.perf_counter() - start_time
+            log_and_print_msg('Error while running', elapsed_time=total_time, **kwargs_to_log)
             return None
         else:
-            log_and_print_msg('Finished!', **kwargs_to_log)
+            total_time = time.perf_counter() - start_time
+            log_and_print_msg('Finished!', elapsed_time=total_time, **kwargs_to_log)
             if return_results:
                 return results
 
@@ -521,12 +525,15 @@ class BaseExperiment:
         else:
             kwargs_to_log.update(dict(tasks_ids=self.tasks_ids, task_repeats=self.task_repeats,
                                       task_samples=self.task_samples, task_folds=self.task_folds))
+        start_time = time.perf_counter()
         log_and_print_msg('Starting experiment...', **kwargs_to_log)
         if self.dask_cluster_type is not None:
             client = self.setup_dask(self.n_workers, self.dask_cluster_type, self.dask_address)
         else:
             client = None
         self.run_experiment(client=client)
+        total_time = time.perf_counter() - start_time
+        log_and_print_msg('Experiment finished!', total_elapsed_time=total_time, **kwargs_to_log)
 
 
 if __name__ == '__main__':
