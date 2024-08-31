@@ -418,7 +418,7 @@ class BaseExperiment:
         else:
             if cluster_type == 'local':
                 threads_per_worker = self.n_jobs
-                if cpu_count < threads_per_worker * n_workers:
+                if cpu_count() < threads_per_worker * n_workers:
                     warnings.warn(f"n_workers * threads_per_worker (n_jobs) is greater than the number of cores "
                                   f"available ({cpu_count}). This may lead to performance issues.")
                 cluster = LocalCluster(n_workers=0, memory_limit=self.dask_memory,
