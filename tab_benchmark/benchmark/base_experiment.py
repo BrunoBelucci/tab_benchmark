@@ -487,6 +487,7 @@ class BaseExperiment:
     def run_experiment(self, client=None):
         if client is not None:
             futures = []
+            first_submission = True
         if self.using_own_resampling:
             for model_nickname in self.models_nickname:
                 for seed_dataset in self.seeds_datasets:
@@ -494,6 +495,7 @@ class BaseExperiment:
                         for fold in self.folds:
                             for dataset_name_or_id in self.datasets_names_or_ids:
                                 if client is not None:
+                                    time.sleep(5)  # we stagger the submissions to avoid any issue with synchronization
                                     futures.append(client.submit(
                                         self.run_combination_with_mlflow,
                                         seed_model=seed_model,
@@ -503,6 +505,11 @@ class BaseExperiment:
                                         n_folds=self.k_folds, pct_test=self.pct_test,
                                         validation_resample_strategy=self.validation_resample_strategy,
                                         pct_validation=self.pct_validation, model_nickname=model_nickname))
+                                    if first_submission:
+                                        # we wait a bit more the first time to ensure that some tasks are completed
+                                        # after the first submission, for example creating experiments,
+                                        # folders, etc.
+                                        time.sleep(5)
                                 else:
                                     self.run_combination_with_mlflow(
                                         seed_model=seed_model, dataset_name_or_id=dataset_name_or_id,
@@ -519,12 +526,19 @@ class BaseExperiment:
                             for task_fold in self.task_folds:
                                 for task_id in self.tasks_ids:
                                     if client is not None:
+                                        # we stagger the submissions to avoid any issue with synchronization
+                                        time.sleep(5)
                                         futures.append(client.submit(self.run_combination_with_mlflow,
                                                                      seed_model=seed_model, task_id=task_id,
                                                                      task_repeat=task_repeat,
                                                                      task_sample=task_sample, task_fold=task_fold,
                                                                      n_jobs=self.n_jobs, is_openml=True,
                                                                      model_nickname=model_nickname))
+                                        if first_submission:
+                                            # we wait a bit to ensure that some tasks are completed
+                                            # after the first submission, for example creating experiments,
+                                            # folders, etc.
+                                            time.sleep(10)
                                     else:
                                         self.run_combination_with_mlflow(seed_model=seed_model,
                                                                          task_id=task_id, task_repeat=task_repeat,
