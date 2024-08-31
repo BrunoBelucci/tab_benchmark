@@ -17,6 +17,7 @@ from dask.distributed import LocalCluster, get_worker, as_completed
 from dask_jobqueue import SLURMCluster
 from tqdm.auto import tqdm
 from multiprocessing import cpu_count
+from torch.cuda import set_per_process_memory_fraction
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
@@ -66,6 +67,8 @@ class BaseExperiment:
             dask_memory=None,
             dask_job_extra_directives=None,
             dask_address=None,
+            # gpu specific
+            n_gpus=0,
     ):
         self.models_nickname = models_nickname
         self.seeds_model = seeds_models if seeds_models else [0]
@@ -95,6 +98,7 @@ class BaseExperiment:
         self.dask_memory = dask_memory
         self.dask_job_extra_directives = dask_job_extra_directives if dask_job_extra_directives else []
         self.dask_address = dask_address
+        self.n_gpus = n_gpus
 
         self.experiment_name = experiment_name
         self.log_dir = log_dir
@@ -143,6 +147,17 @@ class BaseExperiment:
         self.parser.add_argument('--dask_job_extra_directives', type=str, nargs='*',
                                  default=self.dask_job_extra_directives)
         self.parser.add_argument('--dask_address', type=str, default=self.dask_address)
+        self.parser.add_argument('--n_gpus', type=int, default=self.n_gpus,
+                                 help='Number of GPUs to request in the case we are using a distributed cluster '
+                                      '(SLURM for example). This is the total number of GPUs that will be requested, '
+                                      'and not the number of GPUs per job, we are assuming that only one GPU will be'
+                                      'requested per job, therefore we will submit at most n_gpus jobs, each one'
+                                      'with (n_workers // n_gpus) * n_jobs cores which corresponds to'
+                                      '(n_workers // n_gpus) processes. '
+                                      'Note that this will not allocate the GPU in the cluster, we must still pass '
+                                      'the required resource allocation parameter to the cluster (we can do this via'
+                                      'the dask_job_extra_directives argument, for example with '
+                                      '--dask_job_extra_directives "-G 1").')
 
     def unpack_parser(self):
         args = self.parser.parse_args()
@@ -180,6 +195,7 @@ class BaseExperiment:
         self.dask_memory = args.dask_memory
         self.dask_job_extra_directives = args.dask_job_extra_directives
         self.dask_address = args.dask_address
+        self.n_gpus = args.n_gpus
         return args
 
     def treat_parser(self):
@@ -258,6 +274,11 @@ class BaseExperiment:
 
         """
         try:
+            if self.n_gpus > 0:
+                # we assume that we are using one GPU and this GPU is being shared by
+                # workers // n_gpus (number of workers in this GPU)
+                fraction_of_gpu_being_used = 1 / (self.n_workers // self.n_gpus)
+                set_per_process_memory_fraction(fraction_of_gpu_being_used)
             start_time = time.perf_counter()
             fit_params = fit_params.copy() if fit_params is not None else {}
             model_params = model_params.copy() if model_params is not None else {}
@@ -428,8 +449,15 @@ class BaseExperiment:
                 cluster = LocalCluster(n_workers=0, memory_limit=self.dask_memory,
                                        threads_per_worker=threads_per_worker)
             elif cluster_type == 'slurm':
-                cores = self.n_jobs
-                processes = 1
+                if self.n_gpus == 0:
+                    # we will submit one job for each worker
+                    cores = self.n_jobs
+                    processes = 1
+                else:
+                    # we will only submit n_gpus job, and they will be responsible for all workers
+                    cores = (n_workers // self.n_gpus) * self.n_jobs
+                    processes = (n_workers // self.n_gpus)
+                    n_workers = self.n_gpus
                 job_extra_directives = dask.config.get(
                     "jobqueue.%s.job-extra-directives" % 'slurm', []
                 )
