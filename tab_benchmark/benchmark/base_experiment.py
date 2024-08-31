@@ -7,6 +7,7 @@ import logging
 import warnings
 import ray
 from distributed import WorkerPlugin, Worker, Client
+import dask
 from tab_benchmark.benchmark.utils import treat_mlflow, get_model, load_openml_task, fit_model, evaluate_model, \
     load_own_task
 from tab_benchmark.benchmark.benchmarked_models import models_dict as benchmarked_models_dict
