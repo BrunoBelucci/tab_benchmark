@@ -14,6 +14,7 @@ from tab_benchmark.utils import get_git_revision_hash, flatten_dict
 from dask.distributed import LocalCluster, get_worker, as_completed
 from dask_jobqueue import SLURMCluster
 from tqdm.auto import tqdm
+from multiprocessing import cpu_count
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
@@ -60,7 +61,8 @@ class BaseExperiment:
             # parallelization
             dask_cluster_type=None,
             n_workers=1,
-            slurm_config_name=None,
+            dask_memory=None,
+            dask_job_extra_directives=None,
             dask_address=None,
     ):
         self.models_nickname = models_nickname
@@ -88,7 +90,8 @@ class BaseExperiment:
         # parallelization
         self.dask_cluster_type = dask_cluster_type
         self.n_workers = n_workers
-        self.slurm_config_name = slurm_config_name
+        self.dask_memory = dask_memory
+        self.dask_job_extra_directives = dask_job_extra_directives
         self.dask_address = dask_address
 
         self.experiment_name = experiment_name
@@ -134,7 +137,9 @@ class BaseExperiment:
 
         self.parser.add_argument('--dask_cluster_type', type=str, default=self.dask_cluster_type)
         self.parser.add_argument('--n_workers', type=int, default=self.n_workers)
-        self.parser.add_argument('--slurm_config_name', type=str, default=self.slurm_config_name)
+        self.parser.add_argument('--dask_memory', type=str, default=self.dask_memory)
+        self.parser.add_argument('--dask_job_extra_directives', type=str, nargs='*',
+                                 default=self.dask_job_extra_directives)
         self.parser.add_argument('--dask_address', type=str, default=self.dask_address)
 
     def unpack_parser(self):
@@ -170,7 +175,8 @@ class BaseExperiment:
 
         self.dask_cluster_type = args.dask_cluster_type
         self.n_workers = args.n_workers
-        self.slurm_config_name = args.slurm_config_name
+        self.dask_memory = args.dask_memory
+        self.dask_job_extra_directives = args.dask_job_extra_directives
         self.dask_address = args.dask_address
         return args
 
@@ -405,14 +411,29 @@ class BaseExperiment:
                                         logging_to_mlflow=logging_to_mlflow, return_results=return_results,
                                         **kwargs)
 
-    def setup_dask(self, n_workers, cluster_type='local', slurm_config_name=None, address=None):
+    def setup_dask(self, n_workers, cluster_type='local', address=None):
         if address is not None:
             client = Client(address)
         else:
             if cluster_type == 'local':
-                cluster = LocalCluster(n_workers=0, threads_per_worker=1)
+                threads_per_worker = self.n_jobs
+                if cpu_count < threads_per_worker * n_workers:
+                    warnings.warn(f"n_workers * threads_per_worker (n_jobs) is greater than the number of cores "
+                                  f"available ({cpu_count}). This may lead to performance issues.")
+                cluster = LocalCluster(n_workers=0, memory_limit=self.dask_memory,
+                                       threads_per_worker=threads_per_worker)
             elif cluster_type == 'slurm':
-                cluster = SLURMCluster(config_name=slurm_config_name)
+                cores = self.n_jobs
+                processes = 1
+                job_extra_directives = dask.config.get(
+                    "jobqueue.%s.job-extra-directives" % 'slurm', []
+                )
+                job_extra_directives = job_extra_directives + self.dask_job_extra_directives
+                job_script_prologue = ['eval "$(conda shell.bash hook)"', 'conda activate tab_benchmark']
+                walltime = '364-23:59:59'
+                cluster = SLURMCluster(cores=cores, memory=self.dask_memory, processes=processes,
+                                       job_extra_directives=job_extra_directives,
+                                       job_script_prologue=job_script_prologue, walltime=walltime)
             else:
                 raise ValueError("cluster_type must be either 'local' or 'slurm'.")
             cluster.adapt(minimum=0, maximum=n_workers)
@@ -501,7 +522,7 @@ class BaseExperiment:
                                       task_samples=self.task_samples, task_folds=self.task_folds))
         log_and_print_msg('Starting experiment...', **kwargs_to_log)
         if self.dask_cluster_type is not None:
-            client = self.setup_dask(self.n_workers, self.dask_cluster_type, self.slurm_config_name, self.dask_address)
+            client = self.setup_dask(self.n_workers, self.dask_cluster_type, self.dask_address)
         else:
             client = None
         self.run_experiment(client=client)
