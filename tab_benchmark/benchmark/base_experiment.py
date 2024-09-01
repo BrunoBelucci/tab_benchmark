@@ -464,6 +464,7 @@ class BaseExperiment:
         else:
             if cluster_type == 'local':
                 threads_per_worker = self.n_jobs
+                processes = 1
                 if cpu_count() < threads_per_worker * n_workers:
                     warnings.warn(f"n_workers * threads_per_worker (n_jobs) is greater than the number of cores "
                                   f"available ({cpu_count}). This may lead to performance issues.")
@@ -491,7 +492,7 @@ class BaseExperiment:
                 log_and_print_msg("Cluster dashboard address", dashboard_address=cluster.dashboard_link)
             else:
                 raise ValueError("cluster_type must be either 'local' or 'slurm'.")
-            cluster.adapt(minimum=1, maximum=n_workers)
+            cluster.adapt(minimum=processes, maximum=n_workers)
             client = cluster.get_client()
         plugin = LoggingSetter(logging_config={'level': logging.INFO})
         client.register_plugin(plugin)
