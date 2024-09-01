@@ -490,7 +490,7 @@ class BaseExperiment:
                                        job_script_prologue=job_script_prologue, walltime=walltime)
             else:
                 raise ValueError("cluster_type must be either 'local' or 'slurm'.")
-            cluster.adapt(minimum=0, maximum=n_workers)
+            cluster.adapt(minimum=1, maximum=n_workers)
             client = cluster.get_client()
         plugin = LoggingSetter(logging_config={'level': logging.INFO})
         client.register_plugin(plugin)
