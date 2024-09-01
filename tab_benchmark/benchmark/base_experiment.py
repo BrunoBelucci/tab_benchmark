@@ -386,8 +386,15 @@ class BaseExperiment:
         except Exception as exception:
             if self.raise_on_fit_error:
                 raise exception
-            total_time = time.perf_counter() - start_time
-            log_and_print_msg('Error while running', elapsed_time=total_time, **kwargs_to_log)
+            try:
+                total_time = time.perf_counter() - start_time
+            except UnboundLocalError:
+                total_time = 'unknown'
+            try:
+                kwargs_with_error = kwargs_to_log.copy()
+            except UnboundLocalError:
+                kwargs_with_error = kwargs.copy()
+            log_and_print_msg('Error while running', elapsed_time=total_time, **kwargs_with_error)
             return None
         else:
             total_time = time.perf_counter() - start_time
