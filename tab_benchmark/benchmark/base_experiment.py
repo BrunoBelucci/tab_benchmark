@@ -206,6 +206,8 @@ class BaseExperiment:
                 else dask_job_extra_directives[i]
                 for i in range(len(dask_job_extra_directives)) if dask_job_extra_directives[i].startswith('-')
             ]
+        else:
+            dask_job_extra_directives = []
         self.dask_job_extra_directives = dask_job_extra_directives
         self.dask_address = args.dask_address
         self.n_gpus = args.n_gpus
