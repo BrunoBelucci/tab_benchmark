@@ -492,7 +492,7 @@ class BaseExperiment:
                                        job_extra_directives=job_extra_directives,
                                        job_script_prologue=job_script_prologue, walltime=walltime)
                 log_and_print_msg("Cluster dashboard address", dashboard_address=cluster.dashboard_link)
-                cluster.adapt(minimum=processes, maximum=n_workers, minimum_jobs=1, maximum_jobs=n_maximum_jobs)
+                cluster.adapt(minimum=processes, maximum=n_workers, minimum_jobs=processes, maximum_jobs=n_maximum_jobs)
             else:
                 raise ValueError("cluster_type must be either 'local' or 'slurm'.")
             client = cluster.get_client()
