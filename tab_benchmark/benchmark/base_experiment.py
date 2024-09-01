@@ -488,6 +488,7 @@ class BaseExperiment:
                 cluster = SLURMCluster(cores=cores, memory=self.dask_memory, processes=processes,
                                        job_extra_directives=job_extra_directives,
                                        job_script_prologue=job_script_prologue, walltime=walltime)
+                log_and_print_msg("Cluster dashboard address", dashboard_address=cluster.dashboard_link)
             else:
                 raise ValueError("cluster_type must be either 'local' or 'slurm'.")
             cluster.adapt(minimum=1, maximum=n_workers)
