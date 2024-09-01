@@ -470,16 +470,18 @@ class BaseExperiment:
                                   f"available ({cpu_count}). This may lead to performance issues.")
                 cluster = LocalCluster(n_workers=0, memory_limit=self.dask_memory,
                                        threads_per_worker=threads_per_worker)
+                cluster.adapt(minimum=processes, maximum=n_workers)
             elif cluster_type == 'slurm':
                 if self.n_gpus == 0:
                     # we will submit one job for each worker
                     cores = self.n_jobs
                     processes = 1
+                    n_maximum_jobs = n_workers
                 else:
                     # we will only submit n_gpus job, and they will be responsible for all workers
                     cores = (n_workers // self.n_gpus) * self.n_jobs
                     processes = (n_workers // self.n_gpus)
-                    n_workers = self.n_gpus
+                    n_maximum_jobs = self.n_gpus
                 job_extra_directives = dask.config.get(
                     "jobqueue.%s.job-extra-directives" % 'slurm', []
                 )
@@ -490,9 +492,9 @@ class BaseExperiment:
                                        job_extra_directives=job_extra_directives,
                                        job_script_prologue=job_script_prologue, walltime=walltime)
                 log_and_print_msg("Cluster dashboard address", dashboard_address=cluster.dashboard_link)
+                cluster.adapt(minimum=processes, maximum=n_workers, minimum_jobs=1, maximum_jobs=n_maximum_jobs)
             else:
                 raise ValueError("cluster_type must be either 'local' or 'slurm'.")
-            cluster.adapt(minimum=processes, maximum=n_workers)
             client = cluster.get_client()
         plugin = LoggingSetter(logging_config={'level': logging.INFO})
         client.register_plugin(plugin)
