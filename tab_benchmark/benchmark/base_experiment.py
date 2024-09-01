@@ -290,6 +290,9 @@ class BaseExperiment:
         """
         try:
             start_time = time.perf_counter()
+            # logging
+            kwargs_to_log = dict(**kwargs.copy())
+            log_and_print_msg('Running...', **kwargs_to_log)
             if self.n_gpus > 0:
                 # we assume that we are using one GPU and this GPU is being shared by
                 # workers // n_gpus (number of workers in this GPU)
@@ -298,9 +301,6 @@ class BaseExperiment:
                 reset_peak_memory_stats()
             fit_params = fit_params.copy() if fit_params is not None else {}
             model_params = model_params.copy() if model_params is not None else {}
-            # logging
-            kwargs_to_log = dict(**kwargs.copy())
-            log_and_print_msg('Running...', **kwargs_to_log)
             model_nickname = kwargs.pop('model_nickname')
             seed_model = kwargs.pop('seed_model', 0)
             # load data
@@ -449,8 +449,16 @@ class BaseExperiment:
             with mlflow.start_run(run_name=run_name, nested=nested) as run:
                 mlflow.log_params(flatten_dict(unique_params))
                 mlflow.log_param('git_hash', get_git_revision_hash())
+                # slurm parameters
                 mlflow.log_param('SLURM_JOB_ID', os.getenv('SLURM_JOB_ID', None))
                 mlflow.log_param('SLURMD_NODENAME', os.getenv('SLURMD_NODENAME', None))
+                # dask parameters
+                mlflow.log_param('dask_cluster_type', self.dask_cluster_type)
+                mlflow.log_param('n_workers', self.n_workers)
+                mlflow.log_param('dask_memory', self.dask_memory)
+                mlflow.log_param('dask_job_extra_directives', self.dask_job_extra_directives)
+                mlflow.log_param('dask_address', self.dask_address)
+                mlflow.log_param('n_gpus', self.n_gpus)
                 return self.run_combination(n_jobs=n_jobs,
                                             create_validation_set=create_validation_set,
                                             model_params=model_params, fit_params=fit_params,
