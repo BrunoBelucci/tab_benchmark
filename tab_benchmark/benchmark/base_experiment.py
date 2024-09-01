@@ -289,13 +289,13 @@ class BaseExperiment:
 
         """
         try:
+            start_time = time.perf_counter()
             if self.n_gpus > 0:
                 # we assume that we are using one GPU and this GPU is being shared by
                 # workers // n_gpus (number of workers in this GPU)
                 fraction_of_gpu_being_used = 1 / (self.n_workers // self.n_gpus)
                 set_per_process_memory_fraction(fraction_of_gpu_being_used)
                 reset_peak_memory_stats()
-            start_time = time.perf_counter()
             fit_params = fit_params.copy() if fit_params is not None else {}
             model_params = model_params.copy() if model_params is not None else {}
             # logging
