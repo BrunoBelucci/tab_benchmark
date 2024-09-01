@@ -352,8 +352,8 @@ class BaseExperiment:
                 # in MB (in linux getrusage seems to returns in KB)
                 mlflow.log_metric('max_memory_used', getrusage(RUSAGE_SELF).ru_maxrss / 1000)
                 if self.n_gpus > 0:
-                    mlflow.log_metric('max_memory_reserved', max_memory_reserved() / (1024 ** 2))  # in MB
-                    mlflow.log_metric('max_memory_allocated', max_memory_allocated() / (1024 ** 2))  # in MB
+                    mlflow.log_metric('max_cuda_memory_reserved', max_memory_reserved() / (1024 ** 2))  # in MB
+                    mlflow.log_metric('max_cuda_memory_allocated', max_memory_allocated() / (1024 ** 2))  # in MB
 
             results.update({
                 'model': model,
