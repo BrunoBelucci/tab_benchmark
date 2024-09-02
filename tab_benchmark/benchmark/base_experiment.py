@@ -424,8 +424,9 @@ class BaseExperiment:
                 'was_evaluated': True,
             })
         except Exception as exception:
-            if self.raise_on_fit_error:
-                raise exception
+            if logging_to_mlflow:
+                mlflow.log_param('EXCEPTION', str(exception))
+                mlflow.end_run('FAILED')
             try:
                 total_time = time.perf_counter() - start_time
             except UnboundLocalError:
@@ -434,7 +435,9 @@ class BaseExperiment:
                 kwargs_with_error = kwargs_to_log.copy()
             except UnboundLocalError:
                 kwargs_with_error = kwargs.copy()
-            log_and_print_msg('Error while running', elapsed_time=total_time, **kwargs_with_error)
+            log_and_print_msg('Error while running', exception=exception, elapsed_time=total_time, **kwargs_with_error)
+            if self.raise_on_fit_error:
+                raise exception
             if return_results:
                 try:
                     return results
