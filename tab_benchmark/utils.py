@@ -132,14 +132,6 @@ def evaluate_metric(y_true, y_pred, metric, n_classes=None, error_score='raise')
         metric_fn, _, _ = get_metric_fn(metric, n_classes)
     else:
         metric_fn = metric
-    if metric_fn.__name__ == 'auc':
-        if y_true.shape[1] == 1:
-            y_true = y_true.to_numpy().reshape(-1)
-        if n_classes == 2:
-            if isinstance(y_pred, pd.DataFrame):
-                y_pred = y_pred.to_numpy()[:, 1]
-            else:
-                y_pred = y_pred[:, 1]
     try:
         score = metric_fn(y_true, y_pred)
     except ValueError as e:
@@ -187,8 +179,23 @@ def evaluate_set(model, eval_set: Sequence[pd.DataFrame], metrics: str | list[st
                 y_pred_ = model.predict(X)
             else:
                 y_pred_ = y_pred
-        # maybe we should pass copy of y_pred_ to avoid changing the original y_pred_?
-        scores[metric] = evaluate_metric(y, y_pred_, func, n_classes, error_score)
+        if metric == 'auc':
+            if y.shape[1] == 1:
+                y_true = y.to_numpy().reshape(-1)
+            else:
+                y_true = y.copy()
+            # in the case of a binary classifier we will evaluate both cases as the positive class
+            if n_classes == 2:
+                for i in range(2):
+                    if isinstance(y_pred_, pd.DataFrame):
+                        y_pred_ = y_pred.to_numpy()[:, i]
+                    else:
+                        y_pred_ = y_pred_[:, i]
+                    scores[f'{metric}_{i}'] = evaluate_metric(y_true, y_pred_, metric, n_classes, error_score)
+            else:
+                scores[metric] = evaluate_metric(y_true, y_pred_, metric, n_classes, error_score)
+        else:
+            scores[metric] = evaluate_metric(y, y_pred_, func, n_classes, error_score)
     return scores
 
 
