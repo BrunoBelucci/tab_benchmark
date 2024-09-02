@@ -500,8 +500,12 @@ class BaseExperiment:
                 job_extra_directives = dask.config.get(
                     "jobqueue.%s.job-extra-directives" % 'slurm', []
                 )
+                job_script_prologue = dask.config.get(
+                    "jobqueue.%s.job-script-prologue" % 'slurm', []
+                )
                 job_extra_directives = job_extra_directives + self.dask_job_extra_directives
-                job_script_prologue = ['eval "$(conda shell.bash hook)"', 'conda activate tab_benchmark']
+                job_script_prologue = job_script_prologue + ['eval "$(conda shell.bash hook)"',
+                                                             'conda activate tab_benchmark']
                 walltime = '364-23:59:59'
                 cluster = SLURMCluster(cores=cores, memory=self.dask_memory, processes=processes,
                                        job_extra_directives=job_extra_directives,
