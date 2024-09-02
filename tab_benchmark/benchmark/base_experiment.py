@@ -596,9 +596,9 @@ class BaseExperiment:
             first_submission = True
             progress_bar = tqdm(combinations, desc='Combinations submitted')
             for combination in progress_bar:
-                futures.append(client.submit(self.run_combination_with_mlflow, n_jobs=self.n_jobs,
-                                             **extra_params,
-                                             **dict(zip(combination_keys, combination))))
+                kwargs = dict(zip(combination_keys, combination))
+                kwargs.update(extra_params)
+                futures.append(client.submit(self.run_combination_with_mlflow, n_jobs=self.n_jobs, **kwargs))
                 log_and_print_msg(str(progress_bar))
                 # wait between submissions to avoid overloading the cluster
                 if first_submission:
