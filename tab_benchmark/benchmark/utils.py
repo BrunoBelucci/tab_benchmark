@@ -125,7 +125,7 @@ def evaluate_model(model, eval_set, eval_name, metrics, default_metric=None, n_c
 def load_own_task(dataset_name_or_id, seed_dataset, resample_strategy, n_folds, pct_test, fold,
                   create_validation_set=False, validation_resample_strategy='next_fold', pct_validation=0.1,
                   logging_to_mlflow=False):
-    dataset, task_name, target = get_dataset(dataset_name_or_id)
+    dataset, task_name, target, n_classes = get_dataset(dataset_name_or_id)
     X, y, cat_ind, att_names = dataset.get_data(target=target)
     if resample_strategy == 'hold_out':
         test_size = int(pct_test * len(dataset.qualities['NumberOfInstances']))
@@ -180,7 +180,7 @@ def load_own_task(dataset_name_or_id, seed_dataset, resample_strategy, n_folds, 
     if logging_to_mlflow:
         mlflow.log_param('task_name', task_name)
         mlflow.log_param('dataset_name', dataset.name)
-    return X, y, cat_ind, att_names, task_name, train_indices, test_indices, validation_indices
+    return X, y, cat_ind, att_names, task_name, n_classes, train_indices, test_indices, validation_indices
 
 
 def load_openml_task(task_id, task_repeat, task_sample, task_fold, create_validation_set=False,
@@ -198,6 +198,7 @@ def load_openml_task(task_id, task_repeat, task_sample, task_fold, create_valida
         else:
             raise ValueError('Task has less than 2 classes')
     elif task.task_type == 'Supervised Regression':
+        n_classes = 1  # there isn't any multi-output regression task in OpenML for the moment
         task_name = 'regression'
     else:
         raise NotImplementedError
@@ -214,7 +215,7 @@ def load_openml_task(task_id, task_repeat, task_sample, task_fold, create_valida
     if logging_to_mlflow:
         mlflow.log_param('task_name', task_name)
         mlflow.log_param('dataset_name', dataset.name)
-    return X, y, cat_ind, att_names, task_name, train_indices, test_indices, validation_indices
+    return X, y, cat_ind, att_names, task_name, n_classes, train_indices, test_indices, validation_indices
 
 
 def get_search_algorithm_tune_config_run_config(default_param_space, search_algorithm_str, trial_scheduler_str,

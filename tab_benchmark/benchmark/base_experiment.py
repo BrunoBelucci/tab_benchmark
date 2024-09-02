@@ -324,7 +324,7 @@ class BaseExperiment:
                 task_repeat = kwargs['task_repeat']
                 task_sample = kwargs['task_sample']
                 task_fold = kwargs['task_fold']
-                X, y, cat_ind, att_names, task_name, train_indices, test_indices, validation_indices = (
+                X, y, cat_ind, att_names, task_name, n_classes, train_indices, test_indices, validation_indices = (
                     load_openml_task(task_id, task_repeat, task_sample, task_fold,
                                      create_validation_set=create_validation_set, logging_to_mlflow=logging_to_mlflow)
                 )
@@ -337,14 +337,14 @@ class BaseExperiment:
                 pct_test = self.pct_test
                 validation_resample_strategy = self.validation_resample_strategy
                 pct_validation = self.pct_validation
-                X, y, cat_ind, att_names, task_name, train_indices, test_indices, validation_indices = (
+                X, y, cat_ind, att_names, task_name, n_classes, train_indices, test_indices, validation_indices = (
                     load_own_task(dataset_name_or_id, seed_dataset, resample_strategy, n_folds, pct_test, fold,
                                   create_validation_set=create_validation_set,
                                   validation_resample_strategy=validation_resample_strategy,
                                   pct_validation=pct_validation, logging_to_mlflow=logging_to_mlflow)
                 )
 
-            results.update(dict(task_name=task_name,
+            results.update(dict(task_name=task_name, n_classes=n_classes,
                                 cat_features_names=[att_names[i] for i, value in enumerate(cat_ind) if value is True]))
 
             # load model
@@ -357,11 +357,9 @@ class BaseExperiment:
             if task_name in ('classification', 'binary_classification'):
                 metrics = ['logloss', 'auc']
                 default_metric = 'logloss'
-                n_classes = len(y.unique())
             elif task_name == 'regression':
                 metrics = ['rmse', 'r2_score']
                 default_metric = 'rmse'
-                n_classes = None
             else:
                 raise NotImplementedError
             results.update(dict(metrics=metrics, default_metric=default_metric, n_classes=n_classes))
