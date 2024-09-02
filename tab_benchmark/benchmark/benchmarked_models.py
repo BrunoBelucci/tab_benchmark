@@ -5,7 +5,9 @@ from tab_benchmark.models.sk_learn_models import all_models as all_sklearn_model
 from tab_benchmark.models.xgboost import TabBenchmarkXGBClassifier, TabBenchmarkXGBRegressor
 from tab_benchmark.models.lightgbm import TabBenchmarkLGBMClassifier, TabBenchmarkLGBMRegressor
 from tab_benchmark.models.catboost import TabBenchmarkCatBoostClassifier, TabBenchmarkCatBoostRegressor
-from tab_benchmark.models.dnn_models import TabBenchmarkMLP, TabBenchmarkResNet, TabBenchmarkTransformer
+from tab_benchmark.models.dnn_models import (TabBenchmarkMLP, TabBenchmarkResNet, TabBenchmarkTransformer,
+                                             TabBenchmarkSaint, TabBenchmarkNode, TabBenchmarkTabNet,
+                                             TabBenchmarkTabTransformer)
 from torch import nn
 
 models_dict = {model_cls.__name__: (model_cls, {}) for model_cls in all_sklearn_models}
@@ -36,8 +38,12 @@ def init_GLU_kwargs(model):
 models_dict.update(
     {
         'TabBenchmarkMLP': (TabBenchmarkMLP, TabBenchmarkMLP.get_recommended_params()),
-        'TabBenchmarkResNet': (TabBenchmarkResNet, {}),
-        'TabBenchmarkTransformer': (TabBenchmarkTransformer, {}),
+        'TabBenchmarkResNet': (TabBenchmarkResNet, TabBenchmarkResNet.get_recommended_params()),
+        'TabBenchmarkTransformer': (TabBenchmarkTransformer, TabBenchmarkTransformer.get_recommended_params()),
+        'TabBenchmarkSaint': (TabBenchmarkSaint, TabBenchmarkSaint.get_recommended_params()),
+        'TabBenchmarkNode': (TabBenchmarkNode, TabBenchmarkNode.get_recommended_params()),
+        'TabBenchmarkTabNet': (TabBenchmarkTabNet, TabBenchmarkTabNet.get_recommended_params()),
+        'TabBenchmarkTabTransformer': (TabBenchmarkTabTransformer, TabBenchmarkTabTransformer.get_recommended_params()),
         'TabBenchmarkMLP_Deeper': (TabBenchmarkMLP, {'n_layers': 8}),
         'TabBenchmarkMLP_Wider': (TabBenchmarkMLP, {'hidden_dim': 512}),
         'TabBenchmarkResNet_Deeper': (TabBenchmarkResNet, {'n_blocks': 4}),
