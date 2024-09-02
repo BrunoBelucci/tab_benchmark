@@ -326,12 +326,11 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
         self.lit_callbacks_ = [fn(**kwargs) for fn, kwargs in callbacks_tuples]
 
         # initialize trainer
-        trainer_kwargs = self.lit_trainer_params
+        trainer_kwargs = self.lit_trainer_params.copy()
         if self.max_epochs is not None:
             trainer_kwargs['max_epochs'] = self.max_epochs
         if self.add_default_root_dir_to_lit_trainer_kwargs:
             trainer_kwargs['default_root_dir'] = self.output_dir
-        trainer_kwargs.update(self.lit_trainer_params)
         self.lit_trainer_ = L.Trainer(**trainer_kwargs, callbacks=self.lit_callbacks_)
 
         if init_model:
