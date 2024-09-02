@@ -379,10 +379,12 @@ def sklearn_factory(sklearn_cls, has_early_stopping=False, default_values=None,
                 # (and not dropped during preprocessing)
                 if isinstance(cat_features[0], str):
                     cat_features_without_dropped = deepcopy(cat_features)
-                    for feature in cat_features:
+                    cat_features_dims = dict(zip(cat_features, cat_dims))
+                    for i, feature in enumerate(cat_features):
                         if feature not in X.columns:
                             cat_features_without_dropped.remove(feature)
                     cat_features = cat_features_without_dropped
+                    cat_dims = [cat_features_dims[feature] for feature in cat_features]
 
             if hasattr(self, 'map_task_to_default_values'):
                 if task is not None:
