@@ -371,9 +371,11 @@ class BaseExperiment:
             # set), but for many applications this is fine and if we really want to do this we could simply always add
             # a category for missing values
             for cat_feature in cat_features_names:
-                X[cat_feature] = X[cat_feature].cat.codes.astype('category')
+                X[cat_feature] = X[cat_feature].cat.codes
+                X[cat_feature] = X[cat_feature].replace(-1, np.nan).astype('category')
             if task_name in ('classification', 'binary_classification'):
-                y = y.cat.codes.astype('category')
+                y = y.cat.codes
+                y = y.replace(-1, np.nan).astype('category')
             # if we are just using ordinal encoding, we can disable it
             # otherwise the encoder or the model must take care of possible missing categories
             if model.categorical_encoder == 'ordinal':
@@ -569,8 +571,8 @@ class BaseExperiment:
 
     def run_experiment(self, client=None):
         if self.using_own_resampling:
-            combinations = product(self.models_nickname, self.seeds_datasets, self.seeds_model, self.folds,
-                                   self.datasets_names_or_ids)
+            combinations = list(product(self.models_nickname, self.seeds_datasets, self.seeds_model, self.folds,
+                                        self.datasets_names_or_ids))
             combination_keys = ['model_nickname', 'seed_dataset', 'seed_model', 'fold', 'dataset_name_or_id']
             extra_params = dict(is_openml=False, resample_strategy=self.resample_strategy,
                                 n_folds=self.k_folds, pct_test=self.pct_test,
@@ -578,13 +580,13 @@ class BaseExperiment:
                                 pct_validation=self.pct_validation)
 
         else:
-            combinations = product(self.models_nickname, self.task_repeats, self.task_samples, self.seeds_model,
-                                   self.task_folds, self.tasks_ids)
+            combinations = list(product(self.models_nickname, self.task_repeats, self.task_samples, self.seeds_model,
+                                        self.task_folds, self.tasks_ids))
             combination_keys = ['model_nickname', 'task_repeat', 'task_sample', 'seed_model', 'task_fold', 'task_id']
             extra_params = dict(is_openml=True)
 
         futures = []
-        total_combinations = len(list(combinations))
+        total_combinations = len(combinations)
         n_combinations_successfully_completed = 0
         n_combinations_failed = 0
         n_combinations_none = 0
@@ -593,10 +595,10 @@ class BaseExperiment:
                               'information.')
             first_submission = True
             progress_bar = tqdm(combinations, desc='Combinations submitted')
-            for combinations in progress_bar:
+            for combination in progress_bar:
                 futures.append(client.submit(self.run_combination_with_mlflow, n_jobs=self.n_jobs,
                                              **extra_params,
-                                             **dict(zip(combination_keys, combinations))))
+                                             **dict(zip(combination_keys, combination))))
                 log_and_print_msg(str(progress_bar))
                 # wait between submissions to avoid overloading the cluster
                 if first_submission:
@@ -606,9 +608,9 @@ class BaseExperiment:
                 time.sleep(self.wait_between_submissions)
         else:
             progress_bar = tqdm(combinations, desc='Combinations completed')
-            for combinations in progress_bar:
+            for combination in progress_bar:
                 combination_success = self.run_combination_with_mlflow(n_jobs=self.n_jobs, **extra_params,
-                                                                       **dict(zip(combination_keys, combinations)))
+                                                                       **dict(zip(combination_keys, combination)))
                 if combination_success is True:
                     n_combinations_successfully_completed += 1
                 elif combination_success is False:
