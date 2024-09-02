@@ -125,7 +125,7 @@ def get_metric_fn(metric, n_classes=None):
     return metric_fn, need_proba, higher_is_better
 
 
-def evaluate_metric(y_true, y_pred, metric, n_classes=None):
+def evaluate_metric(y_true, y_pred, metric, n_classes=None, error_score='raise'):
     y_true = copy(y_true)
     y_pred = copy(y_pred)
     if isinstance(metric, str):
@@ -143,11 +143,15 @@ def evaluate_metric(y_true, y_pred, metric, n_classes=None):
     try:
         score = metric_fn(y_true, y_pred)
     except ValueError as e:
-        score = np.nan
+        if error_score == 'raise':
+            raise e
+        else:
+            score = error_score
     return score
 
 
-def evaluate_set(model, eval_set: Sequence[pd.DataFrame], metrics: str | list[str], n_classes: Optional[int] = None) \
+def evaluate_set(model, eval_set: Sequence[pd.DataFrame], metrics: str | list[str], n_classes: Optional[int] = None,
+                 error_score='raise') \
         -> dict[str, float]:
     """Given an eval_set, consisting of a tuple-like (X, y), evaluate the metric on the given set.
 
@@ -160,6 +164,8 @@ def evaluate_set(model, eval_set: Sequence[pd.DataFrame], metrics: str | list[st
             Metrics to be evaluated on evaluation set.
         n_classes:
             Number of classes in the classification problem. If None, it is inferred from the evaluation set.
+        error_score:
+            Value to be returned in case of error during evaluation.
 
     Returns:
         The value of the metric evaluated on the evaluation set.
@@ -182,7 +188,7 @@ def evaluate_set(model, eval_set: Sequence[pd.DataFrame], metrics: str | list[st
             else:
                 y_pred_ = y_pred
         # maybe we should pass copy of y_pred_ to avoid changing the original y_pred_?
-        scores[metric] = evaluate_metric(y, y_pred_, func, n_classes)
+        scores[metric] = evaluate_metric(y, y_pred_, func, n_classes, error_score)
     return scores
 
 

@@ -109,9 +109,9 @@ def fit_model(model, X, y, cat_ind, att_names, task_name, train_indices, test_in
     return model, X_train, y_train, X_test, y_test, X_validation, y_validation
 
 
-def evaluate_model(model, eval_set, eval_name, metrics, default_metric=None, n_classes=None,
+def evaluate_model(model, eval_set, eval_name, metrics, default_metric=None, n_classes=None, error_score='raise',
                    logging_to_mlflow=False):
-    results = evaluate_set(model, eval_set, metrics, n_classes)
+    results = evaluate_set(model, eval_set, metrics, n_classes, error_score)
     if default_metric is not None:
         results['default'] = results[default_metric]
         if logging_to_mlflow:

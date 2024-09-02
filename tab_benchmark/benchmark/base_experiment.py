@@ -7,6 +7,8 @@ import mlflow
 import os
 import logging
 import warnings
+
+import numpy as np
 import ray
 from distributed import WorkerPlugin, Worker, Client
 import dask
@@ -65,6 +67,7 @@ class BaseExperiment:
             mlflow_tracking_uri='sqlite:///' + str(Path.cwd().resolve()) + '/tab_benchmark.db', check_if_exists=True,
             retry_on_oom=True,
             raise_on_fit_error=False, parser=None,
+            error_score='raise',
             # parallelization
             dask_cluster_type=None,
             n_workers=1,
@@ -115,6 +118,7 @@ class BaseExperiment:
         self.parser = parser
         self.models_dict = models_dict if models_dict else benchmarked_models_dict.copy()
         self.raise_on_fit_error = raise_on_fit_error
+        self.error_score = error_score
         self.client = None
         self.logger_filename = None
 
@@ -124,6 +128,7 @@ class BaseExperiment:
                                  nargs='*', default=self.models_nickname)
         self.parser.add_argument('--seeds_model', nargs='*', type=int, default=self.seeds_model)
         self.parser.add_argument('--n_jobs', type=int, default=self.n_jobs)
+        self.parser.add_argument('--error_score', type=str, default=self.error_score)
 
         self.parser.add_argument('--datasets_names_or_ids', nargs='*', choices=self.datasets_names_or_ids,
                                  type=str, default=self.datasets_names_or_ids)
@@ -170,6 +175,10 @@ class BaseExperiment:
         self.experiment_name = args.experiment_name
         self.models_nickname = args.models_nickname
         self.n_jobs = args.n_jobs
+        error_score = args.error_score
+        if error_score == 'nan':
+            error_score = np.nan
+        self.error_score = error_score
 
         self.datasets_names_or_ids = args.datasets_names_or_ids
         self.seeds_datasets = args.seeds_datasets
@@ -359,10 +368,10 @@ class BaseExperiment:
 
             # evaluate model
             results = evaluate_model(model, (X_test, y_test), 'test', metrics, default_metric, n_classes,
-                                     logging_to_mlflow)
+                                     self.error_score, logging_to_mlflow)
             if create_validation_set:
                 validation_results = evaluate_model(model, (X_validation, y_validation), 'validation', metrics,
-                                                    default_metric, n_classes, logging_to_mlflow)
+                                                    default_metric, n_classes, self.error_score, logging_to_mlflow)
                 results.update(validation_results)
 
             if logging_to_mlflow:
