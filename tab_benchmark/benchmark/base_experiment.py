@@ -75,7 +75,7 @@ class BaseExperiment:
             dask_memory=None,
             dask_job_extra_directives=None,
             dask_address=None,
-            wait_between_submissions=5,
+            wait_between_submissions=1,
             # gpu specific
             n_gpus=0,
     ):
