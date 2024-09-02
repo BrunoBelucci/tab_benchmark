@@ -18,16 +18,16 @@ early_stopping_patience_dnn = 40
 max_epochs_dnn = 300
 
 
-def before_fit_dnn(self, X, y, task=None, cat_features=None, eval_set=None, eval_name=None, report_to_ray=False,
-                   init_model=None, **args_and_kwargs):
+def before_fit_dnn(self, X, y, task=None, cat_features=None, cat_dims=None, n_classes=None, eval_set=None,
+                   eval_name=None, report_to_ray=False, init_model=None, **args_and_kwargs):
     fit_arguments = args_and_kwargs.copy() if args_and_kwargs else {}
     if self.log_to_mlflow_if_running:
         run = mlflow.active_run()
         if run:
             self.lit_trainer_params['logger'] = MLFlowLogger(run_id=run.info.run_id,
                                                              tracking_uri=mlflow.get_tracking_uri())
-    fit_arguments.update(dict(X=X, y=y, task=task, cat_features=cat_features, eval_set=eval_set, eval_name=eval_name,
-                              report_to_ray=report_to_ray, init_model=init_model))
+    fit_arguments.update(dict(X=X, y=y, task=task, cat_features=cat_features, cat_dims=cat_dims, n_classes=n_classes,
+                              eval_set=eval_set, eval_name=eval_name, report_to_ray=report_to_ray, init_model=init_model))
     return fit_arguments
 
 

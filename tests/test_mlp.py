@@ -1,10 +1,10 @@
 import pytest
 from tests.utils import generate_data_interesting_parameters, _test_fit_fn, _test_predict_fn, _test_predict_proba_fn
-from tab_benchmark.models.dnn_models import MLPModel
+from tab_benchmark.models.dnn_models import TabBenchmarkMLP
 
 
-classifier = MLPModel
-regressor = MLPModel
+classifier = TabBenchmarkMLP
+regressor = TabBenchmarkMLP
 kwargs = dict(max_epochs=2, batch_size=10)
 
 

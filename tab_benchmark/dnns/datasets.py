@@ -55,7 +55,7 @@ class TabularDataset(Dataset):
     def __init__(self, x: pd.DataFrame, y: pd.DataFrame | None, task: str, categorical_features_idx: list[int],
                  categorical_dims: list[int], name=None,
                  store_as_tensor: bool = False, continuous_type: Optional[np.dtype] = None,
-                 categorical_type: Optional[np.dtype] = None):
+                 categorical_type: Optional[np.dtype] = None, n_classes: Optional[int] = None):
         """Initializes the TabularDataset.
 
         Args:
@@ -101,6 +101,19 @@ class TabularDataset(Dataset):
                 self.y = np.squeeze(y.to_numpy()) if y is not None else None
             else:
                 self.y = y.to_numpy() if y is not None else None
+        if n_classes is not None:
+            self.n_classes = n_classes
+        else:
+            if task in ('classification', 'binary_classification'):
+                if store_as_tensor:
+                    self.n_classes = len(torch.unique(self.y))
+                else:
+                    self.n_classes = len(np.unique(self.y))
+            else:
+                if len(self.y.shape) == 1:
+                    self.n_classes = 1
+                else:
+                    self.n_classes = self.y.shape[1]
 
     def __len__(self) -> int:
         """Length of the dataset."""
@@ -170,7 +183,8 @@ class TabularDataModule(L.LightningDataModule):
                  eval_sets: Optional[list[tuple[pd.DataFrame, pd.DataFrame]]] = None,
                  eval_names: Optional[list[str]] = None,
                  num_workers: int = 0, batch_size: int = 1, store_as_tensor: bool = False,
-                 continuous_type: Optional[np.dtype] = None, categorical_type: Optional[np.dtype] = None):
+                 continuous_type: Optional[np.dtype] = None, categorical_type: Optional[np.dtype] = None,
+                 n_classes: Optional[int] = None):
         """Initializes the TabularDataModule.
 
         Args:
@@ -214,6 +228,7 @@ class TabularDataModule(L.LightningDataModule):
         self.store_as_tensor = store_as_tensor
         self.continuous_type = continuous_type
         self.categorical_type = categorical_type
+        self.n_classes = n_classes
         self.train_dataset = None
         self.validation_datasets = None
         self.test_dataset = None
@@ -231,7 +246,8 @@ class TabularDataModule(L.LightningDataModule):
                                                 categorical_dims=self.categorical_dims,
                                                 store_as_tensor=self.store_as_tensor,
                                                 continuous_type=self.continuous_type,
-                                                categorical_type=self.categorical_type, name='train')
+                                                categorical_type=self.categorical_type, name='train',
+                                                n_classes=self.n_classes)
             if self.eval_sets:
                 if self.eval_names is None:
                     self.eval_names = [f'validation_{i}' for i in range(len(self.eval_sets))]
@@ -242,7 +258,8 @@ class TabularDataModule(L.LightningDataModule):
                         TabularDataset(x=x_valid, y=y_valid, task=self.task, name=name,
                                        categorical_features_idx=self.categorical_features_idx,
                                        categorical_dims=self.categorical_dims, store_as_tensor=self.store_as_tensor,
-                                       continuous_type=self.continuous_type, categorical_type=self.categorical_type)
+                                       continuous_type=self.continuous_type, categorical_type=self.categorical_type,
+                                       n_classes=self.n_classes)
                     )
         else:
             pass

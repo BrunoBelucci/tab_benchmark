@@ -206,16 +206,9 @@ class Saint(SAINT, BaseArchitecture):
     def tabular_dataset_to_architecture_kwargs(dataset: TabularDataset):
         categorical_features_idx = dataset.categorical_features_idx
         continuous_features_idx = dataset.continuous_features_idx
-        if dataset.task in ('classification', 'binary_classification'):
-            dim_out = len(torch.unique(dataset.y))
-        else:
-            if len(dataset.y.shape) == 1:
-                dim_out = 1
-            else:
-                dim_out = dataset.y.shape[1]
         return {
             'categorical_features_idx': categorical_features_idx,
             'continuous_features_idx': continuous_features_idx,
             'categorical_dims': dataset.categorical_dims,
-            'output_dim': dim_out,
+            'output_dim': dataset.n_classes,
         }

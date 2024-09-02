@@ -1,10 +1,10 @@
 import pytest
 from tests.utils import generate_data_interesting_parameters, _test_fit_fn, _test_predict_fn, _test_predict_proba_fn
-from tab_benchmark.models.catboost import CatBoostRegressor, CatBoostClassifier
+from tab_benchmark.models.catboost import TabBenchmarkCatBoostRegressor, TabBenchmarkCatBoostClassifier
 
 
-classifier = CatBoostClassifier
-regressor = CatBoostRegressor
+classifier = TabBenchmarkCatBoostClassifier
+regressor = TabBenchmarkCatBoostRegressor
 kwargs = dict(iterations=100, allow_writing_files=False)
 
 

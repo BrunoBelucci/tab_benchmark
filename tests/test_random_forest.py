@@ -1,11 +1,11 @@
 import pytest
 
-from tab_benchmark.models.sk_learn_models import RandomForestClassifier, RandomForestRegressor
+from tab_benchmark.models.sk_learn_models import TabBenchmarkRandomForestClassifier, TabBenchmarkRandomForestRegressor
 from tests.utils import generate_data_interesting_parameters, _test_fit_fn, _test_predict_fn, _test_predict_proba_fn
 
 
-classifier = RandomForestClassifier
-regressor = RandomForestRegressor
+classifier = TabBenchmarkRandomForestClassifier
+regressor = TabBenchmarkRandomForestRegressor
 
 
 @pytest.mark.parametrize("n_features, n_cat_features, samples, n_classes, max_cat_dim, task",

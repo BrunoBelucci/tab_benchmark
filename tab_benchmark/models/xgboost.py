@@ -287,8 +287,8 @@ map_our_metric_to_xgboost_metric = {
 }
 
 
-def before_fit_xgboost(self, X, y, task=None, cat_features=None, eval_set=None, eval_name=None, report_to_ray=False,
-                       init_model=None, **args_and_kwargs):
+def before_fit_xgboost(self, X, y, task=None, cat_features=None, cat_dims=None, n_classes=None, eval_set=None,
+                       eval_name=None, report_to_ray=False, init_model=None, **args_and_kwargs):
 
     eval_set.insert(0, (X, y))
     eval_name.insert(0, 'train')
@@ -296,6 +296,9 @@ def before_fit_xgboost(self, X, y, task=None, cat_features=None, eval_set=None, 
 
     if cat_features is not None:
         self.set_params(**{'enable_categorical': True})
+
+    if n_classes is not None:
+        self.set_params(**{'num_class': n_classes})
 
     eval_metric = self.get_params().get('eval_metric', None)
 

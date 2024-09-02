@@ -120,10 +120,13 @@ map_our_metric_to_catboost_metric = {
 }
 
 
-def before_fit_catboost(self, X, y, task=None, cat_features=None, eval_set=None, eval_name=None, report_to_ray=False,
-                        init_model=None, **args_and_kwargs):
+def before_fit_catboost(self, X, y, task=None, cat_features=None, cat_dims=None, n_classes=None, eval_set=None,
+                        eval_name=None, report_to_ray=False, init_model=None, **args_and_kwargs):
     callbacks = args_and_kwargs.get('callbacks', [])
     fit_arguments = args_and_kwargs.copy() if args_and_kwargs else {}
+
+    if n_classes is not None:
+        self.set_params(**{'classes_count': n_classes})
 
     eval_metric = self.get_params().get('eval_metric', None)
     if eval_metric is not None:

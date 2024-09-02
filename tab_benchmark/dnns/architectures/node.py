@@ -80,16 +80,11 @@ class Node(BaseArchitecture):
     @staticmethod
     def tabular_dataset_to_architecture_kwargs(dataset: TabularDataset):
         if dataset.task in ('classification', 'binary_classification'):
-            tree_dim = len(torch.unique(dataset.y))
-            output_layer = partial(output_layer_classification, n_classes=tree_dim)
+            output_layer = partial(output_layer_classification, n_classes=dataset.n_classes)
         else:
-            if len(dataset.y.shape) == 1:
-                tree_dim = 1
-            else:
-                tree_dim = dataset.y.shape[1]
             output_layer = output_layer_regression
         return {
             'input_dim': len(dataset.continuous_features_idx) + len(dataset.categorical_features_idx),
-            'tree_dim': tree_dim,
+            'tree_dim': dataset.n_classes,
             'output_layer': output_layer,
         }

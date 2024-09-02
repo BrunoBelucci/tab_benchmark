@@ -1,10 +1,10 @@
 import pytest
 from tests.utils import generate_data_interesting_parameters, _test_fit_fn, _test_predict_fn, _test_predict_proba_fn
-from tab_benchmark.models.xgboost import XGBClassifier, XGBRegressor
+from tab_benchmark.models.xgboost import TabBenchmarkXGBClassifier, TabBenchmarkXGBRegressor
 
 
-classifier = XGBClassifier
-regressor = XGBRegressor
+classifier = TabBenchmarkXGBClassifier
+regressor = TabBenchmarkXGBRegressor
 
 
 @pytest.mark.parametrize("n_features, n_cat_features, samples, n_classes, max_cat_dim, task",

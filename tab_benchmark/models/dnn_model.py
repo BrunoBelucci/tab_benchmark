@@ -159,6 +159,7 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
         self.task_ = None
         self.cat_features_idx_ = None
         self.cat_dims_ = None
+        self.n_classes_ = None
 
     def __post_init__(self):
         if self.architecture_params is None and self.architecture_params_not_from_dataset is None:
@@ -178,13 +179,14 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
     def torch_scheduler_tuple(self):
         return self._torch_scheduler_tuple
 
-    def initialize_datamodule(self, X, y, task, cat_features_idx, cat_dims, eval_set, eval_name):
+    def initialize_datamodule(self, X, y, task, cat_features_idx, cat_dims, n_classes, eval_set, eval_name):
         self.lit_datamodule_ = self.lit_datamodule_class(
             x_train=X,
             y_train=y,
             task=task,
             categorical_features_idx=cat_features_idx,
             categorical_dims=cat_dims,
+            n_classes=n_classes,
             eval_sets=eval_set,
             eval_names=eval_name,
             num_workers=self.n_jobs,
@@ -201,6 +203,7 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
             task: str,
             cat_features: Optional[list[int | str]] = None,
             cat_dims: Optional[list[int]] = None,
+            n_classes: Optional[int] = None,
             delete_checkpoints: bool = False,
             eval_set: Optional[Sequence[tuple[pd.DataFrame, pd.DataFrame]]] = None,
             eval_name: Optional[Sequence[str]] = None,
@@ -221,6 +224,8 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
             Categorical features.
         cat_dims:
             Number of categories for each categorical feature. If None, it will be inferred from the dataset.
+        n_classes:
+            Number of classes for classification tasks. If None, it will be inferred from the dataset.
         delete_checkpoints:
             If True, it will delete the checkpoints after training. Default is True.
         eval_set:
@@ -255,10 +260,19 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
             if X[X.columns[col_index]].value_counts().min() < self.min_occurrences_to_add_category:
                 cat_dims[i] += 1
 
+        if n_classes is None:
+            if task in ('classification', 'binary_classification'):
+                y_all = pd.concat([y] + [set[1] for set in eval_set] if eval_set is not None else [], axis=0)
+                n_classes = y_all.nunique().iloc[0]
+                del y_all
+            else:
+                n_classes = y.shape[1]
+
+
         # initialize model
 
         # initialize datamodule
-        self.initialize_datamodule(X, y, task, cat_features_idx, cat_dims, eval_set, eval_name)
+        self.initialize_datamodule(X, y, task, cat_features_idx, cat_dims, n_classes, eval_set, eval_name)
 
         # initialize module
         if self.architecture_params_not_from_dataset is not None:
@@ -355,6 +369,7 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
         self.task_ = task
         self.cat_features_idx_ = cat_features_idx
         self.cat_dims_ = cat_dims
+        self.n_classes_ = n_classes
 
         return self
 
@@ -375,6 +390,7 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
             'task': self.task_,
             'categorical_features_idx': self.cat_features_idx_,
             'categorical_dims': self.cat_dims_,
+            'n_classes': self.n_classes_,
             'store_as_tensor': True,
             'continuous_type': self.continuous_type,
             'categorical_type': self.categorical_type,

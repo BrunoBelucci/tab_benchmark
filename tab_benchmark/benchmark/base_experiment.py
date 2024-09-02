@@ -324,7 +324,8 @@ class BaseExperiment:
                 task_repeat = kwargs['task_repeat']
                 task_sample = kwargs['task_sample']
                 task_fold = kwargs['task_fold']
-                X, y, cat_ind, att_names, task_name, n_classes, train_indices, test_indices, validation_indices = (
+                (X, y, cat_ind, att_names, cat_features_names, cat_dims, task_name, n_classes, train_indices,
+                 test_indices, validation_indices) = (
                     load_openml_task(task_id, task_repeat, task_sample, task_fold,
                                      create_validation_set=create_validation_set, logging_to_mlflow=logging_to_mlflow)
                 )
@@ -337,15 +338,16 @@ class BaseExperiment:
                 pct_test = self.pct_test
                 validation_resample_strategy = self.validation_resample_strategy
                 pct_validation = self.pct_validation
-                X, y, cat_ind, att_names, task_name, n_classes, train_indices, test_indices, validation_indices = (
+                (X, y, cat_ind, att_names, cat_features_names, cat_dims, task_name, n_classes, train_indices,
+                 test_indices, validation_indices) = (
                     load_own_task(dataset_name_or_id, seed_dataset, resample_strategy, n_folds, pct_test, fold,
                                   create_validation_set=create_validation_set,
                                   validation_resample_strategy=validation_resample_strategy,
                                   pct_validation=pct_validation, logging_to_mlflow=logging_to_mlflow)
                 )
 
-            results.update(dict(task_name=task_name, n_classes=n_classes,
-                                cat_features_names=[att_names[i] for i, value in enumerate(cat_ind) if value is True]))
+            results.update(dict(task_name=task_name, cat_features_names=cat_features_names, n_classes=n_classes,
+                                cat_dims=cat_dims))
 
             # load model
             model = self.get_model(model_nickname, seed_model, model_params=model_params,
@@ -364,6 +366,20 @@ class BaseExperiment:
                 raise NotImplementedError
             results.update(dict(metrics=metrics, default_metric=default_metric, n_classes=n_classes))
 
+            # we will already convert categorical features to codes to avoid missing categories when splitting the data
+            # one can argue if the model alone should account for this (not observing all the categories in the training
+            # set), but for many applications this is fine and if we really want to do this we could simply always add
+            # a category for missing values
+            for cat_feature in cat_features_names:
+                X[cat_feature] = X[cat_feature].cat.codes.astype('category')
+            if task_name in ('classification', 'binary_classification'):
+                y = y.cat.codes.astype('category')
+            # if we are just using ordinal encoding, we can disable it
+            # otherwise the encoder or the model must take care of possible missing categories
+            if model.categorical_encoder == 'ordinal':
+                model.categorical_encoder = None  # we already encoded the categorical features
+            if model.categorical_target_encoder == 'ordinal':
+                model.categorical_target_encoder = None  # we already encoded the categorical target
             # fit model
             # data here is already preprocessed
             model, X_train, y_train, X_test, y_test, X_validation, y_validation = fit_model(

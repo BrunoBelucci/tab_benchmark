@@ -306,16 +306,9 @@ class Transformer(BaseArchitecture):
 
     @staticmethod
     def tabular_dataset_to_architecture_kwargs(dataset: TabularDataset):
-        if dataset.task in ('classification', 'binary_classification'):
-            output_dim = len(torch.unique(dataset.y))
-        else:
-            if len(dataset.y.shape) == 1:
-                output_dim = 1
-            else:
-                output_dim = dataset.y.shape[1]
         return {
             'continuous_features_idx': dataset.continuous_features_idx,
             'categorical_features_idx': dataset.categorical_features_idx,
             'categorical_dims': dataset.categorical_dims,
-            'output_dim': output_dim,
+            'output_dim': dataset.n_classes,
         }

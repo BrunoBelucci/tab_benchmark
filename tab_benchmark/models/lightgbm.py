@@ -220,9 +220,12 @@ map_our_metric_to_lgbm_metric = {
 }
 
 
-def before_fit_lgbm(self, X, y, task=None, cat_features=None, eval_set=None,
+def before_fit_lgbm(self, X, y, task=None, cat_features=None, cat_dims=None, n_classes=None, eval_set=None,
                     eval_name=None, report_to_ray=None,
                     init_model=None, **args_and_kwargs):
+
+    if n_classes is not None:
+        self.set_params(**{'num_class': n_classes})
 
     callbacks = args_and_kwargs.get('callbacks', [])
 

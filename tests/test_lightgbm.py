@@ -1,10 +1,10 @@
 import pytest
 from tests.utils import generate_data_interesting_parameters, _test_fit_fn, _test_predict_fn, _test_predict_proba_fn
-from tab_benchmark.models.lightgbm import LGBMClassifier, LGBMRegressor
+from tab_benchmark.models.lightgbm import TabBenchmarkLGBMClassifier, TabBenchmarkLGBMRegressor
 
 
-classifier = LGBMClassifier
-regressor = LGBMRegressor
+classifier = TabBenchmarkLGBMClassifier
+regressor = TabBenchmarkLGBMRegressor
 
 
 @pytest.mark.parametrize("n_features, n_cat_features, samples, n_classes, max_cat_dim, task",

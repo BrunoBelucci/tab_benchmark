@@ -96,6 +96,8 @@ class TabBenchmarkModel(ABC):
             y: pd.DataFrame | pd.Series,
             task: Optional[str] = None,
             cat_features: Optional[list[str]] = None,
+            cat_dims: Optional[list[int]] = None,
+            n_classes: Optional[int] = None,
             eval_set: Optional[list[tuple]] = None,
             eval_name: Optional[list[str]] = None,
             report_to_ray: bool = False,
@@ -117,6 +119,10 @@ class TabBenchmarkModel(ABC):
             Task type. Can be 'classification', 'binary_classification', 'regression', 'multi_regression'.
         cat_features:
             Categorical features.
+        cat_dims:
+            Categorical dimensions.
+        n_classes:
+            Number of classes.
         eval_set:
             Evaluation set.
         eval_name:
@@ -356,8 +362,8 @@ def sklearn_factory(sklearn_cls, has_early_stopping=False, default_values=None,
             if map_task_to_default_values:
                 self.map_task_to_default_values = map_task_to_default_values
 
-        def fit(self, X, y, task=None, cat_features=None, eval_set=None, eval_name=None, report_to_ray=False,
-                init_model=None, *args, **kwargs):
+        def fit(self, X, y, task=None, cat_features=None, cat_dims=None, n_classes=None, eval_set=None, eval_name=None,
+                report_to_ray=False, init_model=None, *args, **kwargs):
             eval_set = sequence_to_list(eval_set) if eval_set is not None else []
             eval_name = sequence_to_list(eval_name) if eval_name is not None else []
             if eval_set and not eval_name:
@@ -401,8 +407,9 @@ def sklearn_factory(sklearn_cls, has_early_stopping=False, default_values=None,
                 bound_args = sklearn_fit_signature.bind_partial(self, X, y, *args, **kwargs)
                 arg_and_kwargs = bound_args.arguments
                 del arg_and_kwargs['self'], arg_and_kwargs['X'], arg_and_kwargs['y']
-                fit_arguments = self.before_fit(X, y, task=task, cat_features=cat_features, eval_set=eval_set,
-                                                eval_name=eval_name, report_to_ray=report_to_ray,
+                fit_arguments = self.before_fit(X, y, task=task, cat_features=cat_features,
+                                                cat_dims=cat_dims, n_classes=n_classes,
+                                                eval_set=eval_set,  eval_name=eval_name, report_to_ray=report_to_ray,
                                                 init_model=init_model, **arg_and_kwargs)
                 return sklearn_cls.fit(self, **fit_arguments)
             # otherwise we assume that we will only call the original fit method with X, y, *args, **kwargs

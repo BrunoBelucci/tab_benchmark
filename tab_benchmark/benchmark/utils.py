@@ -127,6 +127,8 @@ def load_own_task(dataset_name_or_id, seed_dataset, resample_strategy, n_folds, 
                   logging_to_mlflow=False):
     dataset, task_name, target, n_classes = get_dataset(dataset_name_or_id)
     X, y, cat_ind, att_names = dataset.get_data(target=target)
+    cat_features_names = [att_names[i] for i, value in enumerate(cat_ind) if value is True]
+    cat_dims = [len(X[cat_feature].cat.categories) for cat_feature in cat_features_names]
     if resample_strategy == 'hold_out':
         test_size = int(pct_test * len(dataset.qualities['NumberOfInstances']))
         if task_name in ('classification', 'binary_classification'):
@@ -180,7 +182,8 @@ def load_own_task(dataset_name_or_id, seed_dataset, resample_strategy, n_folds, 
     if logging_to_mlflow:
         mlflow.log_param('task_name', task_name)
         mlflow.log_param('dataset_name', dataset.name)
-    return X, y, cat_ind, att_names, task_name, n_classes, train_indices, test_indices, validation_indices
+    return (X, y, cat_ind, att_names, cat_features_names, cat_dims, task_name, n_classes, train_indices, test_indices,
+            validation_indices)
 
 
 def load_openml_task(task_id, task_repeat, task_sample, task_fold, create_validation_set=False,
@@ -189,6 +192,18 @@ def load_openml_task(task_id, task_repeat, task_sample, task_fold, create_valida
     split = task.get_train_test_split_indices(task_fold, task_repeat, task_sample)
     train_indices = split.train
     test_indices = split.test
+    if create_validation_set:
+        n_folds = int(task.estimation_procedure['parameters']['number_folds'])
+        split_validation = task.get_train_test_split_indices((task_fold + 1) % n_folds, task_repeat,
+                                                             task_sample)
+        validation_indices = split_validation.test
+        train_indices = np.setdiff1d(train_indices, validation_indices, assume_unique=True)
+    else:
+        validation_indices = None
+    dataset = task.get_dataset()
+    X, y, cat_ind, att_names = dataset.get_data(target=task.target_name)
+    cat_features_names = [att_names[i] for i, value in enumerate(cat_ind) if value is True]
+    cat_dims = [len(X[cat_feature].cat.categories) for cat_feature in cat_features_names]
     if task.task_type == 'Supervised Classification':
         n_classes = len(task.class_labels)
         if n_classes == 2:
@@ -202,20 +217,11 @@ def load_openml_task(task_id, task_repeat, task_sample, task_fold, create_valida
         task_name = 'regression'
     else:
         raise NotImplementedError
-    if create_validation_set:
-        n_folds = int(task.estimation_procedure['parameters']['number_folds'])
-        split_validation = task.get_train_test_split_indices((task_fold + 1) % n_folds, task_repeat,
-                                                             task_sample)
-        validation_indices = split_validation.test
-        train_indices = np.setdiff1d(train_indices, validation_indices, assume_unique=True)
-    else:
-        validation_indices = None
-    dataset = task.get_dataset()
-    X, y, cat_ind, att_names = dataset.get_data(target=task.target_name)
     if logging_to_mlflow:
         mlflow.log_param('task_name', task_name)
         mlflow.log_param('dataset_name', dataset.name)
-    return X, y, cat_ind, att_names, task_name, n_classes, train_indices, test_indices, validation_indices
+    return (X, y, cat_ind, att_names, cat_features_names, cat_dims, task_name, n_classes, train_indices, test_indices,
+            validation_indices)
 
 
 def get_search_algorithm_tune_config_run_config(default_param_space, search_algorithm_str, trial_scheduler_str,

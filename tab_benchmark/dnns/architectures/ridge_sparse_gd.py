@@ -186,16 +186,8 @@ class RidgeSparseGD(BaseArchitecture):
 
     @staticmethod
     def tabular_dataset_to_architecture_kwargs(dataset: TabularDataset):
-        task = dataset.task
-        if task == 'classification':
-            output_dim = len(torch.unique(dataset.y))
-        else:
-            if len(dataset.y.shape) == 1:
-                output_dim = 1
-            else:
-                output_dim = dataset.y.shape[1]
         return {
-            'task': task,
+            'task': dataset.task,
             'input_dim': len(dataset.continuous_features_idx) + len(dataset.categorical_features_idx),
-            'output_dim': output_dim,
+            'output_dim': dataset.n_classes,
         }
