@@ -303,6 +303,7 @@ class BaseExperiment:
 
         """
         try:
+            results = {}
             start_time = time.perf_counter()
             # logging
             kwargs_to_log = dict(**kwargs.copy())
@@ -343,10 +344,14 @@ class BaseExperiment:
                                   pct_validation=pct_validation, logging_to_mlflow=logging_to_mlflow)
                 )
 
+            results.update(dict(task_name=task_name,
+                                cat_features_names=[att_names[i] for i, value in enumerate(cat_ind) if value is True]))
+
             # load model
             model = self.get_model(model_nickname, seed_model, model_params=model_params,
                                    n_jobs=n_jobs, logging_to_mlflow=logging_to_mlflow,
                                    create_validation_set=create_validation_set)
+            results['model'] = model
 
             # get metrics
             if task_name in ('classification', 'binary_classification'):
@@ -359,16 +364,20 @@ class BaseExperiment:
                 n_classes = None
             else:
                 raise NotImplementedError
+            results.update(dict(metrics=metrics, default_metric=default_metric, n_classes=n_classes))
 
             # fit model
             # data here is already preprocessed
             model, X_train, y_train, X_test, y_test, X_validation, y_validation = fit_model(
                 model, X, y, cat_ind, att_names, task_name, train_indices, test_indices, validation_indices,
                 **fit_params)
+            results.update(dict(model=model, X_train=X_train, y_train=y_train, X_test=X_test, y_test=y_test,
+                                X_validation=X_validation, y_validation=y_validation))
 
             # evaluate model
-            results = evaluate_model(model, (X_test, y_test), 'test', metrics, default_metric, n_classes,
-                                     self.error_score, logging_to_mlflow)
+            test_results = evaluate_model(model, (X_test, y_test), 'test', metrics, default_metric, n_classes,
+                                          self.error_score, logging_to_mlflow)
+            results.update(test_results)
             if create_validation_set:
                 validation_results = evaluate_model(model, (X_validation, y_validation), 'validation', metrics,
                                                     default_metric, n_classes, self.error_score, logging_to_mlflow)
@@ -409,7 +418,13 @@ class BaseExperiment:
             except UnboundLocalError:
                 kwargs_with_error = kwargs.copy()
             log_and_print_msg('Error while running', elapsed_time=total_time, **kwargs_with_error)
-            return False
+            if return_results:
+                try:
+                    return results
+                except UnboundLocalError:
+                    return {}
+            else:
+                return False
         else:
             total_time = time.perf_counter() - start_time
             log_and_print_msg('Finished!', elapsed_time=total_time, **kwargs_to_log)
