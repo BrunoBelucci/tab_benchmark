@@ -15,7 +15,7 @@ def generate_postgres_db_script(
         error_job_dir='/home/users/belucci/outputs/%x.%J.err',
         wall_time='364-23:59:59',
 ):
-    database_dir = database_root_dir / db_name
+    database_dir = database_root_dir / (db_name + '_db')
     log_file = database_dir / (db_name + '.log')
     sh_content = cleandoc(f"""
     if [ ! -d {str(database_dir.absolute())} ]; then
@@ -52,7 +52,7 @@ if __name__ == '__main__':
     parser.add_argument('--file_name', type=str, default='start_db')
     parser.add_argument('--conda_env', type=str, default='tab_benchmark')
     parser.add_argument('--database_root_dir', type=str, default=Path(__file__).parent.parent / 'results')
-    parser.add_argument('--db_name', type=str, default='tab_benchmark_db')
+    parser.add_argument('--db_name', type=str, default='tab_benchmark')
     parser.add_argument('--db_port', type=int, default=5001)
     parser.add_argument('--mlflow_port', type=int, default=5002)
     parser.add_argument('--generate_sbatch', type=bool, default=True)
