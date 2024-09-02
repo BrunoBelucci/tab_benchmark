@@ -96,7 +96,7 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
         Type of categorical features. Default is 'int64'.
     min_occurrences_to_add_category:
         We will add one more category to cat_dims if the least frequent category has less than
-        min_occurrences_to_add_category occurrences
+        min_occurrences_to_add_category occurrences and if we are inferring the dimensions from the dataset.
     """
     _estimator_type = ['classifier', 'regressor']
 
@@ -256,9 +256,9 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
             cat_dims = [X_all.iloc[:, idx].nunique() for idx in cat_features_idx]
             del X_all
 
-        for i, col_index in enumerate(cat_features_idx):
-            if X[X.columns[col_index]].value_counts().min() < self.min_occurrences_to_add_category:
-                cat_dims[i] += 1
+            for i, col_index in enumerate(cat_features_idx):
+                if X[X.columns[col_index]].value_counts().min() < self.min_occurrences_to_add_category:
+                    cat_dims[i] += 1
 
         if n_classes is None:
             if task in ('classification', 'binary_classification'):

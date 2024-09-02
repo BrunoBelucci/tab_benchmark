@@ -383,7 +383,8 @@ class BaseExperiment:
             # fit model
             # data here is already preprocessed
             model, X_train, y_train, X_test, y_test, X_validation, y_validation = fit_model(
-                model, X, y, cat_ind, att_names, task_name, train_indices, test_indices, validation_indices,
+                model, X, y, cat_ind, att_names, cat_dims, n_classes, task_name, train_indices, test_indices,
+                validation_indices,
                 **fit_params)
             results.update(dict(model=model, X_train=X_train, y_train=y_train, X_test=X_test, y_test=y_test,
                                 X_validation=X_validation, y_validation=y_validation))
