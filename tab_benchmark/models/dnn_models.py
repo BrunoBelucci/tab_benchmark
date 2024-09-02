@@ -302,7 +302,7 @@ def create_search_space_tabnet():
         n_a=tune.choice([8, 16, 24, 32, 64, 128]),
         n_steps=tune.randint(3, 10),
         gamma=tune.uniform(1, 2),
-        lambda_sparse=tune.loguniform(0, 0.1),
+        lambda_sparse=tune.loguniform(1e-10, 0.1),
         virtual_batch_size=tune.choice([256, 512, 1024, 2048, 4096]),
         lr=tune.loguniform(0.005, 0.025),
         momentum=tune.uniform(0.6, 0.98),
