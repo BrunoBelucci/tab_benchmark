@@ -400,12 +400,14 @@ class BaseExperiment:
             except UnboundLocalError:
                 kwargs_with_error = kwargs.copy()
             log_and_print_msg('Error while running', elapsed_time=total_time, **kwargs_with_error)
-            return None
+            return False
         else:
             total_time = time.perf_counter() - start_time
             log_and_print_msg('Finished!', elapsed_time=total_time, **kwargs_to_log)
             if return_results:
                 return results
+            else:
+                return True
 
     def run_combination_with_mlflow(self, n_jobs=1, create_validation_set=False,
                                     model_params=None, fit_params=None,
@@ -425,7 +427,7 @@ class BaseExperiment:
             if return_results:
                 return possible_existent_run.to_dict()
             else:
-                return None
+                return True
 
         if logging_to_mlflow:
             experiment = mlflow.get_experiment_by_name(experiment_name)
@@ -543,12 +545,20 @@ class BaseExperiment:
             extra_params = dict(is_openml=True)
 
         futures = []
+        total_combinations = len(list(combinations))
+        n_combinations_successfully_completed = 0
+        n_combinations_failed = 0
+        n_combinations_none = 0
         if client is not None:
+            log_and_print_msg(f'Models are being trained and evaluated in parallel, check the logs for real time '
+                              'information.')
             first_submission = True
-            for combinations in combinations:
+            progress_bar = tqdm(combinations, desc='Combinations submitted')
+            for combinations in progress_bar:
                 futures.append(client.submit(self.run_combination_with_mlflow, n_jobs=self.n_jobs,
                                              **extra_params,
                                              **dict(zip(combination_keys, combinations))))
+                log_and_print_msg(str(progress_bar))
                 # wait between submissions to avoid overloading the cluster
                 if first_submission:
                     # wait a little bit more for the first submission to create folders, experiments, etc
@@ -556,23 +566,37 @@ class BaseExperiment:
                     first_submission = False
                 time.sleep(self.wait_between_submissions)
         else:
-            progress_bar = tqdm(combinations)
+            progress_bar = tqdm(combinations, desc='Combinations completed')
             for combinations in progress_bar:
-                self.run_combination_with_mlflow(n_jobs=self.n_jobs, **extra_params,
-                                                 **dict(zip(combination_keys, combinations)))
-                log_and_print_msg(str(progress_bar))
+                combination_success = self.run_combination_with_mlflow(n_jobs=self.n_jobs, **extra_params,
+                                                                       **dict(zip(combination_keys, combinations)))
+                if combination_success is True:
+                    n_combinations_successfully_completed += 1
+                elif combination_success is False:
+                    n_combinations_failed += 1
+                else:
+                    n_combinations_none += 1
+                log_and_print_msg(str(progress_bar), succesfully_completed=n_combinations_successfully_completed,
+                                  failed=n_combinations_failed, none=n_combinations_none)
 
         if client is not None:
-            log_and_print_msg('Models are being trained and evaluated in parallel, check the logs for real time '
-                              'information.')
-            progress_bar = tqdm(as_completed(futures), total=len(futures))
+            progress_bar = tqdm(as_completed(futures), total=len(futures), desc='Combinations completed')
             for future in progress_bar:
-                future.result()
+                combination_success = future.result()
+                if combination_success is True:
+                    n_combinations_successfully_completed += 1
+                elif combination_success is False:
+                    n_combinations_failed += 1
+                else:
+                    n_combinations_none += 1
                 del future  # to free memory
-                log_and_print_msg(str(progress_bar))
+                log_and_print_msg(str(progress_bar), succesfully_completed=n_combinations_successfully_completed,
+                                  failed=n_combinations_failed, none=n_combinations_none)
             # ensure all futures are done
             client.gather(futures)
             client.close()
+
+        return total_combinations, n_combinations_successfully_completed, n_combinations_failed, n_combinations_none
 
     def run(self):
         self.treat_parser()
@@ -601,9 +625,14 @@ class BaseExperiment:
             client = self.setup_dask(self.n_workers, self.dask_cluster_type, self.dask_address)
         else:
             client = None
-        self.run_experiment(client=client)
+        total_combinations, n_combinations_successfully_completed, n_combinations_failed, n_combinations_none = (
+            self.run_experiment(client=client))
         total_time = time.perf_counter() - start_time
-        log_and_print_msg('Experiment finished!', total_elapsed_time=total_time, **kwargs_to_log)
+        log_and_print_msg('Experiment finished!', total_elapsed_time=total_time,
+                          total_combinations=total_combinations,
+                          sucessfully_completed=n_combinations_successfully_completed,
+                          failed=n_combinations_failed, none=n_combinations_none,
+                          **kwargs_to_log)
 
 
 if __name__ == '__main__':
