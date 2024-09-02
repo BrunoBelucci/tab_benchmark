@@ -71,6 +71,7 @@ class BaseExperiment:
             # parallelization
             dask_cluster_type=None,
             n_workers=1,
+            n_processes=2,
             dask_memory=None,
             dask_job_extra_directives=None,
             dask_address=None,
@@ -103,6 +104,7 @@ class BaseExperiment:
         # parallelization
         self.dask_cluster_type = dask_cluster_type
         self.n_workers = n_workers
+        self.n_processes = n_processes
         self.dask_memory = dask_memory
         self.dask_job_extra_directives = dask_job_extra_directives
         self.dask_address = dask_address
@@ -154,6 +156,14 @@ class BaseExperiment:
 
         self.parser.add_argument('--dask_cluster_type', type=str, default=self.dask_cluster_type)
         self.parser.add_argument('--n_workers', type=int, default=self.n_workers)
+        self.parser.add_argument('--n_processes', type=int, default=self.n_processes,
+                                 help='Number of processes to use when submitting cpu jobs (n_gpus=0). The total'
+                                      'number of parallel tasks that will be run is n_workers * n_processes. Note that'
+                                      'if we want to run a model with n_jobs > 1, we will ask for n_jobs * n_processes'
+                                      'cores in the cluster so each process will have access to n_jobs cores. '
+                                      'Obs: In the CEREMADE cluster the minimum number of cores that can be requested'
+                                      'are 2, so it is a good idea to set at least n_processes to 2 or n_jobs to 2 '
+                                      'if we want to use all the resources available.')
         self.parser.add_argument('--dask_memory', type=str, default=self.dask_memory)
         self.parser.add_argument('--dask_job_extra_directives', type=str, default=self.dask_job_extra_directives)
         self.parser.add_argument('--dask_address', type=str, default=self.dask_address)
@@ -207,6 +217,7 @@ class BaseExperiment:
 
         self.dask_cluster_type = args.dask_cluster_type
         self.n_workers = args.n_workers
+        self.n_processes = args.n_processes
         self.dask_memory = args.dask_memory
         self.wait_between_submissions = args.wait_between_submissions
         dask_job_extra_directives = args.dask_job_extra_directives
@@ -529,8 +540,8 @@ class BaseExperiment:
             client = Client(address)
         else:
             if cluster_type == 'local':
-                threads_per_worker = self.n_jobs
-                processes = 1
+                threads_per_worker = self.n_jobs * self.n_processes
+                processes = self.n_processes
                 if cpu_count() < threads_per_worker * n_workers:
                     warnings.warn(f"n_workers * threads_per_worker (n_jobs) is greater than the number of cores "
                                   f"available ({cpu_count}). This may lead to performance issues.")
@@ -540,8 +551,8 @@ class BaseExperiment:
             elif cluster_type == 'slurm':
                 if self.n_gpus == 0:
                     # we will submit one job for each worker
-                    cores = self.n_jobs
-                    processes = 1
+                    cores = self.n_jobs * self.n_processes
+                    processes = self.n_processes
                     n_maximum_jobs = n_workers
                 else:
                     # we will only submit n_gpus job, and they will be responsible for all workers
