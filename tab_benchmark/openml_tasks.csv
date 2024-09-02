@@ -261,10 +261,9 @@ task_id,dataset_id,dataset_name,task_type,task_name,target_name,evaluation_type,
 362096,46297,seoul_bike_sharing_demand,Supervised Regression,regression,13,crossvalidation,10,8760.0,14.0,3.0,10.0,0.0,0.0,1,https://www.openml.org/d/46297
 362092,46292,servo,Supervised Regression,regression,4,crossvalidation,10,167.0,5.0,2.0,3.0,0.0,0.0,1,https://www.openml.org/d/46292
 362112,45062,shrutime,Supervised Regression,regression,class,crossvalidation,10,10000.0,11.0,6.0,5.0,0.0,0.0,1,https://www.openml.org/d/45062
-211849,41490,slump,Supervised Regression,regression,SLUMP_cm,crossvalidation,10,103.0,10.0,0.0,10.0,0.0,0.0,1,https://www.openml.org/d/41490
-362111,41490,slump,Supervised Regression,regression,"SLUMP_cm,FLOW_cm,Compressive_Strength_Mpa",crossvalidation,10,103.0,10.0,0.0,10.0,0.0,0.0,1,https://www.openml.org/d/41490
-362111,41490,slump,Supervised Regression,regression,"SLUMP_cm,FLOW_cm,Compressive_Strength_Mpa",crossvalidation,10,103.0,10.0,0.0,10.0,0.0,0.0,1,https://www.openml.org/d/41490
-362111,41490,slump,Supervised Regression,regression,"SLUMP_cm,FLOW_cm,Compressive_Strength_Mpa",crossvalidation,10,103.0,10.0,0.0,10.0,0.0,0.0,1,https://www.openml.org/d/41490
+362106,41490,slump,Supervised Regression,regression,SLUMP_cm,crossvalidation,10,103.0,10.0,0.0,10.0,0.0,0.0,1,https://www.openml.org/d/41490
+362107,41490,slump,Supervised Regression,regression,FLOW_cm,crossvalidation,10,103.0,10.0,0.0,10.0,0.0,0.0,1,https://www.openml.org/d/41490
+362108,41490,slump,Supervised Regression,regression,Compressive_Strength_Mpa,crossvalidation,10,103.0,10.0,0.0,10.0,0.0,0.0,1,https://www.openml.org/d/41490
 361623,45402,space_ga,Supervised Regression,regression,ln_votes_pop,crossvalidation,10,3107.0,7.0,0.0,7.0,0.0,0.0,1,https://www.openml.org/d/45402
 361619,44967,student_performance_por,Supervised Regression,regression,G3,crossvalidation,10,649.0,31.0,17.0,14.0,0.0,0.0,1,https://www.openml.org/d/44967
 360966,23515,sulfur,Supervised Regression,regression,y1,crossvalidation,10,10081.0,7.0,0.0,7.0,0.0,0.0,1,https://www.openml.org/d/23515
