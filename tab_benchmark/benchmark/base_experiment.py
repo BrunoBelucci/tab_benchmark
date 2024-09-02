@@ -21,6 +21,7 @@ from multiprocessing import cpu_count
 from torch.cuda import (set_per_process_memory_fraction, max_memory_reserved, max_memory_allocated,
                         reset_peak_memory_stats)
 from resource import getrusage, RUSAGE_SELF
+from itertools import product
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
@@ -70,6 +71,7 @@ class BaseExperiment:
             dask_memory=None,
             dask_job_extra_directives=None,
             dask_address=None,
+            wait_between_submissions=5,
             # gpu specific
             n_gpus=0,
     ):
@@ -102,6 +104,7 @@ class BaseExperiment:
         self.dask_job_extra_directives = dask_job_extra_directives
         self.dask_address = dask_address
         self.n_gpus = n_gpus
+        self.wait_between_submissions = wait_between_submissions
 
         self.experiment_name = experiment_name
         self.log_dir = log_dir
@@ -149,6 +152,7 @@ class BaseExperiment:
         self.parser.add_argument('--dask_memory', type=str, default=self.dask_memory)
         self.parser.add_argument('--dask_job_extra_directives', type=str, default=self.dask_job_extra_directives)
         self.parser.add_argument('--dask_address', type=str, default=self.dask_address)
+        self.parser.add_argument('--wait_between_submissions', type=int, default=self.wait_between_submissions)
         self.parser.add_argument('--n_gpus', type=int, default=self.n_gpus,
                                  help='Number of GPUs to request in the case we are using a distributed cluster '
                                       '(SLURM for example). This is the total number of GPUs that will be requested, '
@@ -195,6 +199,7 @@ class BaseExperiment:
         self.dask_cluster_type = args.dask_cluster_type
         self.n_workers = args.n_workers
         self.dask_memory = args.dask_memory
+        self.wait_between_submissions = args.wait_between_submissions
         dask_job_extra_directives = args.dask_job_extra_directives
         # parse dask_job_extra_directives
         if isinstance(dask_job_extra_directives, str):
@@ -522,71 +527,49 @@ class BaseExperiment:
         return client
 
     def run_experiment(self, client=None):
-        if client is not None:
-            futures = []
-            first_submission = True
         if self.using_own_resampling:
-            for model_nickname in self.models_nickname:
-                for seed_dataset in self.seeds_datasets:
-                    for seed_model in self.seeds_model:
-                        for fold in self.folds:
-                            for dataset_name_or_id in self.datasets_names_or_ids:
-                                if client is not None:
-                                    time.sleep(5)  # we stagger the submissions to avoid any issue with synchronization
-                                    futures.append(client.submit(
-                                        self.run_combination_with_mlflow,
-                                        seed_model=seed_model,
-                                        dataset_name_or_id=dataset_name_or_id,
-                                        seed_dataset=seed_dataset, fold=fold, n_jobs=self.n_jobs,
-                                        is_openml=False, resample_strategy=self.resample_strategy,
-                                        n_folds=self.k_folds, pct_test=self.pct_test,
-                                        validation_resample_strategy=self.validation_resample_strategy,
-                                        pct_validation=self.pct_validation, model_nickname=model_nickname))
-                                    if first_submission:
-                                        # we wait a bit more the first time to ensure that some tasks are completed
-                                        # after the first submission, for example creating experiments,
-                                        # folders, etc.
-                                        time.sleep(5)
-                                else:
-                                    self.run_combination_with_mlflow(
-                                        seed_model=seed_model, dataset_name_or_id=dataset_name_or_id,
-                                        seed_dataset=seed_dataset, fold=fold, n_jobs=self.n_jobs, is_openml=False,
-                                        resample_strategy=self.resample_strategy,
-                                        n_folds=self.k_folds, pct_test=self.pct_test,
-                                        validation_resample_strategy=self.validation_resample_strategy,
-                                        pct_validation=self.pct_validation, model_nickname=model_nickname)
+            combinations = product(self.models_nickname, self.seeds_datasets, self.seeds_model, self.folds,
+                                   self.datasets_names_or_ids)
+            combination_keys = ['model_nickname', 'seed_dataset', 'seed_model', 'fold', 'dataset_name_or_id']
+            extra_params = dict(is_openml=False, resample_strategy=self.resample_strategy,
+                                n_folds=self.k_folds, pct_test=self.pct_test,
+                                validation_resample_strategy=self.validation_resample_strategy,
+                                pct_validation=self.pct_validation)
+
         else:
-            for model_nickname in self.models_nickname:
-                for task_repeat in self.task_repeats:
-                    for task_sample in self.task_samples:
-                        for seed_model in self.seeds_model:
-                            for task_fold in self.task_folds:
-                                for task_id in self.tasks_ids:
-                                    if client is not None:
-                                        # we stagger the submissions to avoid any issue with synchronization
-                                        time.sleep(5)
-                                        futures.append(client.submit(self.run_combination_with_mlflow,
-                                                                     seed_model=seed_model, task_id=task_id,
-                                                                     task_repeat=task_repeat,
-                                                                     task_sample=task_sample, task_fold=task_fold,
-                                                                     n_jobs=self.n_jobs, is_openml=True,
-                                                                     model_nickname=model_nickname))
-                                        if first_submission:
-                                            # we wait a bit to ensure that some tasks are completed
-                                            # after the first submission, for example creating experiments,
-                                            # folders, etc.
-                                            time.sleep(10)
-                                    else:
-                                        self.run_combination_with_mlflow(seed_model=seed_model,
-                                                                         task_id=task_id, task_repeat=task_repeat,
-                                                                         task_sample=task_sample,
-                                                                         task_fold=task_fold,
-                                                                         n_jobs=self.n_jobs, is_openml=True,
-                                                                         model_nickname=model_nickname)
+            combinations = product(self.models_nickname, self.task_repeats, self.task_samples, self.seeds_model,
+                                   self.task_folds, self.tasks_ids)
+            combination_keys = ['model_nickname', 'task_repeat', 'task_sample', 'seed_model', 'task_fold', 'task_id']
+            extra_params = dict(is_openml=True)
+
+        futures = []
         if client is not None:
-            print('Models are being trained and evaluated in parallel, check the logs for real time information.')
-            for future in tqdm(as_completed(futures), total=len(futures)):
-                pass
+            first_submission = True
+            for combinations in combinations:
+                futures.append(client.submit(self.run_combination_with_mlflow, n_jobs=self.n_jobs,
+                                             **extra_params,
+                                             **dict(zip(combination_keys, combinations))))
+                # wait between submissions to avoid overloading the cluster
+                if first_submission:
+                    # wait a little bit more for the first submission to create folders, experiments, etc
+                    time.sleep(5)
+                    first_submission = False
+                time.sleep(self.wait_between_submissions)
+        else:
+            progress_bar = tqdm(combinations)
+            for combinations in progress_bar:
+                self.run_combination_with_mlflow(n_jobs=self.n_jobs, **extra_params,
+                                                 **dict(zip(combination_keys, combinations)))
+                log_and_print_msg(str(progress_bar))
+
+        if client is not None:
+            log_and_print_msg('Models are being trained and evaluated in parallel, check the logs for real time '
+                              'information.')
+            progress_bar = tqdm(as_completed(futures), total=len(futures))
+            for future in progress_bar:
+                future.result()
+                del future  # to free memory
+                log_and_print_msg(str(progress_bar))
             # ensure all futures are done
             client.gather(futures)
             client.close()
