@@ -15,7 +15,7 @@ def generate_postgres_db_script(
         error_job_dir='/home/users/belucci/outputs/%x.%J.err',
         wall_time='364-23:59:59',
 ):
-    database_dir = database_root_dir / db_name
+    database_dir = database_root_dir / (db_name + '_db')
     log_file = database_dir / (db_name + '.log')
     sh_content = cleandoc(f"""
     if [ ! -d {str(database_dir.absolute())} ]; then
