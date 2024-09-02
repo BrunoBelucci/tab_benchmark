@@ -171,27 +171,24 @@ def evaluate_set(model, eval_set: Sequence[pd.DataFrame], metrics: str | list[st
         func, need_proba, _ = get_metric_fn(metric, n_classes)
         if need_proba:
             if y_pred_proba is None:
-                y_pred_ = model.predict_proba(X)
-            else:
-                y_pred_ = y_pred_proba
+                y_pred_proba = model.predict_proba(X)
+            y_pred_ = y_pred_proba.copy()
         else:
             if y_pred is None:
-                y_pred_ = model.predict(X)
-            else:
-                y_pred_ = y_pred
+                y_pred = model.predict(X)
+            y_pred_ = y_pred.copy()
         if metric == 'auc':
+            y_true = y.copy()
             if y.shape[1] == 1:
-                y_true = y.to_numpy().reshape(-1)
-            else:
-                y_true = y.copy()
+                y_true = y_true.to_numpy().reshape(-1)
             # in the case of a binary classifier we will evaluate both cases as the positive class
             if n_classes == 2:
                 for i in range(2):
                     if isinstance(y_pred_, pd.DataFrame):
-                        y_pred_ = y_pred.to_numpy()[:, i]
+                        y_pred_i = y_pred_.to_numpy()[:, i]
                     else:
-                        y_pred_ = y_pred_[:, i]
-                    scores[f'{metric}_{i}'] = evaluate_metric(y_true, y_pred_, metric, n_classes, error_score)
+                        y_pred_i = y_pred_[:, i]
+                    scores[f'{metric}_{i}'] = evaluate_metric(y_true, y_pred_i, metric, n_classes, error_score)
             else:
                 scores[metric] = evaluate_metric(y_true, y_pred_, metric, n_classes, error_score)
         else:
