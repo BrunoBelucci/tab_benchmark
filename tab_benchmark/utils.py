@@ -135,10 +135,15 @@ def evaluate_metric(y_true, y_pred, metric, n_classes=None, error_score='raise')
     try:
         score = metric_fn(y_true, y_pred)
     except ValueError as e:
-        if error_score == 'raise':
-            raise e
+        if e.args[0] == 'Only one class present in y_true. ROC AUC score is not defined in that case.':
+            # error raised in roc_auc_score when not all classes are present in y_true (e.g. small datasets)
+            # there is really not much we can do, so we will return nan irrespective of the error_score
+            score = np.nan
         else:
-            score = error_score
+            if error_score == 'raise':
+                raise e
+            else:
+                score = error_score
     return score
 
 
