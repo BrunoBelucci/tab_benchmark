@@ -329,7 +329,7 @@ class TabNetModel(DNNModel):
 
     @extends(DNNModel.__init__)
     def __init__(self, *args, gamma_sched=None, step_sched=None, **kwargs):
-        super().__init__()
+        super().__init__(*args, **kwargs)
         self.gamma_sched = gamma_sched
         self.step_sched = step_sched
 
@@ -339,11 +339,12 @@ class TabNetModel(DNNModel):
             self._torch_scheduler_tuple[1]['gamma'] = self.gamma_sched
         if self.step_sched is not None:
             self._torch_scheduler_tuple[1]['step_size'] = self.step_sched
-        return self._torch_optimizer_tuple
+        return self._torch_scheduler_tuple
 
 
 TabBenchmarkTabNet = dnn_model_factory(
     TabNet,
+    dnn_model_cls=TabNetModel,
     default_values={
         'categorical_type': 'float32',
         'categorical_encoder': 'ordinal',

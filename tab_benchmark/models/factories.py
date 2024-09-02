@@ -75,10 +75,8 @@ class TabBenchmarkModel(ABC):
         self.handle_unknown_categories = handle_unknown_categories
         self.variance_threshold = variance_threshold
         self.data_scaler = data_scaler
-        if not hasattr(self, 'categorical_type'):
-            self.categorical_type = categorical_type
-        if not hasattr(self, 'continuous_type'):
-            self.continuous_type = continuous_type
+        self.categorical_type = categorical_type
+        self.continuous_type = continuous_type
         self.target_imputer = target_imputer
         self.categorical_target_encoder = categorical_target_encoder
         self.categorical_target_min_frequency = categorical_target_min_frequency
@@ -223,7 +221,8 @@ def dnn_architecture_init(self, dnn_architecture_cls, **kwargs):
     return architecture_params, architecture_params_not_from_dataset
 
 
-def dnn_model_factory(dnn_architecture_cls, default_values=None, map_task_to_default_values=None,
+def dnn_model_factory(dnn_architecture_cls, dnn_model_cls=DNNModel, default_values=None,
+                      map_task_to_default_values=None,
                       before_fit_method=None, extra_dct=None):
     default_values = default_values.copy() if default_values else {}
 
@@ -240,7 +239,7 @@ def dnn_model_factory(dnn_architecture_cls, default_values=None, map_task_to_def
     dnn_architecture_class = default_values.get('dnn_architecture_class', dnn_architecture_cls)
     default_values['dnn_architecture_class'] = dnn_architecture_class
 
-    TabBenchmarkSklearn = sklearn_factory(DNNModel, has_early_stopping=True, default_values=default_values,
+    TabBenchmarkSklearn = sklearn_factory(dnn_model_cls, has_early_stopping=True, default_values=default_values,
                                           map_task_to_default_values=map_task_to_default_values,
                                           before_fit_method=before_fit_method, extra_dct=extra_dct)
 
