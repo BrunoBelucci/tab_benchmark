@@ -126,7 +126,8 @@ def before_fit_catboost(self, X, y, task=None, cat_features=None, cat_dims=None,
     fit_arguments = args_and_kwargs.copy() if args_and_kwargs else {}
 
     if n_classes is not None:
-        self.set_params(**{'classes_count': n_classes})
+        if n_classes > 2:
+            self.set_params(**{'classes_count': n_classes})
 
     eval_metric = self.get_params().get('eval_metric', None)
     if eval_metric is not None:

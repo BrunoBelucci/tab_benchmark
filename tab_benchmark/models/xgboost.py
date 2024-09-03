@@ -298,7 +298,8 @@ def before_fit_xgboost(self, X, y, task=None, cat_features=None, cat_dims=None, 
         self.set_params(**{'enable_categorical': True})
 
     if n_classes is not None:
-        self.set_params(**{'num_class': n_classes})
+        if n_classes > 2:
+            self.set_params(**{'num_class': n_classes})
 
     eval_metric = self.get_params().get('eval_metric', None)
 
