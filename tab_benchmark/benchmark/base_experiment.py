@@ -83,7 +83,7 @@ class BaseExperiment:
         self.seeds_model = seeds_models if seeds_models else [0]
         self.n_jobs = n_jobs
 
-        # when performing our own resampling
+        # when performing our own resampling0
         self.datasets_names_or_ids = datasets_names_or_ids
         self.seeds_datasets = seeds_datasets if seeds_datasets else [0]
         self.resample_strategy = resample_strategy
@@ -385,6 +385,8 @@ class BaseExperiment:
                 X[cat_feature] = X[cat_feature].cat.codes
                 X[cat_feature] = X[cat_feature].replace(-1, np.nan).astype('category')
             if task_name in ('classification', 'binary_classification'):
+                if y.dtypes != 'category':
+                    y = y.astype('category')
                 y = y.cat.codes
                 y = y.replace(-1, np.nan).astype('category')
             # if we are just using ordinal encoding, we can disable it
