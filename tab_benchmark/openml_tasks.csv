@@ -207,7 +207,6 @@ task_id,dataset_id,dataset_name,task_type,task_name,target_name,evaluation_type,
 361003,43611,Wisconsin-breast-cancer-cytology-features,Supervised Regression,regression,class,crossvalidation,10,699.0,11.0,0.0,11.0,16.0,16.0,1,https://www.openml.org/d/43611
 361234,44956,abalone,Supervised Regression,regression,rings,crossvalidation,10,4177.0,9.0,1.0,8.0,0.0,0.0,1,https://www.openml.org/d/44956
 361235,44957,airfoil_self_noise,Supervised Regression,regression,sound_pressure,crossvalidation,10,1503.0,6.0,0.0,6.0,0.0,0.0,1,https://www.openml.org/d/44957
-12732,1592,aloi,Supervised Regression,regression,class,crossvalidation,10,108000.0,129.0,0.0,129.0,0.0,0.0,1,https://www.openml.org/d/1592
 361093,44055,analcatdata_supreme,Supervised Regression,regression,Log_exposure,crossvalidation,10,4052.0,8.0,5.0,3.0,0.0,0.0,1,https://www.openml.org/d/44055
 362086,46283,appliances_energy_prediction,Supervised Regression,regression,Appliances,crossvalidation,10,19735.0,28.0,0.0,28.0,0.0,0.0,1,https://www.openml.org/d/46283
 361236,44958,auction_verification,Supervised Regression,regression,verification.time,crossvalidation,10,2043.0,8.0,2.0,6.0,0.0,0.0,1,https://www.openml.org/d/44958
