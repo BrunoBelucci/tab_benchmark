@@ -646,8 +646,12 @@ class BaseExperiment:
         n_combinations_failed = 0
         n_combinations_none = 0
         if client is not None:
-            log_and_print_msg(f'Models are being trained and evaluated in parallel, check the logs for real time '
-                              'information.')
+            log_and_print_msg(f'{total_combinations} models are being trained and evaluated in parallel, '
+                              f'check the logs for real time information. We will display information about the '
+                              f'completion of the tasks right after sending all the tasks to the cluster.'
+                              f'Note that this can take a while if a lot of tasks are being submitted.'
+                              f'You can check the dask dashboard to get more information about the progress and'
+                              f'the workers.')
             models_nicknames = [combination[0] for combination in combinations]
             seeds_models = [combination[1] for combination in combinations]
             task_ids = [combination[2] for combination in combinations]
