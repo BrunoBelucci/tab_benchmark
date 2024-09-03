@@ -662,6 +662,7 @@ class BaseExperiment:
             time.sleep(5)
             futures = client.map(self.run_combination_with_mlflow, models_nicknames, seeds_models, task_ids,
                                  task_folds, task_repeats, task_samples, dataset_names_or_ids, seeds_datasets, folds,
+                                 batch_size=self.n_workers,
                                  **extra_params)
             futures = [first_future] + futures
         else:
