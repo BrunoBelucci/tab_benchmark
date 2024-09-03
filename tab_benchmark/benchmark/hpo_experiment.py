@@ -78,10 +78,12 @@ class HPOExperiment(BaseExperiment):
 
         return training_fn
 
-    def run_combination_hpo(self, seed_model=0, n_jobs=1, create_validation_set=True,
+    def run_combination_hpo(self, model_nickname, seed_model=0,
+                            task_id=None, task_fold=None, task_repeat=None, task_sample=None,
+                            dataset_name_or_id=None, seed_dataset=None, fold=None,
+                            n_jobs=1, create_validation_set=True,
                             model_params=None, is_openml=True, logging_to_mlflow=False,
                             fit_params=None, return_results=False, retrain_best_model=False, **kwargs):
-        model_nickname = kwargs.pop('model_nickname')
         models_dict = kwargs.pop('models_dict', self.models_dict)
         mlflow_tracking_uri = kwargs.pop('mlflow_tracking_uri', self.mlflow_tracking_uri)
         experiment_name = kwargs.pop('experiment_name', self.experiment_name)
@@ -121,8 +123,12 @@ class HPOExperiment(BaseExperiment):
             fit_params=fit_params,
             model_nickname=model_nickname,
         )
-        param_space.update(kwargs)
-        default_param_space.update(kwargs)
+        param_space.update(dict(task_id=task_id, task_fold=task_fold, task_repeat=task_repeat, task_sample=task_sample,
+                                dataset_name_or_id=dataset_name_or_id, seed_dataset=seed_dataset, fold=fold, **kwargs))
+        default_param_space.update(dict(task_id=task_id, task_fold=task_fold, task_repeat=task_repeat,
+                                        task_sample=task_sample,
+                                        dataset_name_or_id=dataset_name_or_id, seed_dataset=seed_dataset, fold=fold,
+                                        **kwargs))
         if issubclass(model_cls, DNNModel):
             max_t = early_stopping_patience_dnn
         else:
@@ -204,13 +210,16 @@ class HPOExperiment(BaseExperiment):
             return results
 
     @lockutils.synchronized('run_combination_with_mlflow_hpo')
-    def run_combination_with_mlflow(self, seed_model=0, n_jobs=1, create_validation_set=True,
-                                    model_params=None,
+    def run_combination_with_mlflow(self, model_nickname, seed_model=0,
+                                    task_id=None, task_fold=None, task_repeat=None, task_sample=None,
+                                    dataset_name_or_id=None, seed_dataset=None, fold=None,
+                                    n_jobs=1, create_validation_set=True,
+                                    model_params=None, fit_params=None,
                                     parent_run_uuid=None, is_openml=True, return_results=False, **kwargs):
         # setup logger to local dir on dask worker (will not have effect if running from main)
         self.log_dir_dask = Path.cwd() / self.log_dir
         self.setup_logger(log_dir=self.log_dir_dask, filemode='w')
-
+        fit_params = fit_params.copy() if fit_params is not None else {}
         model_params = model_params if model_params is not None else {}
         experiment_name = kwargs.pop('experiment_name', self.experiment_name)
         mlflow_tracking_uri = kwargs.pop('mlflow_tracking_uri', self.mlflow_tracking_uri)
@@ -221,9 +230,13 @@ class HPOExperiment(BaseExperiment):
         timeout_experiment = kwargs.pop('timeout_experiment', self.timeout_experiment)
         timeout_trial = kwargs.pop('timeout_trial', self.timeout_trial)
         retrain_best_model = kwargs.pop('retrain_best_model', self.retrain_best_model)
-        unique_params = dict(model_params=model_params, seed_model=seed_model,
+        unique_params = dict(model_params=model_params, fit_params=fit_params,
                              search_algorithm=search_algorithm, trial_scheduler=trial_scheduler, n_trials=n_trials,
-                             timeout_experiment=timeout_experiment, timeout_trial=timeout_trial, **kwargs)
+                             timeout_experiment=timeout_experiment, timeout_trial=timeout_trial,
+                             model_nickname=model_nickname, seed_model=seed_model,
+                             task_id=task_id, task_repeat=task_repeat, task_sample=task_sample,
+                             dataset_name_or_id=dataset_name_or_id, seed_dataset=seed_dataset, fold=fold,
+                             **kwargs)
         possible_existent_run, logging_to_mlflow = treat_mlflow(experiment_name, mlflow_tracking_uri, check_if_exists,
                                                                 **unique_params)
 

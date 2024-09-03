@@ -296,13 +296,27 @@ class BaseExperiment:
                 mlflow.log_param('model_name', model_nickname[len('TabBenchmark'):])
         return model
 
-    def run_combination(self, n_jobs=1, create_validation_set=False,
+    def run_combination(self, model_nickname, seed_model=0,
+                        task_id=None, task_fold=None, task_repeat=None, task_sample=None,
+                        dataset_name_or_id=None, seed_dataset=None, fold=None,
+                        n_jobs=1, create_validation_set=False,
                         model_params=None, is_openml=True, logging_to_mlflow=False,
                         fit_params=None, return_results=False, **kwargs):
         """
 
         Parameters
         ----------
+        return_results
+        fit_params
+        fold
+        seed_dataset
+        dataset_name_or_id
+        task_sample
+        task_repeat
+        task_fold
+        task_id
+        seed_model
+        model_nickname
         n_jobs
         create_validation_set
         model_params
@@ -321,6 +335,10 @@ class BaseExperiment:
             start_time = time.perf_counter()
             # logging
             kwargs_to_log = dict(**kwargs.copy())
+            kwargs_to_log.update(dict(model_nickname=model_nickname, seed_model=seed_model,
+                                      task_id=task_id, task_repeat=task_repeat, task_sample=task_sample,
+                                      task_fold=task_fold, dataset_name_or_id=dataset_name_or_id,
+                                      seed_dataset=seed_dataset, fold=fold))
             log_and_print_msg('Running...', **kwargs_to_log)
             if self.n_gpus > 0:
                 # we assume that we are using one GPU and this GPU is being shared by
@@ -330,23 +348,23 @@ class BaseExperiment:
                 reset_peak_memory_stats()
             fit_params = fit_params.copy() if fit_params is not None else {}
             model_params = model_params.copy() if model_params is not None else {}
-            model_nickname = kwargs.pop('model_nickname')
-            seed_model = kwargs.pop('seed_model', 0)
+            model_nickname = model_nickname
+            seed_model = seed_model
             # load data
             if is_openml:
-                task_id = kwargs['task_id']
-                task_repeat = kwargs['task_repeat']
-                task_sample = kwargs['task_sample']
-                task_fold = kwargs['task_fold']
+                task_id = task_id
+                task_repeat = task_repeat
+                task_sample = task_sample
+                task_fold = task_fold
                 (X, y, cat_ind, att_names, cat_features_names, cat_dims, task_name, n_classes, train_indices,
                  test_indices, validation_indices) = (
                     load_openml_task(task_id, task_repeat, task_sample, task_fold,
                                      create_validation_set=create_validation_set, logging_to_mlflow=logging_to_mlflow)
                 )
             else:
-                dataset_name_or_id = kwargs['dataset_name_or_id']
-                seed_dataset = kwargs['seed_dataset']
-                fold = kwargs['fold']
+                dataset_name_or_id = dataset_name_or_id
+                seed_dataset = seed_dataset
+                fold = fold
                 resample_strategy = self.resample_strategy
                 n_folds = self.k_folds
                 pct_test = self.pct_test
@@ -470,7 +488,10 @@ class BaseExperiment:
                 return True
 
     @lockutils.synchronized('run_combination_with_mlflow')
-    def run_combination_with_mlflow(self, n_jobs=1, create_validation_set=False,
+    def run_combination_with_mlflow(self, model_nickname, seed_model=0,
+                                    task_id=None, task_fold=None, task_repeat=None, task_sample=None,
+                                    dataset_name_or_id=None, seed_dataset=None, fold=None,
+                                    n_jobs=1, create_validation_set=False,
                                     model_params=None, fit_params=None,
                                     parent_run_uuid=None, is_openml=True, return_results=False, **kwargs):
         fit_params = fit_params.copy() if fit_params is not None else {}
@@ -479,7 +500,10 @@ class BaseExperiment:
         mlflow_tracking_uri = kwargs.pop('mlflow_tracking_uri', self.mlflow_tracking_uri)
         check_if_exists = kwargs.pop('check_if_exists', self.check_if_exists)
         unique_params = dict(model_params=model_params, create_validation_set=create_validation_set,
-                             fit_params=fit_params, **kwargs)
+                             fit_params=fit_params, model_nickname=model_nickname, seed_model=seed_model,
+                             task_id=task_id, task_repeat=task_repeat, task_sample=task_sample,
+                             dataset_name_or_id=dataset_name_or_id, seed_dataset=seed_dataset, fold=fold,
+                             **kwargs)
         possible_existent_run, logging_to_mlflow = treat_mlflow(experiment_name, mlflow_tracking_uri, check_if_exists,
                                                                 **unique_params)
 
@@ -527,19 +551,29 @@ class BaseExperiment:
                 mlflow.log_param('dask_job_extra_directives', self.dask_job_extra_directives)
                 mlflow.log_param('dask_address', self.dask_address)
                 mlflow.log_param('n_gpus', self.n_gpus)
-                return self.run_combination(n_jobs=n_jobs,
-                                            create_validation_set=create_validation_set,
-                                            model_params=model_params, fit_params=fit_params,
-                                            is_openml=is_openml,
-                                            logging_to_mlflow=logging_to_mlflow, return_results=return_results,
-                                            **kwargs)
+                return self.run_combination(
+                    model_nickname=model_nickname, seed_model=seed_model,
+                    task_id=task_id, task_fold=task_fold, task_repeat=task_repeat, task_sample=task_sample,
+                    dataset_name_or_id=dataset_name_or_id, seed_dataset=seed_dataset, fold=fold,
+                    n_jobs=n_jobs,
+                    create_validation_set=create_validation_set,
+                    model_params=model_params, fit_params=fit_params,
+                    is_openml=is_openml,
+                    logging_to_mlflow=logging_to_mlflow, return_results=return_results,
+                    **kwargs
+                )
         else:
-            return self.run_combination(n_jobs=n_jobs,
-                                        create_validation_set=create_validation_set,
-                                        model_params=model_params, fit_params=fit_params,
-                                        is_openml=is_openml,
-                                        logging_to_mlflow=logging_to_mlflow, return_results=return_results,
-                                        **kwargs)
+            return self.run_combination(
+                model_nickname=model_nickname, seed_model=seed_model,
+                task_id=task_id, task_fold=task_fold, task_repeat=task_repeat, task_sample=task_sample,
+                dataset_name_or_id=dataset_name_or_id, seed_dataset=seed_dataset, fold=fold,
+                n_jobs=n_jobs,
+                create_validation_set=create_validation_set,
+                model_params=model_params, fit_params=fit_params,
+                is_openml=is_openml,
+                logging_to_mlflow=logging_to_mlflow, return_results=return_results,
+                **kwargs
+            )
 
     def setup_dask(self, n_workers, cluster_type='local', address=None):
         if address is not None:
@@ -591,21 +625,22 @@ class BaseExperiment:
 
     def run_experiment(self, client=None):
         if self.using_own_resampling:
-            combinations = list(product(self.models_nickname, self.seeds_datasets, self.seeds_model, self.folds,
-                                        self.datasets_names_or_ids))
-            combination_keys = ['model_nickname', 'seed_dataset', 'seed_model', 'fold', 'dataset_name_or_id']
-            extra_params = dict(is_openml=False, resample_strategy=self.resample_strategy,
+            # (model_nickname, seed_model, task_id, task_fold, task_repeat, task_sample, dataset_name_or_id,
+            # seed_dataset, fold)
+            combinations = list(product(self.models_nickname, self.seeds_model, [None], [None], [None], [None],
+                                        self.datasets_names_or_ids, self.seeds_datasets, self.folds))
+            extra_params = dict(is_openml=False, n_jobs=self.n_jobs, resample_strategy=self.resample_strategy,
                                 n_folds=self.k_folds, pct_test=self.pct_test,
                                 validation_resample_strategy=self.validation_resample_strategy,
                                 pct_validation=self.pct_validation)
 
         else:
-            combinations = list(product(self.models_nickname, self.task_repeats, self.task_samples, self.seeds_model,
-                                        self.task_folds, self.tasks_ids))
-            combination_keys = ['model_nickname', 'task_repeat', 'task_sample', 'seed_model', 'task_fold', 'task_id']
-            extra_params = dict(is_openml=True)
+            # (model_nickname, seed_model, task_id, task_fold, task_repeat, task_sample, dataset_name_or_id,
+            # seed_dataset, fold)
+            combinations = list(product(self.models_nickname, self.seeds_model, self.tasks_ids, self.task_folds,
+                                        self.task_repeats, self.task_samples, [None], [None], [None]))
+            extra_params = dict(is_openml=True, n_jobs=self.n_jobs)
 
-        futures = []
         total_combinations = len(combinations)
         n_combinations_successfully_completed = 0
         n_combinations_failed = 0
@@ -613,24 +648,26 @@ class BaseExperiment:
         if client is not None:
             log_and_print_msg(f'Models are being trained and evaluated in parallel, check the logs for real time '
                               'information.')
-            first_submission = True
-            progress_bar = tqdm(combinations, desc='Combinations submitted')
-            for combination in progress_bar:
-                kwargs = dict(zip(combination_keys, combination))
-                kwargs.update(extra_params)
-                futures.append(client.submit(self.run_combination_with_mlflow, n_jobs=self.n_jobs, **kwargs))
-                log_and_print_msg(str(progress_bar))
-                # wait between submissions to avoid overloading the cluster
-                if first_submission:
-                    # wait a little bit more for the first submission to create folders, experiments, etc
-                    time.sleep(5)
-                    first_submission = False
-                time.sleep(self.wait_between_submissions)
+            models_nicknames = [combination[0] for combination in combinations]
+            seeds_models = [combination[1] for combination in combinations]
+            task_ids = [combination[2] for combination in combinations]
+            task_folds = [combination[3] for combination in combinations]
+            task_repeats = [combination[4] for combination in combinations]
+            task_samples = [combination[5] for combination in combinations]
+            dataset_names_or_ids = [combination[6] for combination in combinations]
+            seeds_datasets = [combination[7] for combination in combinations]
+            folds = [combination[8] for combination in combinations]
+            first_future = client.submit(self.run_combination_with_mlflow, *combinations[0], **extra_params)
+            # wait a little bit for the first submission to create folders, experiments, etc
+            time.sleep(5)
+            futures = client.map(self.run_combination_with_mlflow, models_nicknames, seeds_models, task_ids,
+                                 task_folds, task_repeats, task_samples, dataset_names_or_ids, seeds_datasets, folds,
+                                 **extra_params)
+            futures = [first_future] + futures
         else:
             progress_bar = tqdm(combinations, desc='Combinations completed')
             for combination in progress_bar:
-                combination_success = self.run_combination_with_mlflow(n_jobs=self.n_jobs, **extra_params,
-                                                                       **dict(zip(combination_keys, combination)))
+                combination_success = self.run_combination_with_mlflow(*combination, **extra_params)
                 if combination_success is True:
                     n_combinations_successfully_completed += 1
                 elif combination_success is False:
