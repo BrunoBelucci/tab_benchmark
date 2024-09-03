@@ -161,9 +161,12 @@ class BaseExperiment:
                                       'number of parallel tasks that will be run is n_workers * n_processes. Note that'
                                       'if we want to run a model with n_jobs > 1, we will ask for n_jobs * n_processes'
                                       'cores in the cluster so each process will have access to n_jobs cores. '
-                                      'Obs: In the CEREMADE cluster the minimum number of cores that can be requested'
-                                      'are 2, so it is a good idea to set at least n_processes to 2 or n_jobs to 2 '
-                                      'if we want to use all the resources available.')
+                                      'Obs.: In the CEREMADE cluster the minimum number of cores that can be requested'
+                                      'are 2, so it is a good idea to set at least n_jobs to 2 if we want to use all '
+                                      'the resources available. It is a BAD IDEA to set n_processes to 2 '
+                                      'and n_jobs to 1 to try to share the same core for two different models, '
+                                      'the training becomes unstable, probably because we are sharing threads in the'
+                                      'same core.')
         self.parser.add_argument('--dask_memory', type=str, default=self.dask_memory)
         self.parser.add_argument('--dask_job_extra_directives', type=str, default=self.dask_job_extra_directives)
         self.parser.add_argument('--dask_address', type=str, default=self.dask_address)
