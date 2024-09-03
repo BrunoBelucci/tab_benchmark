@@ -11,6 +11,7 @@ import numpy as np
 import ray
 from distributed import WorkerPlugin, Worker, Client
 import dask
+from oslo_concurrency import lockutils
 from tab_benchmark.benchmark.utils import treat_mlflow, get_model, load_openml_task, fit_model, evaluate_model, \
     load_own_task
 from tab_benchmark.benchmark.benchmarked_models import models_dict as benchmarked_models_dict
@@ -468,6 +469,7 @@ class BaseExperiment:
             else:
                 return True
 
+    @lockutils.synchronized('run_combination_with_mlflow')
     def run_combination_with_mlflow(self, n_jobs=1, create_validation_set=False,
                                     model_params=None, fit_params=None,
                                     parent_run_uuid=None, is_openml=True, return_results=False, **kwargs):

@@ -33,5 +33,6 @@ dependencies:
   - pip
   - pip:
     - openml
+    - oslo.concurrency
     - ray[tune]
     - -e .

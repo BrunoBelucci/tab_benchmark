@@ -4,6 +4,7 @@ import time
 from pathlib import Path
 from typing import Optional
 import ray
+from oslo_concurrency import lockutils
 from ray.tune import Tuner, randint
 import mlflow
 from tab_benchmark.benchmark.base_experiment import BaseExperiment, log_and_print_msg
@@ -202,6 +203,7 @@ class HPOExperiment(BaseExperiment):
         if return_results:
             return results
 
+    @lockutils.synchronized('run_combination_with_mlflow_hpo')
     def run_combination_with_mlflow(self, seed_model=0, n_jobs=1, create_validation_set=True,
                                     model_params=None,
                                     parent_run_uuid=None, is_openml=True, return_results=False, **kwargs):
