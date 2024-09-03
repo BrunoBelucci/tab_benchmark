@@ -1,5 +1,5 @@
 from __future__ import annotations
-
+import re
 from copy import deepcopy
 from typing import Optional, Sequence
 import numpy as np
@@ -59,7 +59,9 @@ def reorder_columns(X, orderly_features_names):
             # 'feature_name_i' where i is the index of the category
             index_of_feature = orderly_features_without_dropped.index(feature)
             orderly_features_without_dropped.remove(feature)
-            one_hot_features = [col for col in X.columns if col.startswith(f'{feature}_')]
+            # the regex ^{re.escape(feature)}_\d+$ matches exactly the format 'feature_i' where i is an integer
+            # obviously it was chatgpt that gave me, so if anything does not work as expected, check this line
+            one_hot_features = [col for col in X.columns if bool(re.match(rf"^{re.escape(feature)}_\d+$", col))]
             orderly_features_without_dropped[index_of_feature:index_of_feature] = one_hot_features
     return X[orderly_features_without_dropped]
 
