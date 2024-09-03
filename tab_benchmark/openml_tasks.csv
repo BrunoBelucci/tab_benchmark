@@ -231,7 +231,7 @@ task_id,dataset_id,dataset_name,task_type,task_name,target_name,evaluation_type,
 362104,46299,electrical_grid_stability_simulated_regression,Supervised Regression,regression,stab,crossvalidation,10,10000.0,13.0,0.0,13.0,0.0,0.0,1,https://www.openml.org/d/46299
 361617,44960,energy_efficiency,Supervised Regression,regression,heating_load,crossvalidation,10,768.0,9.0,0.0,9.0,0.0,0.0,1,https://www.openml.org/d/44960
 361272,45012,fifa,Supervised Regression,regression,wage_eur,crossvalidation,10,19178.0,29.0,1.0,28.0,0.0,0.0,1,https://www.openml.org/d/45012
-361618,44962,forest_fires,Supervised Regression,regression,area,crossvalidation,10,517.0,13.0,0.0,11.0,0.0,0.0,1,https://www.openml.org/d/44962
+362115,44962,forest_fires_cat,Supervised Regression,regression,area,crossvalidation,10,517.0,13.0,2.0,11.0,0.0,0.0,1,https://www.openml.org/d/44962
 361268,44992,fps_benchmark,Supervised Regression,regression,FPS,crossvalidation,10,24624.0,44.0,13.0,31.0,69696.0,24624.0,1,https://www.openml.org/d/44992
 361243,44965,geographical_origin_of_music,Supervised Regression,regression,latitude,crossvalidation,10,1059.0,117.0,0.0,117.0,0.0,0.0,1,https://www.openml.org/d/44965
 361251,44973,grid_stability,Supervised Regression,regression,stab,crossvalidation,10,10000.0,13.0,0.0,13.0,0.0,0.0,1,https://www.openml.org/d/44973
