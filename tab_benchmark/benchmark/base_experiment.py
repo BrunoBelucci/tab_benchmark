@@ -266,8 +266,11 @@ class BaseExperiment:
                             level=logging.INFO, filemode=filemode)
 
     def get_model(self, model_nickname, seed_model, model_params=None, n_jobs=1,
-                  logging_to_mlflow=False, create_validation_set=False, output_dir=None, unique_params=None):
-        unique_params = unique_params.copy() if unique_params is not None else {}
+                  logging_to_mlflow=False, create_validation_set=False, output_dir=None, data_return=None):
+        if data_return:
+            unique_params = data_return.get('unique_params', None).copy()
+        else:
+            unique_params = None
         models_dict = self.models_dict.copy()
         if output_dir is None:
             # if logging to mlflow we use the mlflow artifact directory
@@ -308,6 +311,112 @@ class BaseExperiment:
             if model_nickname.find('TabBenchmark') != -1:
                 mlflow.log_param('model_name', model_nickname[len('TabBenchmark'):])
         return model
+
+    def load_data(self, is_openml=True, task_id=None, task_fold=None, task_repeat=None, task_sample=None,
+                  dataset_name_or_id=None, seed_dataset=None, fold=None,
+                  create_validation_set=False, logging_to_mlflow=False):
+        if is_openml:
+            unique_params = dict(task_id=task_id, task_repeat=task_repeat, task_sample=task_sample,
+                                 task_fold=task_fold)
+            task_id = task_id
+            task_repeat = task_repeat
+            task_sample = task_sample
+            task_fold = task_fold
+            (X, y, cat_ind, att_names, cat_features_names, cat_dims, task_name, n_classes, train_indices,
+             test_indices, validation_indices) = (
+                load_openml_task(task_id, task_repeat, task_sample, task_fold,
+                                 create_validation_set=create_validation_set, logging_to_mlflow=logging_to_mlflow)
+            )
+        else:
+            unique_params = dict(dataset_name_or_id=dataset_name_or_id, seed_dataset=seed_dataset, fold=fold)
+            dataset_name_or_id = dataset_name_or_id
+            seed_dataset = seed_dataset
+            fold = fold
+            resample_strategy = self.resample_strategy
+            n_folds = self.k_folds
+            pct_test = self.pct_test
+            validation_resample_strategy = self.validation_resample_strategy
+            pct_validation = self.pct_validation
+            (X, y, cat_ind, att_names, cat_features_names, cat_dims, task_name, n_classes, train_indices,
+             test_indices, validation_indices) = (
+                load_own_task(dataset_name_or_id, seed_dataset, resample_strategy, n_folds, pct_test, fold,
+                              create_validation_set=create_validation_set,
+                              validation_resample_strategy=validation_resample_strategy,
+                              pct_validation=pct_validation, logging_to_mlflow=logging_to_mlflow)
+            )
+        data_return = dict(X=X, y=y, cat_ind=cat_ind, att_names=att_names, cat_features_names=cat_features_names,
+                           cat_dims=cat_dims, task_name=task_name, n_classes=n_classes, train_indices=train_indices,
+                           test_indices=test_indices, validation_indices=validation_indices,
+                           unique_params=unique_params)
+        return data_return
+
+    def get_metrics(self, data_return):
+        task_name = data_return['task_name']
+        if task_name in ('classification', 'binary_classification'):
+            metrics = ['logloss', 'auc']
+            default_metric = 'logloss'
+        elif task_name == 'regression':
+            metrics = ['rmse', 'r2_score']
+            default_metric = 'rmse'
+        else:
+            raise NotImplementedError
+        return metrics, default_metric
+
+    def fit_model(self, model, data_return, **fit_params):
+        cat_features_names = data_return['cat_features_names']
+        X = data_return['X']
+        y = data_return['y']
+        task_name = data_return['task_name']
+        cat_ind = data_return['cat_ind']
+        att_names = data_return['att_names']
+        cat_dims = data_return['cat_dims']
+        n_classes = data_return['n_classes']
+        train_indices = data_return['train_indices']
+        test_indices = data_return['test_indices']
+        validation_indices = data_return['validation_indices']
+        # we will already convert categorical features to codes to avoid missing categories when splitting the data
+        # one can argue if the model alone should account for this (not observing all the categories in the training
+        # set), but for many applications this is fine and if we really want to do this we could simply always add
+        # a category for missing values
+        for cat_feature in cat_features_names:
+            X[cat_feature] = X[cat_feature].cat.codes
+            X[cat_feature] = X[cat_feature].replace(-1, np.nan).astype('category')
+        if task_name in ('classification', 'binary_classification'):
+            if y.dtypes != 'category':
+                y = y.astype('category')
+            y = y.cat.codes
+            y = y.replace(-1, np.nan).astype('category')
+        # if we are just using ordinal encoding, we can disable it
+        # otherwise the encoder or the model must take care of possible missing categories
+        if model.categorical_encoder == 'ordinal':
+            model.categorical_encoder = None  # we already encoded the categorical features
+        if model.categorical_target_encoder == 'ordinal':
+            model.categorical_target_encoder = None  # we already encoded the categorical target
+        # fit model
+        # data here is already preprocessed
+        model, X_train, y_train, X_test, y_test, X_validation, y_validation = fit_model(
+            model, X, y, cat_ind, att_names, cat_dims, n_classes, task_name, train_indices, test_indices,
+            validation_indices,
+            **fit_params)
+        fit_return = dict(model=model, X_train=X_train, y_train=y_train, X_test=X_test, y_test=y_test,
+                          X_validation=X_validation, y_validation=y_validation)
+        return fit_return
+
+    def evaluate_model(self, metrics, default_metric, fit_return, data_return, create_validation_set=False,
+                       logging_to_mlflow=False):
+        model = fit_return['model']
+        X_test = fit_return['X_test']
+        y_test = fit_return['y_test']
+        n_classes = data_return['n_classes']
+        X_validation = fit_return['X_validation']
+        y_validation = fit_return['y_validation']
+        evaluate_results = evaluate_model(model, (X_test, y_test), 'test', metrics, default_metric, n_classes,
+                                          self.error_score, logging_to_mlflow)
+        if create_validation_set:
+            validation_results = evaluate_model(model, (X_validation, y_validation), 'validation', metrics,
+                                                default_metric, n_classes, self.error_score, logging_to_mlflow)
+            evaluate_results.update(validation_results)
+        return evaluate_results
 
     def run_combination(self, model_nickname, seed_model=0,
                         task_id=None, task_fold=None, task_repeat=None, task_sample=None,
@@ -364,91 +473,30 @@ class BaseExperiment:
             model_nickname = model_nickname
             seed_model = seed_model
             # load data
-            if is_openml:
-                unique_params = dict(task_id=task_id, task_repeat=task_repeat, task_sample=task_sample,
-                                     task_fold=task_fold)
-                task_id = task_id
-                task_repeat = task_repeat
-                task_sample = task_sample
-                task_fold = task_fold
-                (X, y, cat_ind, att_names, cat_features_names, cat_dims, task_name, n_classes, train_indices,
-                 test_indices, validation_indices) = (
-                    load_openml_task(task_id, task_repeat, task_sample, task_fold,
-                                     create_validation_set=create_validation_set, logging_to_mlflow=logging_to_mlflow)
-                )
-            else:
-                unique_params = dict(dataset_name_or_id=dataset_name_or_id, seed_dataset=seed_dataset, fold=fold)
-                dataset_name_or_id = dataset_name_or_id
-                seed_dataset = seed_dataset
-                fold = fold
-                resample_strategy = self.resample_strategy
-                n_folds = self.k_folds
-                pct_test = self.pct_test
-                validation_resample_strategy = self.validation_resample_strategy
-                pct_validation = self.pct_validation
-                (X, y, cat_ind, att_names, cat_features_names, cat_dims, task_name, n_classes, train_indices,
-                 test_indices, validation_indices) = (
-                    load_own_task(dataset_name_or_id, seed_dataset, resample_strategy, n_folds, pct_test, fold,
-                                  create_validation_set=create_validation_set,
-                                  validation_resample_strategy=validation_resample_strategy,
-                                  pct_validation=pct_validation, logging_to_mlflow=logging_to_mlflow)
-                )
-
-            results.update(dict(task_name=task_name, cat_features_names=cat_features_names, n_classes=n_classes,
-                                cat_dims=cat_dims))
+            data_return = self.load_data(is_openml=is_openml, task_id=task_id, task_fold=task_fold,
+                                         task_repeat=task_repeat, task_sample=task_sample,
+                                         dataset_name_or_id=dataset_name_or_id, seed_dataset=seed_dataset, fold=fold)
+            results.update(data_return)
 
             # load model
             model = self.get_model(model_nickname, seed_model, model_params=model_params,
                                    n_jobs=n_jobs, logging_to_mlflow=logging_to_mlflow,
-                                   create_validation_set=create_validation_set, unique_params=unique_params)
+                                   create_validation_set=create_validation_set, data_return=data_return)
             results['model'] = model
 
             # get metrics
-            if task_name in ('classification', 'binary_classification'):
-                metrics = ['logloss', 'auc']
-                default_metric = 'logloss'
-            elif task_name == 'regression':
-                metrics = ['rmse', 'r2_score']
-                default_metric = 'rmse'
-            else:
-                raise NotImplementedError
-            results.update(dict(metrics=metrics, default_metric=default_metric, n_classes=n_classes))
+            metrics, default_metric = self.get_metrics(data_return)
+            results['metrics'] = metrics
+            results['default_metric'] = default_metric
 
-            # we will already convert categorical features to codes to avoid missing categories when splitting the data
-            # one can argue if the model alone should account for this (not observing all the categories in the training
-            # set), but for many applications this is fine and if we really want to do this we could simply always add
-            # a category for missing values
-            for cat_feature in cat_features_names:
-                X[cat_feature] = X[cat_feature].cat.codes
-                X[cat_feature] = X[cat_feature].replace(-1, np.nan).astype('category')
-            if task_name in ('classification', 'binary_classification'):
-                if y.dtypes != 'category':
-                    y = y.astype('category')
-                y = y.cat.codes
-                y = y.replace(-1, np.nan).astype('category')
-            # if we are just using ordinal encoding, we can disable it
-            # otherwise the encoder or the model must take care of possible missing categories
-            if model.categorical_encoder == 'ordinal':
-                model.categorical_encoder = None  # we already encoded the categorical features
-            if model.categorical_target_encoder == 'ordinal':
-                model.categorical_target_encoder = None  # we already encoded the categorical target
             # fit model
-            # data here is already preprocessed
-            model, X_train, y_train, X_test, y_test, X_validation, y_validation = fit_model(
-                model, X, y, cat_ind, att_names, cat_dims, n_classes, task_name, train_indices, test_indices,
-                validation_indices,
-                **fit_params)
-            results.update(dict(model=model, X_train=X_train, y_train=y_train, X_test=X_test, y_test=y_test,
-                                X_validation=X_validation, y_validation=y_validation))
+            fit_return = self.fit_model(model, data_return, **fit_params)
+            results.update(fit_return)
 
             # evaluate model
-            test_results = evaluate_model(model, (X_test, y_test), 'test', metrics, default_metric, n_classes,
-                                          self.error_score, logging_to_mlflow)
-            results.update(test_results)
-            if create_validation_set:
-                validation_results = evaluate_model(model, (X_validation, y_validation), 'validation', metrics,
-                                                    default_metric, n_classes, self.error_score, logging_to_mlflow)
-                results.update(validation_results)
+            evaluate_return = self.evaluate_model(metrics, default_metric, fit_return, data_return,
+                                                  create_validation_set, logging_to_mlflow)
+            results.update(evaluate_return)
 
             if logging_to_mlflow:
                 mlflow.log_param('was_evaluated', True)
@@ -458,21 +506,6 @@ class BaseExperiment:
                     mlflow.log_metric('max_cuda_memory_reserved', max_memory_reserved() / (1024 ** 2))  # in MB
                     mlflow.log_metric('max_cuda_memory_allocated', max_memory_allocated() / (1024 ** 2))  # in MB
 
-            results.update({
-                'model': model,
-                'task_name': task_name,
-                'X_train': X_train,
-                'y_train': y_train,
-                'X_test': X_test,
-                'y_test': y_test,
-                'X_validation': X_validation,
-                'y_validation': y_validation,
-                'cat_features_names': [att_names[i] for i, value in enumerate(cat_ind) if value is True],
-                'n_classes': n_classes,
-                'metrics': metrics,
-                'default_metric': default_metric,
-                'was_evaluated': True,
-            })
         except Exception as exception:
             if logging_to_mlflow:
                 mlflow.log_param('EXCEPTION', str(exception))
