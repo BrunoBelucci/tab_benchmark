@@ -734,7 +734,7 @@ class BaseExperiment:
 
         return total_combinations, n_combinations_successfully_completed, n_combinations_failed, n_combinations_none
 
-    def get_kwargs_to_log_experient(self):
+    def get_kwargs_to_log_experiment(self):
         kwargs_to_log = dict(experiment_name=self.experiment_name, models_nickname=self.models_nickname,
                              seeds_model=self.seeds_model)
         if self.using_own_resampling:
@@ -758,7 +758,7 @@ class BaseExperiment:
         self.output_dir = self.output_dir / self.experiment_name
         os.makedirs(self.output_dir, exist_ok=True)
         self.setup_logger()
-        kwargs_to_log = self.get_kwargs_to_log_experient()
+        kwargs_to_log = self.get_kwargs_to_log_experiment()
         start_time = time.perf_counter()
         log_and_print_msg('Starting experiment...', **kwargs_to_log)
         if self.dask_cluster_type is not None:
