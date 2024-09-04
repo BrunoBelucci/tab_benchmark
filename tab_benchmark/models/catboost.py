@@ -143,7 +143,7 @@ def before_fit_catboost(self, X, y, task=None, cat_features=None, cat_dims=None,
         self.set_params(**{'early_stopping_rounds': self.early_stopping_patience})
         # we will add a parameters to allow saving snapshots (if they are not already being used)
         save_snapshot = fit_arguments.get('save_snapshot', True)
-        snapshot_file = fit_arguments.get('snapshot_file', 'model-snapshot_0.cbm')
+        snapshot_file = fit_arguments.get('snapshot_file', 'model-snapshot.cbm')
         snapshot_interval = fit_arguments.get('snapshot_interval', 300)
         fit_arguments['save_snapshot'] = save_snapshot
         fit_arguments['snapshot_file'] = snapshot_file
