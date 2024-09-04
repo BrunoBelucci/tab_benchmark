@@ -273,7 +273,7 @@ class BaseExperiment:
             # if logging to mlflow we use the mlflow artifact directory
             if logging_to_mlflow:
                 # this is already unique
-                output_dir = mlflow.get_artifact_uri()
+                output_dir = Path(mlflow.get_artifact_uri())
             else:
                 # if we only save the model in the output_dir we will have some problems when running in parallel
                 # because the workers will try to save the model in the same directory, so we must create a unique
