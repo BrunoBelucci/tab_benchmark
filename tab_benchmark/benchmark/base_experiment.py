@@ -75,7 +75,6 @@ class BaseExperiment:
             dask_memory=None,
             dask_job_extra_directives=None,
             dask_address=None,
-            wait_between_submissions=1,
             # gpu specific
             n_gpus=0,
     ):
@@ -109,7 +108,6 @@ class BaseExperiment:
         self.dask_job_extra_directives = dask_job_extra_directives
         self.dask_address = dask_address
         self.n_gpus = n_gpus
-        self.wait_between_submissions = wait_between_submissions
 
         self.experiment_name = experiment_name
         self.log_dir = log_dir
@@ -170,7 +168,6 @@ class BaseExperiment:
         self.parser.add_argument('--dask_memory', type=str, default=self.dask_memory)
         self.parser.add_argument('--dask_job_extra_directives', type=str, default=self.dask_job_extra_directives)
         self.parser.add_argument('--dask_address', type=str, default=self.dask_address)
-        self.parser.add_argument('--wait_between_submissions', type=int, default=self.wait_between_submissions)
         self.parser.add_argument('--n_gpus', type=int, default=self.n_gpus,
                                  help='Number of GPUs to request in the case we are using a distributed cluster '
                                       '(SLURM for example). This is the total number of GPUs that will be requested, '
@@ -222,7 +219,6 @@ class BaseExperiment:
         self.n_workers = args.n_workers
         self.n_processes = args.n_processes
         self.dask_memory = args.dask_memory
-        self.wait_between_submissions = args.wait_between_submissions
         dask_job_extra_directives = args.dask_job_extra_directives
         # parse dask_job_extra_directives
         if isinstance(dask_job_extra_directives, str):
@@ -648,9 +644,9 @@ class BaseExperiment:
         if client is not None:
             log_and_print_msg(f'{total_combinations} models are being trained and evaluated in parallel, '
                               f'check the logs for real time information. We will display information about the '
-                              f'completion of the tasks right after sending all the tasks to the cluster.'
-                              f'Note that this can take a while if a lot of tasks are being submitted.'
-                              f'You can check the dask dashboard to get more information about the progress and'
+                              f'completion of the tasks right after sending all the tasks to the cluster. '
+                              f'Note that this can take a while if a lot of tasks are being submitted. '
+                              f'You can check the dask dashboard to get more information about the progress and '
                               f'the workers.')
             models_nicknames = [combination[0] for combination in combinations]
             seeds_models = [combination[1] for combination in combinations]
