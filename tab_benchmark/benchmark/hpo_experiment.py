@@ -52,9 +52,14 @@ class HPOExperiment(BaseExperiment):
         self.retrain_best_model = args.retrain_best_model
         self.max_concurrent = args.max_concurrent
 
-    def get_model(self, model_nickname, seed_model, model_params=None, n_jobs=1,
-                  logging_to_mlflow=False, create_validation_set=False, output_dir: Optional[Path] = None,
-                  unique_params=None):
+    def get_model(self, model_params=None, n_jobs=1,
+                  logging_to_mlflow=False, create_validation_set=False, output_dir=None, data_return=None, **kwargs):
+        model_nickname = kwargs.get('model_nickname')
+        seed_model = kwargs.get('seed_model')
+        if data_return:
+            data_params = data_return.get('data_params', None).copy()
+        else:
+            data_params = None
         if output_dir is None:
             # if logging to mlflow we use the mlflow artifact directory
             if logging_to_mlflow:
@@ -65,8 +70,8 @@ class HPOExperiment(BaseExperiment):
                 # if we only save the model in the output_dir we will have some problems when running in parallel
                 # because the workers will try to save the model in the same directory, so we must create a unique
                 # directory for each combination model/dataset
-                if unique_params is not None:
-                    unique_name = '_'.join([f'{k}={v}' for k, v in unique_params.items()])
+                if data_params is not None:
+                    unique_name = '_'.join([f'{k}={v}' for k, v in data_params.items()])
                 else:
                     # not sure, but I think it will generate a true random number and even be thread safe
                     unique_name = f'{SystemRandom().randint(0, 1000000):06d}'
@@ -84,8 +89,8 @@ class HPOExperiment(BaseExperiment):
                 output_dir = Path.cwd() / unique_name
             os.makedirs(output_dir, exist_ok=True)
             # Else we use the default output_dir (artifact location if mlflow or self.output_dir)
-        return super().get_model(model_nickname, seed_model, model_params, n_jobs, logging_to_mlflow,
-                                 create_validation_set, output_dir, unique_params)
+        return super().get_model(model_params, n_jobs, logging_to_mlflow,
+                                 create_validation_set, output_dir, data_return, **kwargs)
 
     def get_training_fn_for_hpo(self, is_openml=True):
         def training_fn(config):
@@ -104,15 +109,13 @@ class HPOExperiment(BaseExperiment):
 
         return training_fn
 
-    def run_combination_hpo(self, model_nickname, seed_model=0,
-                            task_id=None, task_fold=None, task_repeat=None, task_sample=None,
-                            dataset_name_or_id=None, seed_dataset=None, fold=None,
+    def run_combination_hpo(self,
                             n_jobs=1, create_validation_set=True,
                             model_params=None, is_openml=True, logging_to_mlflow=False,
                             fit_params=None, return_results=False, retrain_best_model=False, **kwargs):
+        model_nickname = kwargs.pop('model_nickname')
+        seed_model = kwargs.pop('seed_model')
         models_dict = kwargs.pop('models_dict', self.models_dict)
-        mlflow_tracking_uri = kwargs.pop('mlflow_tracking_uri', self.mlflow_tracking_uri)
-        experiment_name = kwargs.pop('experiment_name', self.experiment_name)
         parent_run_uuid = kwargs.pop('parent_run_uuid', None)
         search_algorithm_str = kwargs.pop('search_algorithm', self.search_algorithm)
         trial_scheduler_str = kwargs.pop('trial_scheduler', self.trial_scheduler)
@@ -121,7 +124,7 @@ class HPOExperiment(BaseExperiment):
         timeout_trial = kwargs.pop('timeout_trial', self.timeout_trial)
         max_concurrent = kwargs.pop('max_concurrent', self.max_concurrent)
         if logging_to_mlflow:
-            storage_path = mlflow.get_artifact_uri()
+            storage_path = Path(mlflow.get_artifact_uri())
         else:
             storage_path = self.output_dir
         metric = 'validation_default'
@@ -149,12 +152,9 @@ class HPOExperiment(BaseExperiment):
             fit_params=fit_params,
             model_nickname=model_nickname,
         )
-        param_space.update(dict(task_id=task_id, task_fold=task_fold, task_repeat=task_repeat, task_sample=task_sample,
-                                dataset_name_or_id=dataset_name_or_id, seed_dataset=seed_dataset, fold=fold, **kwargs))
-        default_param_space.update(dict(task_id=task_id, task_fold=task_fold, task_repeat=task_repeat,
-                                        task_sample=task_sample,
-                                        dataset_name_or_id=dataset_name_or_id, seed_dataset=seed_dataset, fold=fold,
-                                        **kwargs))
+        data_params = kwargs.copy()  # hopefully it only rest them
+        param_space.update(**data_params)
+        default_param_space.update(**data_params)
         if issubclass(model_cls, DNNModel):
             max_t = early_stopping_patience_dnn
         else:
@@ -236,12 +236,10 @@ class HPOExperiment(BaseExperiment):
             return results
 
     @lockutils.synchronized('run_combination_with_mlflow_hpo')
-    def run_combination_with_mlflow(self, model_nickname, seed_model=0,
-                                    task_id=None, task_fold=None, task_repeat=None, task_sample=None,
-                                    dataset_name_or_id=None, seed_dataset=None, fold=None,
-                                    n_jobs=1, create_validation_set=True,
-                                    model_params=None, fit_params=None,
-                                    parent_run_uuid=None, is_openml=True, return_results=False, **kwargs):
+    def run_combination_with_mlflow(self, *args,
+                                    n_jobs=1, create_validation_set=False,
+                                    model_params=None, logging_to_mlflow=False,
+                                    fit_params=None, return_results=False, parent_run_uuid=None, **kwargs):
         # setup logger to local dir on dask worker (will not have effect if running from main)
         self.log_dir_dask = Path.cwd() / self.log_dir
         self.setup_logger(log_dir=self.log_dir_dask, filemode='w')
@@ -250,21 +248,24 @@ class HPOExperiment(BaseExperiment):
         experiment_name = kwargs.pop('experiment_name', self.experiment_name)
         mlflow_tracking_uri = kwargs.pop('mlflow_tracking_uri', self.mlflow_tracking_uri)
         check_if_exists = kwargs.pop('check_if_exists', self.check_if_exists)
-        search_algorithm = kwargs.pop('search_algorithm', self.search_algorithm)
-        trial_scheduler = kwargs.pop('trial_scheduler', self.trial_scheduler)
-        n_trials = kwargs.pop('n_trials', self.n_trials)
-        timeout_experiment = kwargs.pop('timeout_experiment', self.timeout_experiment)
-        timeout_trial = kwargs.pop('timeout_trial', self.timeout_trial)
+        search_algorithm = kwargs.get('search_algorithm', self.search_algorithm)
+        trial_scheduler = kwargs.get('trial_scheduler', self.trial_scheduler)
+        n_trials = kwargs.get('n_trials', self.n_trials)
+        timeout_experiment = kwargs.get('timeout_experiment', self.timeout_experiment)
+        timeout_trial = kwargs.get('timeout_trial', self.timeout_trial)
+        max_concurrent = kwargs.get('max_concurrent', self.max_concurrent)
         retrain_best_model = kwargs.pop('retrain_best_model', self.retrain_best_model)
-        unique_params = dict(model_params=model_params, fit_params=fit_params,
+        unique_params = self.combination_args_to_kwargs(*args, **kwargs)
+        unique_params.update(model_params=model_params, fit_params=fit_params,
                              search_algorithm=search_algorithm, trial_scheduler=trial_scheduler, n_trials=n_trials,
                              timeout_experiment=timeout_experiment, timeout_trial=timeout_trial,
-                             model_nickname=model_nickname, seed_model=seed_model,
-                             task_id=task_id, task_repeat=task_repeat, task_sample=task_sample,
-                             dataset_name_or_id=dataset_name_or_id, seed_dataset=seed_dataset, fold=fold,
+                             max_concurrent=max_concurrent,
                              **kwargs)
         possible_existent_run, logging_to_mlflow = treat_mlflow(experiment_name, mlflow_tracking_uri, check_if_exists,
                                                                 **unique_params)
+        unique_params.pop('model_params')
+        unique_params.pop('fit_params')
+        unique_params.pop('create_validation_set')
 
         if possible_existent_run is not None:
             log_and_print_msg('Run already exists on MLflow. Skipping...')
@@ -294,21 +295,21 @@ class HPOExperiment(BaseExperiment):
                 parent_run_uuid = run.info.run_uuid
                 mlflow.log_params(flatten_dict(unique_params))
                 mlflow.log_param('git_hash', get_git_revision_hash())
-                return self.run_combination_hpo(seed_model=seed_model, n_jobs=n_jobs,
+                return self.run_combination_hpo(n_jobs=n_jobs,
                                                 create_validation_set=create_validation_set,
                                                 model_params=model_params,
-                                                parent_run_uuid=parent_run_uuid, is_openml=is_openml,
+                                                parent_run_uuid=parent_run_uuid,
                                                 logging_to_mlflow=logging_to_mlflow,
                                                 retrain_best_model=retrain_best_model, return_results=return_results,
-                                                **kwargs)
+                                                **unique_params)
         else:
-            return self.run_combination_hpo(seed_model=seed_model, n_jobs=n_jobs,
+            return self.run_combination_hpo(n_jobs=n_jobs,
                                             create_validation_set=create_validation_set,
                                             model_params=model_params,
-                                            parent_run_uuid=parent_run_uuid, is_openml=is_openml,
+                                            parent_run_uuid=parent_run_uuid,
                                             logging_to_mlflow=logging_to_mlflow,
                                             retrain_best_model=retrain_best_model, return_results=return_results,
-                                            **kwargs)
+                                            **unique_params)
 
 
 if __name__ == '__main__':
