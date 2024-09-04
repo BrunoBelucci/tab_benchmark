@@ -60,6 +60,7 @@ class HPOExperiment(BaseExperiment):
             if logging_to_mlflow:
                 # this is already unique
                 output_dir = Path(mlflow.get_artifact_uri())
+                unique_name = output_dir.parts[-2]
             else:
                 # if we only save the model in the output_dir we will have some problems when running in parallel
                 # because the workers will try to save the model in the same directory, so we must create a unique
@@ -73,14 +74,14 @@ class HPOExperiment(BaseExperiment):
             # if running on a worker, we use the worker's local directory
             try:
                 worker = get_worker()
-                output_dir = Path(worker.local_directory) / output_dir.name
+                output_dir = Path(worker.local_directory) / unique_name
             except ValueError:
                 # if running on the main process, we use the output_dir
                 output_dir = output_dir
 
             if ray.train._internal.session._get_session():
                 # When doing HPO with ray we want the output_dir to be configured relative to the ray storage
-                output_dir = Path.cwd() / output_dir.name
+                output_dir = Path.cwd() / unique_name
             os.makedirs(output_dir, exist_ok=True)
             # Else we use the default output_dir (artifact location if mlflow or self.output_dir)
         return super().get_model(model_nickname, seed_model, model_params, n_jobs, logging_to_mlflow,
