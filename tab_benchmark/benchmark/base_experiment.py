@@ -638,7 +638,7 @@ class BaseExperiment:
             # (model_nickname, seed_model, task_id, task_fold, task_repeat, task_sample, dataset_name_or_id,
             # seed_dataset, fold)
             combinations = list(product(self.models_nickname, self.seeds_model, self.tasks_ids, self.task_folds,
-                                        self.task_repeats, self.task_samples, [None], [None], [None]))
+                                        self.task_repeats, self.task_samples, [None], [None], [None]))more
             extra_params = dict(is_openml=True, n_jobs=self.n_jobs)
 
         total_combinations = len(combinations)
