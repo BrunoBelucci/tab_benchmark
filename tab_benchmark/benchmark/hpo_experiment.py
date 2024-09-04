@@ -2,8 +2,10 @@ import argparse
 import os
 import time
 from pathlib import Path
+from random import SystemRandom
 from typing import Optional
 import ray
+from distributed import get_worker
 from oslo_concurrency import lockutils
 from ray.tune import Tuner, randint
 import mlflow
@@ -51,15 +53,38 @@ class HPOExperiment(BaseExperiment):
         self.max_concurrent = args.max_concurrent
 
     def get_model(self, model_nickname, seed_model, model_params=None, n_jobs=1,
-                  logging_to_mlflow=False, create_validation_set=False, output_dir: Optional[Path] = None):
+                  logging_to_mlflow=False, create_validation_set=False, output_dir: Optional[Path] = None,
+                  unique_params=None):
         if output_dir is None:
+            # if logging to mlflow we use the mlflow artifact directory
+            if logging_to_mlflow:
+                # this is already unique
+                output_dir = mlflow.get_artifact_uri()
+            else:
+                # if we only save the model in the output_dir we will have some problems when running in parallel
+                # because the workers will try to save the model in the same directory, so we must create a unique
+                # directory for each combination model/dataset
+                if unique_params is not None:
+                    unique_name = '_'.join([f'{k}={v}' for k, v in unique_params.items()])
+                else:
+                    # not sure, but I think it will generate a true random number and even be thread safe
+                    unique_name = f'{SystemRandom().randint(0, 1000000):06d}'
+                output_dir = self.output_dir / f'{model_nickname}_{unique_name}'
+            # if running on a worker, we use the worker's local directory
+            try:
+                worker = get_worker()
+                output_dir = Path(worker.local_directory) / output_dir.name
+            except ValueError:
+                # if running on the main process, we use the output_dir
+                output_dir = output_dir
+
             if ray.train._internal.session._get_session():
                 # When doing HPO with ray we want the output_dir to be configured relative to the ray storage
-                output_dir = Path.cwd() / self.output_dir.name
-                os.makedirs(output_dir, exist_ok=True)
+                output_dir = Path.cwd() / output_dir.name
+            os.makedirs(output_dir, exist_ok=True)
             # Else we use the default output_dir (artifact location if mlflow or self.output_dir)
         return super().get_model(model_nickname, seed_model, model_params, n_jobs, logging_to_mlflow,
-                                 create_validation_set, output_dir)
+                                 create_validation_set, output_dir, unique_params)
 
     def get_training_fn_for_hpo(self, is_openml=True):
         def training_fn(config):

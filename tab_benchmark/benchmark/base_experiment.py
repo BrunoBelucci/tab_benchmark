@@ -24,6 +24,7 @@ from torch.cuda import (set_per_process_memory_fraction, max_memory_reserved, ma
                         reset_peak_memory_stats)
 from resource import getrusage, RUSAGE_SELF
 from itertools import product
+from random import SystemRandom
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
@@ -265,16 +266,31 @@ class BaseExperiment:
                             level=logging.INFO, filemode=filemode)
 
     def get_model(self, model_nickname, seed_model, model_params=None, n_jobs=1,
-                  logging_to_mlflow=False, create_validation_set=False, output_dir=None):
+                  logging_to_mlflow=False, create_validation_set=False, output_dir=None, unique_params=None):
+        unique_params = unique_params.copy() if unique_params is not None else {}
         models_dict = self.models_dict.copy()
         if output_dir is None:
+            # if logging to mlflow we use the mlflow artifact directory
+            if logging_to_mlflow:
+                # this is already unique
+                output_dir = mlflow.get_artifact_uri()
+            else:
+                # if we only save the model in the output_dir we will have some problems when running in parallel
+                # because the workers will try to save the model in the same directory, so we must create a unique
+                # directory for each combination model/dataset
+                if unique_params is not None:
+                    unique_name = '_'.join([f'{k}={v}' for k, v in unique_params.items()])
+                else:
+                    # not sure, but I think it will generate a true random number and even be thread safe
+                    unique_name = f'{SystemRandom().randint(0, 1000000):06d}'
+                output_dir = self.output_dir / f'{model_nickname}_{unique_name}'
             # if running on a worker, we use the worker's local directory
             try:
                 worker = get_worker()
-                output_dir = Path(worker.local_directory) / self.output_dir.name
+                output_dir = Path(worker.local_directory) / output_dir.name
             except ValueError:
                 # if running on the main process, we use the output_dir
-                output_dir = self.output_dir
+                output_dir = output_dir
             os.makedirs(output_dir, exist_ok=True)
         model = get_model(model_nickname, seed_model, model_params, models_dict, n_jobs, output_dir=output_dir)
         if create_validation_set:
@@ -348,6 +364,8 @@ class BaseExperiment:
             seed_model = seed_model
             # load data
             if is_openml:
+                unique_params = dict(task_id=task_id, task_repeat=task_repeat, task_sample=task_sample,
+                                     task_fold=task_fold)
                 task_id = task_id
                 task_repeat = task_repeat
                 task_sample = task_sample
@@ -358,6 +376,7 @@ class BaseExperiment:
                                      create_validation_set=create_validation_set, logging_to_mlflow=logging_to_mlflow)
                 )
             else:
+                unique_params = dict(dataset_name_or_id=dataset_name_or_id, seed_dataset=seed_dataset, fold=fold)
                 dataset_name_or_id = dataset_name_or_id
                 seed_dataset = seed_dataset
                 fold = fold
@@ -380,7 +399,7 @@ class BaseExperiment:
             # load model
             model = self.get_model(model_nickname, seed_model, model_params=model_params,
                                    n_jobs=n_jobs, logging_to_mlflow=logging_to_mlflow,
-                                   create_validation_set=create_validation_set)
+                                   create_validation_set=create_validation_set, unique_params=unique_params)
             results['model'] = model
 
             # get metrics
