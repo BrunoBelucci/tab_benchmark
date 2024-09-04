@@ -625,9 +625,11 @@ class BaseExperiment:
                 job_script_prologue = job_script_prologue + ['eval "$(conda shell.bash hook)"',
                                                              'conda activate tab_benchmark']
                 walltime = '364-23:59:59'
+                job_name = f'dask-worker-{self.experiment_name}'
                 cluster = SLURMCluster(cores=cores, memory=self.dask_memory, processes=processes,
                                        job_extra_directives=job_extra_directives,
-                                       job_script_prologue=job_script_prologue, walltime=walltime)
+                                       job_script_prologue=job_script_prologue, walltime=walltime,
+                                       job_name=job_name)
                 log_and_print_msg("Cluster dashboard address", dashboard_address=cluster.dashboard_link)
                 log_and_print_msg(f"Cluster script generated:\n{cluster.job_script()}")
                 cluster.adapt(minimum=processes, maximum=n_workers, minimum_jobs=1, maximum_jobs=n_maximum_jobs)
