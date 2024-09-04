@@ -257,7 +257,7 @@ task_id,dataset_id,dataset_name,task_type,task_name,target_name,evaluation_type,
 362110,46300,relative_location_of_ct,Supervised Regression,regression,reference,crossvalidation,10,53500.0,385.0,0.0,385.0,0.0,0.0,1,https://www.openml.org/d/46300
 361254,44976,sarcos,Supervised Regression,regression,V22,crossvalidation,10,48933.0,22.0,0.0,22.0,0.0,0.0,1,https://www.openml.org/d/44976
 361289,45043,seattlecrime6,Supervised Regression,regression,ReportedTime,crossvalidation,10,52031.0,5.0,2.0,3.0,0.0,0.0,1,https://www.openml.org/d/45043
-362096,46297,seoul_bike_sharing_demand,Supervised Regression,regression,13,crossvalidation,10,8760.0,14.0,3.0,10.0,0.0,0.0,1,https://www.openml.org/d/46297
+362117,46328,seoul_bike_sharing_demand_cat,Supervised Regression,regression,13,crossvalidation,10,8760.0,18.0,4.0,14.0,0.0,0.0,1,https://www.openml.org/d/46328
 362092,46292,servo,Supervised Regression,regression,4,crossvalidation,10,167.0,5.0,2.0,3.0,0.0,0.0,1,https://www.openml.org/d/46292
 362112,45062,shrutime,Supervised Regression,regression,class,crossvalidation,10,10000.0,11.0,6.0,5.0,0.0,0.0,1,https://www.openml.org/d/45062
 362106,41490,slump,Supervised Regression,regression,SLUMP_cm,crossvalidation,10,103.0,10.0,0.0,10.0,0.0,0.0,1,https://www.openml.org/d/41490
