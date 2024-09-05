@@ -648,9 +648,9 @@ class BaseExperiment:
                 resources = {'threads': threads_per_worker}
                 if self.n_gpus > 0:
                     resources['gpus'] = self.n_gpus
-                cluster = LocalCluster(n_workers=0, memory_limit=self.dask_memory,
-                                       threads_per_worker=threads_per_worker)
-                cluster.adapt(minimum=processes, maximum=n_workers, resources=resources)
+                cluster = LocalCluster(n_workers=0, memory_limit=self.dask_memory, processes=False,
+                                       threads_per_worker=threads_per_worker, resources=resources)
+                cluster.adapt(minimum=processes, maximum=n_workers)
             elif cluster_type == 'slurm':
                 if self.n_gpus == 0:
                     # we will submit one job for each worker
@@ -684,11 +684,11 @@ class BaseExperiment:
                                        job_extra_directives=job_extra_directives,
                                        job_script_prologue=job_script_prologue, walltime=walltime,
                                        job_name=job_name, worker_extra_args=worker_extra_args)
-                log_and_print_msg("Cluster dashboard address", dashboard_address=cluster.dashboard_link)
                 log_and_print_msg(f"Cluster script generated:\n{cluster.job_script()}")
                 cluster.adapt(minimum=processes, maximum=n_workers, minimum_jobs=1, maximum_jobs=n_maximum_jobs)
             else:
                 raise ValueError("cluster_type must be either 'local' or 'slurm'.")
+            log_and_print_msg("Cluster dashboard address", dashboard_address=cluster.dashboard_link)
             client = cluster.get_client()
         plugin = LoggingSetter(logging_config={'level': logging.INFO})
         client.register_plugin(plugin)
