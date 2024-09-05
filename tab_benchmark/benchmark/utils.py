@@ -43,12 +43,14 @@ def get_model(model_nickname, seed_model, model_params=None, models_dict=None, n
     model_default_params.update(model_params)
     model = model_class(**model_default_params)
     if hasattr(model, 'n_jobs'):
+        n_jobs = model_params.get('n_jobs', n_jobs)
         if isinstance(model, DNNModel) and n_jobs == 1:
             # set n_jobs to 0 for DNNModel (no parallelism)
             setattr(model, 'n_jobs', 0)
         else:
             setattr(model, 'n_jobs', n_jobs)
     if output_dir is not None:
+        output_dir = model_params.get('output_dir', output_dir)
         if hasattr(model, 'output_dir'):
             setattr(model, 'output_dir', output_dir)
     return model
