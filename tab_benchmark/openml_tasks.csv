@@ -95,7 +95,7 @@ task_id,dataset_id,dataset_name,task_type,task_name,target_name,evaluation_type,
 168337,41159,guillermo,Supervised Classification,binary_classification,class,crossvalidation,10,20000.0,4297.0,1.0,4296.0,0.0,0.0,2,https://www.openml.org/d/41159
 42,43,haberman,Supervised Classification,binary_classification,Survival_status,crossvalidation,10,306.0,4.0,2.0,2.0,0.0,0.0,2,https://www.openml.org/d/43
 14970,1478,har,Supervised Classification,classification,Class,crossvalidation,10,10299.0,562.0,1.0,561.0,0.0,0.0,6,https://www.openml.org/d/1478
-146063,329,hayes-roth,Supervised Classification,classification,class,crossvalidation,10,160.0,5.0,1.0,4.0,0.0,0.0,4,https://www.openml.org/d/329
+362124,46336,hayes-roth_clean,Supervised Classification,classification,class,crossvalidation,10,160.0,5.0,1.0,4.0,0.0,0.0,3,https://www.openml.org/d/46336
 48,49,heart-c,Supervised Classification,classification,num,crossvalidation,10,303.0,14.0,8.0,6.0,7.0,7.0,5,https://www.openml.org/d/49
 50,51,heart-h,Supervised Classification,classification,num,crossvalidation,10,294.0,14.0,8.0,6.0,782.0,293.0,5,https://www.openml.org/d/51
 168329,41169,helena,Supervised Classification,classification,class,crossvalidation,10,65196.0,28.0,1.0,27.0,0.0,0.0,100,https://www.openml.org/d/41169
