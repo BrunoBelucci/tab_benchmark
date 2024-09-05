@@ -25,6 +25,7 @@ from torch.cuda import (set_per_process_memory_fraction, max_memory_reserved, ma
 from resource import getrusage, RUSAGE_SELF
 from itertools import product
 from random import SystemRandom
+import json
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
@@ -53,6 +54,7 @@ class BaseExperiment:
             self,
             # model specific
             models_nickname=None, seeds_models=None, n_jobs=1,
+            models_params=None, fits_params=None,
             # when performing our own resampling
             datasets_names_or_ids=None, seeds_datasets=None,
             resample_strategy='k-fold_cv', k_folds=10, folds=None, pct_test=0.2,
@@ -82,6 +84,8 @@ class BaseExperiment:
         self.models_nickname = models_nickname
         self.seeds_model = seeds_models if seeds_models else [0]
         self.n_jobs = n_jobs
+        self.models_params = models_params if models_params else {}
+        self.fits_params = fits_params if fits_params else {}
 
         # when performing our own resampling0
         self.datasets_names_or_ids = datasets_names_or_ids
@@ -129,6 +133,8 @@ class BaseExperiment:
                                  nargs='*', default=self.models_nickname)
         self.parser.add_argument('--seeds_model', nargs='*', type=int, default=self.seeds_model)
         self.parser.add_argument('--n_jobs', type=int, default=self.n_jobs)
+        self.parser.add_argument('--models_params', type=json.loads, default=self.models_params)
+        self.parser.add_argument('--fits_params', type=json.loads, default=self.fits_params)
         self.parser.add_argument('--error_score', type=str, default=self.error_score)
 
         self.parser.add_argument('--datasets_names_or_ids', nargs='*', choices=self.datasets_names_or_ids,
@@ -186,6 +192,8 @@ class BaseExperiment:
         self.experiment_name = args.experiment_name
         self.models_nickname = args.models_nickname
         self.n_jobs = args.n_jobs
+        self.models_params = args.models_params
+        self.fits_params = args.fits_params
         error_score = args.error_score
         if error_score == 'nan':
             error_score = np.nan
@@ -269,6 +277,7 @@ class BaseExperiment:
                   logging_to_mlflow=False, create_validation_set=False, output_dir=None, data_return=None, **kwargs):
         model_nickname = kwargs.get('model_nickname')
         seed_model = kwargs.get('seed_model')
+        model_params = self.models_params.get(model_nickname, {}).copy()
         if data_return:
             data_params = data_return.get('data_params', None).copy()
         else:
@@ -381,6 +390,7 @@ class BaseExperiment:
         train_indices = data_return['train_indices']
         test_indices = data_return['test_indices']
         validation_indices = data_return['validation_indices']
+        fit_params = self.fits_params.get(kwargs.get('model_nickname'), {}).copy()
         # we will already convert categorical features to codes to avoid missing categories when splitting the data
         # one can argue if the model alone should account for this (not observing all the categories in the training
         # set), but for many applications this is fine and if we really want to do this we could simply always add

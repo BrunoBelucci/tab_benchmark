@@ -62,7 +62,6 @@ def get_recommended_params_dnn(create_search_space_dnn_fn):
         max_epochs=max_epochs_dnn,
         auto_early_stopping=True,
         early_stopping_patience=early_stopping_patience_dnn,
-        n_jobs=0,
     ))
     return default_values_from_search_space
 
