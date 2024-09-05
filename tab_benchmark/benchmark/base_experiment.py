@@ -81,11 +81,12 @@ class BaseExperiment:
             # gpu specific
             n_gpus=0,
     ):
-        self.models_nickname = models_nickname
+        self.models_nickname = models_nickname if models_nickname else []
         self.seeds_model = seeds_models if seeds_models else [0]
         self.n_jobs = n_jobs
-        self.models_params = models_params if models_params else {}
-        self.fits_params = fits_params if fits_params else {}
+
+        self.models_params = self.validate_dict_of_models_params(models_params, self.models_nickname)
+        self.fits_params = self.validate_dict_of_models_params(fits_params, self.models_nickname)
 
         # when performing our own resampling0
         self.datasets_names_or_ids = datasets_names_or_ids
@@ -126,6 +127,17 @@ class BaseExperiment:
         self.error_score = error_score
         self.client = None
         self.logger_filename = None
+
+    def validate_dict_of_models_params(self, dict_to_validate, models_nickname):
+        dict_to_validate = dict_to_validate or {model_nickname: {} for model_nickname in models_nickname}
+        models_missing = [model_nickname for model_nickname in models_nickname
+                          if model_nickname not in dict_to_validate]
+        if len(models_missing) == len(models_nickname):
+            dict_to_validate = {model_nickname: dict_to_validate.copy() for model_nickname in models_nickname}
+        else:
+            for model_missing in models_missing:
+                dict_to_validate[model_missing] = {}
+        return dict_to_validate
 
     def add_arguments_to_parser(self):
         self.parser.add_argument('--experiment_name', type=str, default=self.experiment_name)
@@ -192,8 +204,10 @@ class BaseExperiment:
         self.experiment_name = args.experiment_name
         self.models_nickname = args.models_nickname
         self.n_jobs = args.n_jobs
-        self.models_params = args.models_params
-        self.fits_params = args.fits_params
+        models_params = args.models_params
+        self.models_params = self.validate_dict_of_models_params(models_params, self.models_nickname)
+        fits_params = args.fits_params
+        self.fits_params = self.validate_dict_of_models_params(fits_params, self.models_nickname)
         error_score = args.error_score
         if error_score == 'nan':
             error_score = np.nan
@@ -277,7 +291,7 @@ class BaseExperiment:
                   logging_to_mlflow=False, create_validation_set=False, output_dir=None, data_return=None, **kwargs):
         model_nickname = kwargs.get('model_nickname')
         seed_model = kwargs.get('seed_model')
-        model_params = self.models_params.get(model_nickname, {}).copy()
+        model_params = model_params if model_params else self.models_params.get(model_nickname, {}).copy()
         if data_return:
             data_params = data_return.get('data_params', None).copy()
         else:
@@ -390,7 +404,7 @@ class BaseExperiment:
         train_indices = data_return['train_indices']
         test_indices = data_return['test_indices']
         validation_indices = data_return['validation_indices']
-        fit_params = self.fits_params.get(kwargs.get('model_nickname'), {}).copy()
+        fit_params = fit_params if fit_params else self.fits_params.get(kwargs.get('model_nickname'), {}).copy()
         # we will already convert categorical features to codes to avoid missing categories when splitting the data
         # one can argue if the model alone should account for this (not observing all the categories in the training
         # set), but for many applications this is fine and if we really want to do this we could simply always add
