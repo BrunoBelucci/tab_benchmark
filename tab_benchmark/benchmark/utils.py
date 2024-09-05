@@ -4,6 +4,7 @@ from pathlib import Path
 import mlflow
 import numpy as np
 import openml
+import pandas as pd
 from ray.air import FailureConfig
 from ray.tune import TuneConfig
 from ray.tune.schedulers import HyperBandForBOHB, ASHAScheduler, MedianStoppingRule
@@ -80,6 +81,24 @@ def fit_model(model, X, y, cat_ind, att_names, cat_dims, n_classes, task_name, t
     else:
         X_validation = None
         y_validation = None
+    # check if there is any label in y_test or y_validation that is not in y_train, if there is, copy the first
+    # appearance of this instance to the training set (preferably from the validation set)
+    if task_name in ('classification', 'binary_classification'):
+        y_train_labels = y_train.unique()
+        y_labels = y.unique()
+        if not np.array_equal(y_train_labels, y_labels):
+            y_missing_labels = np.setdiff1d(y_labels, y_train_labels)
+            for y_missing_label in y_missing_labels:
+                if y_validation is not None:
+                    if y_missing_label in y_validation.values:
+                        X_train = pd.concat((X_train, X_validation[y_validation == y_missing_label].head(1)), axis=0)
+                        y_train = pd.concat((y_train, y_validation[y_validation == y_missing_label].head(1)), axis=0)
+                    else:
+                        X_train = pd.concat((X_train, X_test[y_test == y_missing_label].head(1)), axis=0)
+                        y_train = pd.concat((y_train, y_test[y_test == y_missing_label].head(1)), axis=0)
+                else:
+                    X_train = pd.concat((X_train, X_test[y_test == y_missing_label].head(1)), axis=0)
+                    y_train = pd.concat((y_train, y_test[y_test == y_missing_label].head(1)), axis=0)
     cat_features_names = [att_names[i] for i, value in enumerate(cat_ind) if value is True]
     cont_features_names = [att_names[i] for i, value in enumerate(cat_ind) if value is False]
     if not (('classifier' in model._estimator_type and task_name in ('classification', 'binary_classification')) or (
