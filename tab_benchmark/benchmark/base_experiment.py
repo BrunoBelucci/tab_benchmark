@@ -463,7 +463,7 @@ class BaseExperiment:
             if self.n_gpus > 0:
                 # we assume that we are using one GPU and this GPU is being shared by
                 # workers // n_gpus (number of workers in this GPU)
-                fraction_of_gpu_being_used = 1 / (self.n_workers // self.n_gpus)
+                fraction_of_gpu_being_used = self.n_gpus / self.n_workers
                 set_per_process_memory_fraction(fraction_of_gpu_being_used)
                 reset_peak_memory_stats()
             fit_params = fit_params.copy() if fit_params is not None else {}
@@ -621,35 +621,45 @@ class BaseExperiment:
                 if cpu_count() < threads_per_worker * n_workers:
                     warnings.warn(f"n_workers * threads_per_worker (n_jobs) is greater than the number of cores "
                                   f"available ({cpu_count}). This may lead to performance issues.")
+                resources = {'threads': threads_per_worker}
+                if self.n_gpus > 0:
+                    resources['gpus'] = self.n_gpus
                 cluster = LocalCluster(n_workers=0, memory_limit=self.dask_memory,
                                        threads_per_worker=threads_per_worker)
-                cluster.adapt(minimum=processes, maximum=n_workers)
+                cluster.adapt(minimum=processes, maximum=n_workers, resources=resources)
             elif cluster_type == 'slurm':
                 if self.n_gpus == 0:
                     # we will submit one job for each worker
                     cores = self.n_jobs * self.n_processes
                     processes = self.n_processes
                     n_maximum_jobs = n_workers
+                    resources_per_work = {'threads': cores}
                 else:
                     # we will only submit n_gpus job, and they will be responsible for all workers
                     cores = (n_workers // self.n_gpus) * self.n_jobs
                     processes = (n_workers // self.n_gpus)
                     n_maximum_jobs = self.n_gpus
+                    resources_per_work = {'threads': cores, 'gpus': self.n_gpus / n_workers}
                 job_extra_directives = dask.config.get(
                     "jobqueue.%s.job-extra-directives" % 'slurm', []
                 )
                 job_script_prologue = dask.config.get(
                     "jobqueue.%s.job-script-prologue" % 'slurm', []
                 )
+                worker_extra_args = dask.config.get(
+                    "jobqueue.%s.worker-extra-args" % 'slurm', []
+                )
                 job_extra_directives = job_extra_directives + self.dask_job_extra_directives
                 job_script_prologue = job_script_prologue + ['eval "$(conda shell.bash hook)"',
                                                              'conda activate tab_benchmark']
+                resources_per_work_string = ' '.join([f'{key}={value}' for key, value in resources_per_work.items()])
+                worker_extra_args = worker_extra_args + [f'--resources {resources_per_work_string}']
                 walltime = '364-23:59:59'
                 job_name = f'dask-worker-{self.experiment_name}'
                 cluster = SLURMCluster(cores=cores, memory=self.dask_memory, processes=processes,
                                        job_extra_directives=job_extra_directives,
                                        job_script_prologue=job_script_prologue, walltime=walltime,
-                                       job_name=job_name)
+                                       job_name=job_name, worker_extra_args=worker_extra_args)
                 log_and_print_msg("Cluster dashboard address", dashboard_address=cluster.dashboard_link)
                 log_and_print_msg(f"Cluster script generated:\n{cluster.job_script()}")
                 cluster.adapt(minimum=processes, maximum=n_workers, minimum_jobs=1, maximum_jobs=n_maximum_jobs)
@@ -688,6 +698,9 @@ class BaseExperiment:
         n_combinations_failed = 0
         n_combinations_none = 0
         if client is not None:
+            resources_per_task = {'threads': self.n_jobs}
+            if self.n_gpus > 0:
+                resources_per_task['gpus'] = self.n_gpus / self.n_workers
             log_and_print_msg(f'{total_combinations} models are being trained and evaluated in parallel, '
                               f'check the logs for real time information. We will display information about the '
                               f'completion of the tasks right after sending all the tasks to the cluster. '
@@ -696,11 +709,12 @@ class BaseExperiment:
                               f'the workers.')
 
             list_of_args = [[combination[i] for combination in combinations[1:]] for i in range(n_args)]
-            first_future = client.submit(self.run_combination_with_mlflow, *combinations[0], **extra_params)
+            first_future = client.submit(self.run_combination_with_mlflow, *combinations[0],
+                                         resources=resources_per_task, **extra_params)
             # wait a little bit for the first submission to create folders, experiments, etc
             time.sleep(5)
             futures = client.map(self.run_combination_with_mlflow, *list_of_args,
-                                 batch_size=self.n_workers, **extra_params)
+                                 batch_size=self.n_workers, resources=resources_per_task, **extra_params)
             futures = [first_future] + futures
         else:
             progress_bar = tqdm(combinations, desc='Combinations completed')
