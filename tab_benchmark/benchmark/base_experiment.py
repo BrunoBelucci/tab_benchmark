@@ -74,7 +74,8 @@ class BaseExperiment:
             # parallelization
             dask_cluster_type=None,
             n_workers=1,
-            n_processes=2,
+            n_processes=1,
+            n_cores=1,
             dask_memory=None,
             dask_job_extra_directives=None,
             dask_address=None,
@@ -109,6 +110,7 @@ class BaseExperiment:
         # parallelization
         self.dask_cluster_type = dask_cluster_type
         self.n_workers = n_workers
+        self.n_cores = n_cores
         self.n_processes = n_processes
         self.dask_memory = dask_memory
         self.dask_job_extra_directives = dask_job_extra_directives
@@ -173,6 +175,7 @@ class BaseExperiment:
 
         self.parser.add_argument('--dask_cluster_type', type=str, default=self.dask_cluster_type)
         self.parser.add_argument('--n_workers', type=int, default=self.n_workers)
+        self.parser.add_argument('--n_cores', type=int, default=self.n_cores)
         self.parser.add_argument('--n_processes', type=int, default=self.n_processes,
                                  help='Number of processes to use when submitting cpu jobs (n_gpus=0). The total'
                                       'number of parallel tasks that will be run is n_workers * n_processes. Note that'
@@ -240,6 +243,7 @@ class BaseExperiment:
 
         self.dask_cluster_type = args.dask_cluster_type
         self.n_workers = args.n_workers
+        self.n_cores = args.n_cores
         self.n_processes = args.n_processes
         self.dask_memory = args.dask_memory
         dask_job_extra_directives = args.dask_job_extra_directives
@@ -645,25 +649,28 @@ class BaseExperiment:
                 if cpu_count() < threads_per_worker * n_workers:
                     warnings.warn(f"n_workers * threads_per_worker (n_jobs) is greater than the number of cores "
                                   f"available ({cpu_count}). This may lead to performance issues.")
-                resources = {'threads': threads_per_worker}
+                resources = {'cores': threads_per_worker}
                 if self.n_gpus > 0:
                     resources['gpus'] = self.n_gpus
                 cluster = LocalCluster(n_workers=0, memory_limit=self.dask_memory, processes=False,
                                        threads_per_worker=threads_per_worker, resources=resources)
                 cluster.adapt(minimum=processes, maximum=n_workers)
             elif cluster_type == 'slurm':
-                if self.n_gpus == 0:
-                    # we will submit one job for each worker
-                    cores = self.n_jobs * self.n_processes
-                    processes = self.n_processes
-                    n_maximum_jobs = n_workers
-                    resources_per_work = {'threads': cores}
-                else:
-                    # we will only submit n_gpus job, and they will be responsible for all workers
-                    cores = (n_workers // self.n_gpus) * self.n_jobs
-                    processes = (n_workers // self.n_gpus)
-                    n_maximum_jobs = self.n_gpus
-                    resources_per_work = {'threads': cores, 'gpus': self.n_gpus / n_workers}
+                # if self.n_gpus == 0:
+                #     # we will submit one job for each worker
+                #     cores = self.n_jobs * self.n_processes
+                #     processes = self.n_processes
+                #     n_maximum_jobs = n_workers
+                #     resources_per_work = {'threads': cores}
+                # else:
+                #     # we will only submit n_gpus job, and they will be responsible for all workers
+                #     cores = (n_workers // self.n_gpus) * self.n_jobs
+                #     processes = (n_workers // self.n_gpus)
+                #     n_maximum_jobs = self.n_gpus
+                #     resources_per_work = {'threads': cores, 'gpus': self.n_gpus / n_workers}
+                cores = self.n_cores
+                processes = self.n_processes
+                resources_per_work = {'cores': cores}
                 job_extra_directives = dask.config.get(
                     "jobqueue.%s.job-extra-directives" % 'slurm', []
                 )
@@ -685,7 +692,8 @@ class BaseExperiment:
                                        job_script_prologue=job_script_prologue, walltime=walltime,
                                        job_name=job_name, worker_extra_args=worker_extra_args)
                 log_and_print_msg(f"Cluster script generated:\n{cluster.job_script()}")
-                cluster.adapt(minimum=processes, maximum=n_workers, minimum_jobs=1, maximum_jobs=n_maximum_jobs)
+                cluster.scale(n_workers)
+                # cluster.adapt(minimum=processes, maximum=n_workers, minimum_jobs=1, maximum_jobs=n_maximum_jobs)
             else:
                 raise ValueError("cluster_type must be either 'local' or 'slurm'.")
             log_and_print_msg("Cluster dashboard address", dashboard_address=cluster.dashboard_link)
@@ -722,7 +730,7 @@ class BaseExperiment:
         n_combinations_failed = 0
         n_combinations_none = 0
         if client is not None:
-            resources_per_task = {'threads': self.n_jobs}
+            resources_per_task = {'cores': self.n_jobs}
             if self.n_gpus > 0:
                 resources_per_task['gpus'] = self.n_gpus / self.n_workers
             log_and_print_msg(f'{total_combinations} models are being trained and evaluated in parallel, '
