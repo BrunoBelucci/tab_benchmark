@@ -641,12 +641,12 @@ class BaseExperiment:
                 if cpu_count() < threads_per_worker * n_workers:
                     warnings.warn(f"n_workers * threads_per_worker (n_jobs) is greater than the number of cores "
                                   f"available ({cpu_count}). This may lead to performance issues.")
-                resources = {'cores': threads_per_worker}
+                resources = {'cores': cpu_count()}
                 if self.n_gpus > 0:
                     resources['gpus'] = self.n_gpus
                 cluster = LocalCluster(n_workers=0, memory_limit=self.dask_memory, processes=False,
                                        threads_per_worker=threads_per_worker, resources=resources)
-                cluster.adapt(minimum=processes, maximum=n_workers)
+                cluster.scale(n_workers)
             elif cluster_type == 'slurm':
                 cores = self.n_cores
                 processes = self.n_processes
@@ -674,7 +674,7 @@ class BaseExperiment:
                                        job_script_prologue=job_script_prologue, walltime=walltime,
                                        job_name=job_name, worker_extra_args=worker_extra_args)
                 log_and_print_msg(f"Cluster script generated:\n{cluster.job_script()}")
-                cluster.adapt(minimum=processes, maximum=n_workers, minimum_jobs=1, maximum_jobs=n_workers)
+                cluster.scale(n_workers)
             else:
                 raise ValueError("cluster_type must be either 'local' or 'slurm'.")
             log_and_print_msg("Cluster dashboard address", dashboard_address=cluster.dashboard_link)
@@ -744,7 +744,7 @@ class BaseExperiment:
 
         if client is not None:
             progress_bar = tqdm(as_completed(futures), total=len(futures), desc='Combinations completed')
-            for future in progress_bar:
+            for i, future in enumerate(progress_bar):
                 combination_success = future.result()
                 if combination_success is True:
                     n_combinations_successfully_completed += 1
@@ -754,7 +754,12 @@ class BaseExperiment:
                     n_combinations_none += 1
                 del future  # to free memory
                 log_and_print_msg(str(progress_bar), succesfully_completed=n_combinations_successfully_completed,
-                                  failed=n_combinations_failed, none=n_combinations_none)
+                                  failed=n_combinations_failed, none=n_combinations_none, i=i)
+                # scale down the cluster if there is fewer tasks than workers
+                n_remaining_tasks = total_combinations - i
+                if n_remaining_tasks < self.n_workers:
+                    n_remaining_workers = max(n_remaining_tasks, 1)
+                    client.cluster.scale(n_remaining_workers)
             # ensure all futures are done
             client.gather(futures)
             client.close()
