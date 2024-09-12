@@ -146,7 +146,11 @@ class BaseExperiment:
         self.parser.add_argument('--models_nickname', type=str, choices=self.models_dict.keys(),
                                  nargs='*', default=self.models_nickname)
         self.parser.add_argument('--seeds_model', nargs='*', type=int, default=self.seeds_model)
-        self.parser.add_argument('--n_jobs', type=int, default=self.n_jobs)
+        self.parser.add_argument('--n_jobs', type=int, default=self.n_jobs,
+                                 help='Number of threads/cores to be used by the model if it supports it. '
+                                      'Obs.: In the CEREMADE cluster the minimum number of cores that can be requested'
+                                      'are 2, so it is a good idea to set at least n_jobs to 2 if we want to use all '
+                                      'the resources available.')
         self.parser.add_argument('--models_params', type=json.loads, default=self.models_params)
         self.parser.add_argument('--fits_params', type=json.loads, default=self.fits_params)
         self.parser.add_argument('--error_score', type=str, default=self.error_score)
@@ -174,29 +178,18 @@ class BaseExperiment:
         self.parser.add_argument('--raise_on_fit_error', action='store_true')
 
         self.parser.add_argument('--dask_cluster_type', type=str, default=self.dask_cluster_type)
-        self.parser.add_argument('--n_workers', type=int, default=self.n_workers)
-        self.parser.add_argument('--n_cores', type=int, default=self.n_cores)
+        self.parser.add_argument('--n_workers', type=int, default=self.n_workers,
+                                 help='Maximum number of workers to be used.')
+        self.parser.add_argument('--n_cores', type=int, default=self.n_cores,
+                                 help='Number of cores per job that will be requested in the cluster. It is ignored'
+                                      'if the cluster type is local.')
         self.parser.add_argument('--n_processes', type=int, default=self.n_processes,
-                                 help='Number of processes to use when submitting cpu jobs (n_gpus=0). The total'
-                                      'number of parallel tasks that will be run is n_workers * n_processes. Note that'
-                                      'if we want to run a model with n_jobs > 1, we will ask for n_jobs * n_processes'
-                                      'cores in the cluster so each process will have access to n_jobs cores. '
-                                      'Obs.: In the CEREMADE cluster the minimum number of cores that can be requested'
-                                      'are 2, so it is a good idea to set at least n_jobs to 2 if we want to use all '
-                                      'the resources available. It is a BAD IDEA to set n_processes to 2 '
-                                      'and n_jobs to 1 to try to share the same core for two different models, '
-                                      'the training becomes unstable, probably because we are sharing threads in the'
-                                      'same core.')
+                                 help='Number of processes to use when parallelizing with dask.')
         self.parser.add_argument('--dask_memory', type=str, default=self.dask_memory)
         self.parser.add_argument('--dask_job_extra_directives', type=str, default=self.dask_job_extra_directives)
         self.parser.add_argument('--dask_address', type=str, default=self.dask_address)
         self.parser.add_argument('--n_gpus', type=int, default=self.n_gpus,
-                                 help='Number of GPUs to request in the case we are using a distributed cluster '
-                                      '(SLURM for example). This is the total number of GPUs that will be requested, '
-                                      'and not the number of GPUs per job, we are assuming that only one GPU will be'
-                                      'requested per job, therefore we will submit at most n_gpus jobs, each one'
-                                      'with (n_workers // n_gpus) * n_jobs cores which corresponds to'
-                                      '(n_workers // n_gpus) processes. '
+                                 help='Number of GPUs per job that will be requested in the cluster.'
                                       'Note that this will not allocate the GPU in the cluster, we must still pass '
                                       'the required resource allocation parameter to the cluster (we can do this via'
                                       'the dask_job_extra_directives argument, for example with '
@@ -489,9 +482,8 @@ class BaseExperiment:
             # logging
             log_and_print_msg('Running...', **kwargs)
             if self.n_gpus > 0:
-                # we assume that we are using one GPU and this GPU is being shared by
-                # workers // n_gpus (number of workers in this GPU)
-                fraction_of_gpu_being_used = self.n_gpus / self.n_workers
+                # Number of gpus in this job / Number of models being trained in parallel
+                fraction_of_gpu_being_used = self.n_gpus / (self.n_cores / self.n_jobs)
                 set_per_process_memory_fraction(fraction_of_gpu_being_used)
                 reset_peak_memory_stats()
             fit_params = fit_params.copy() if fit_params is not None else {}
@@ -644,7 +636,7 @@ class BaseExperiment:
             client = Client(address)
         else:
             if cluster_type == 'local':
-                threads_per_worker = self.n_jobs * self.n_processes
+                threads_per_worker = self.n_jobs
                 processes = self.n_processes
                 if cpu_count() < threads_per_worker * n_workers:
                     warnings.warn(f"n_workers * threads_per_worker (n_jobs) is greater than the number of cores "
@@ -656,21 +648,11 @@ class BaseExperiment:
                                        threads_per_worker=threads_per_worker, resources=resources)
                 cluster.adapt(minimum=processes, maximum=n_workers)
             elif cluster_type == 'slurm':
-                # if self.n_gpus == 0:
-                #     # we will submit one job for each worker
-                #     cores = self.n_jobs * self.n_processes
-                #     processes = self.n_processes
-                #     n_maximum_jobs = n_workers
-                #     resources_per_work = {'threads': cores}
-                # else:
-                #     # we will only submit n_gpus job, and they will be responsible for all workers
-                #     cores = (n_workers // self.n_gpus) * self.n_jobs
-                #     processes = (n_workers // self.n_gpus)
-                #     n_maximum_jobs = self.n_gpus
-                #     resources_per_work = {'threads': cores, 'gpus': self.n_gpus / n_workers}
                 cores = self.n_cores
                 processes = self.n_processes
                 resources_per_work = {'cores': cores}
+                if self.n_gpus > 0:
+                    resources_per_work['gpus'] = self.n_gpus
                 job_extra_directives = dask.config.get(
                     "jobqueue.%s.job-extra-directives" % 'slurm', []
                 )
@@ -692,8 +674,7 @@ class BaseExperiment:
                                        job_script_prologue=job_script_prologue, walltime=walltime,
                                        job_name=job_name, worker_extra_args=worker_extra_args)
                 log_and_print_msg(f"Cluster script generated:\n{cluster.job_script()}")
-                cluster.scale(n_workers)
-                # cluster.adapt(minimum=processes, maximum=n_workers, minimum_jobs=1, maximum_jobs=n_maximum_jobs)
+                cluster.adapt(minimum=processes, maximum=n_workers, minimum_jobs=1, maximum_jobs=n_workers)
             else:
                 raise ValueError("cluster_type must be either 'local' or 'slurm'.")
             log_and_print_msg("Cluster dashboard address", dashboard_address=cluster.dashboard_link)
@@ -732,7 +713,7 @@ class BaseExperiment:
         if client is not None:
             resources_per_task = {'cores': self.n_jobs}
             if self.n_gpus > 0:
-                resources_per_task['gpus'] = self.n_gpus / self.n_workers
+                resources_per_task['gpus'] = self.n_gpus / (self.n_cores / self.n_jobs)
             log_and_print_msg(f'{total_combinations} models are being trained and evaluated in parallel, '
                               f'check the logs for real time information. We will display information about the '
                               f'completion of the tasks right after sending all the tasks to the cluster. '
