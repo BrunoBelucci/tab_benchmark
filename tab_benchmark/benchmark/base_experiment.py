@@ -626,6 +626,9 @@ class BaseExperiment:
 
             with mlflow.start_run(run_name=run_name, nested=nested) as run:
                 mlflow.log_params(flatten_dict(unique_params))
+                mlflow.log_params(flatten_dict(fit_params))
+                mlflow.log_params(flatten_dict(model_params))
+                mlflow.log_param('create_validation_set', create_validation_set)
                 mlflow.log_param('git_hash', get_git_revision_hash())
                 # slurm parameters
                 mlflow.log_param('SLURM_JOB_ID', os.getenv('SLURM_JOB_ID', None))
@@ -633,6 +636,8 @@ class BaseExperiment:
                 # dask parameters
                 mlflow.log_param('dask_cluster_type', self.dask_cluster_type)
                 mlflow.log_param('n_workers', self.n_workers)
+                mlflow.log_param('n_cores', self.n_cores)
+                mlflow.log_param('n_processes', self.n_processes)
                 mlflow.log_param('dask_memory', self.dask_memory)
                 mlflow.log_param('dask_job_extra_directives', self.dask_job_extra_directives)
                 mlflow.log_param('dask_address', self.dask_address)

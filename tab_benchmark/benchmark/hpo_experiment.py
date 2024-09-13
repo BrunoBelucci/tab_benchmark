@@ -243,8 +243,6 @@ class HPOExperiment(BaseExperiment):
         # setup logger to local dir on dask worker (will not have effect if running from main)
         self.log_dir_dask = Path.cwd() / self.log_dir
         self.setup_logger(log_dir=self.log_dir_dask, filemode='w')
-        fit_params = fit_params.copy() if fit_params is not None else {}
-        model_params = model_params if model_params is not None else {}
         experiment_name = kwargs.pop('experiment_name', self.experiment_name)
         mlflow_tracking_uri = kwargs.pop('mlflow_tracking_uri', self.mlflow_tracking_uri)
         check_if_exists = kwargs.pop('check_if_exists', self.check_if_exists)
@@ -256,10 +254,13 @@ class HPOExperiment(BaseExperiment):
         max_concurrent = kwargs.get('max_concurrent', self.max_concurrent)
         retrain_best_model = kwargs.pop('retrain_best_model', self.retrain_best_model)
         unique_params = self.combination_args_to_kwargs(*args, **kwargs)
+        model_nickname = unique_params.get('model_nickname')
+        model_params = model_params if model_params else self.models_params.get(model_nickname, {}).copy()
+        fit_params = fit_params if fit_params else self.fits_params.get(kwargs.get('model_nickname'), {}).copy()
         unique_params.update(model_params=model_params, fit_params=fit_params,
                              search_algorithm=search_algorithm, trial_scheduler=trial_scheduler, n_trials=n_trials,
                              timeout_experiment=timeout_experiment, timeout_trial=timeout_trial,
-                             max_concurrent=max_concurrent,
+                             max_concurrent=max_concurrent, retrain_best_model=retrain_best_model,
                              **kwargs)
         possible_existent_run, logging_to_mlflow = treat_mlflow(experiment_name, mlflow_tracking_uri, check_if_exists,
                                                                 **unique_params)
@@ -292,9 +293,32 @@ class HPOExperiment(BaseExperiment):
             else:
                 nested = False
             with mlflow.start_run(run_name=run_name, nested=nested) as run:
-                parent_run_uuid = run.info.run_uuid
                 mlflow.log_params(flatten_dict(unique_params))
+                mlflow.log_params(flatten_dict(fit_params))
+                mlflow.log_params(flatten_dict(model_params))
+                mlflow.log_param('create_validation_set', create_validation_set)
                 mlflow.log_param('git_hash', get_git_revision_hash())
+                # slurm parameters
+                mlflow.log_param('SLURM_JOB_ID', os.getenv('SLURM_JOB_ID', None))
+                mlflow.log_param('SLURMD_NODENAME', os.getenv('SLURMD_NODENAME', None))
+                # dask parameters
+                mlflow.log_param('dask_cluster_type', self.dask_cluster_type)
+                mlflow.log_param('n_workers', self.n_workers)
+                mlflow.log_param('n_cores', self.n_cores)
+                mlflow.log_param('n_processes', self.n_processes)
+                mlflow.log_param('dask_memory', self.dask_memory)
+                mlflow.log_param('dask_job_extra_directives', self.dask_job_extra_directives)
+                mlflow.log_param('dask_address', self.dask_address)
+                mlflow.log_param('n_gpus', self.n_gpus)
+                # hpo parameters
+                mlflow.log_param('search_algorithm', search_algorithm)
+                mlflow.log_param('trial_scheduler', trial_scheduler)
+                mlflow.log_param('n_trials', n_trials)
+                mlflow.log_param('timeout_experiment', timeout_experiment)
+                mlflow.log_param('timeout_trial', timeout_trial)
+                mlflow.log_param('max_concurrent', max_concurrent)
+                mlflow.log_param('retrain_best_model', retrain_best_model)
+                parent_run_uuid = run.info.run_uuid
                 return self.run_combination_hpo(n_jobs=n_jobs,
                                                 create_validation_set=create_validation_set,
                                                 model_params=model_params,
