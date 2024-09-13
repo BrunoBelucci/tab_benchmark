@@ -558,11 +558,15 @@ class BaseExperiment:
                                     model_params=None, logging_to_mlflow=False,
                                     fit_params=None, return_results=False, parent_run_uuid=None, **kwargs):
         fit_params = fit_params.copy() if fit_params is not None else {}
-        model_params = model_params.copy() if model_params is not None else {}
         experiment_name = kwargs.pop('experiment_name', self.experiment_name)
         mlflow_tracking_uri = kwargs.pop('mlflow_tracking_uri', self.mlflow_tracking_uri)
         check_if_exists = kwargs.pop('check_if_exists', self.check_if_exists)
         unique_params = self.combination_args_to_kwargs(*args, **kwargs)
+        model_nickname = unique_params.get('model_nickname')
+        model_params = model_params if model_params else self.models_params.get(model_nickname, {}).copy()
+        fit_params = fit_params if fit_params else self.fits_params.get(kwargs.get('model_nickname'), {}).copy()
+        if 'n_jobs' in model_params:
+            n_jobs = model_params.pop('n_jobs')
         unique_params.update(model_params=model_params, create_validation_set=create_validation_set,
                              fit_params=fit_params)
         possible_existent_run, logging_to_mlflow = treat_mlflow(experiment_name, mlflow_tracking_uri, check_if_exists,
