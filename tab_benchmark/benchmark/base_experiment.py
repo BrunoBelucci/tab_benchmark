@@ -151,8 +151,24 @@ class BaseExperiment:
                                       'Obs.: In the CEREMADE cluster the minimum number of cores that can be requested'
                                       'are 2, so it is a good idea to set at least n_jobs to 2 if we want to use all '
                                       'the resources available.')
-        self.parser.add_argument('--models_params', type=json.loads, default=self.models_params)
-        self.parser.add_argument('--fits_params', type=json.loads, default=self.fits_params)
+        self.parser.add_argument('--models_params', type=json.loads, default=self.models_params,
+                                 help='Dictionary with the parameters of the models. The keys must be the nickname '
+                                      'of the model and the values must be a dictionary with the parameters of '
+                                      'the model. In case only one dictionary is passed, it will be used for '
+                                      'all models. The dictionary is passed as a string in the json format, you may'
+                                      'have to escape the quotes and not use spaces if you are using the command line.'
+                                      'Examples of usage from cli: '
+                                      '--models_params {\\"[MODEL_NICKNAME]\\":{\\"[NAME_PARAM_1]\\":[VALUE_PARAM_1],'
+                                      '\\"[NAME_PARAM_2]\\":[VALUE_PARAM_2]},'
+                                      '\\"[MODEL_NICKNAME_2]\\":{\\"[NAME_PARAM_1]\\":[VALUE_PARAM_1]}}'
+                                      '--models_params {\\"[NAME_PARAM_1]\\":[VALUE_PARAM_1]}')
+        self.parser.add_argument('--fits_params', type=json.loads, default=self.fits_params,
+                                 help='Dictionary with the parameters of the fits. The keys must be the nickname '
+                                      'of the model and the values must be a dictionary with the parameters of '
+                                      'the fit. In case only one dictionary is passed, it will be used for '
+                                      'all models. The dictionary is passed as a string in the json format, you may'
+                                      'have to escape the quotes and not use spaces if you are using the command line. '
+                                      'Please refer to the --models_params argument for examples of usage.')
         self.parser.add_argument('--error_score', type=str, default=self.error_score)
 
         self.parser.add_argument('--datasets_names_or_ids', nargs='*', choices=self.datasets_names_or_ids,
@@ -486,8 +502,9 @@ class BaseExperiment:
                 fraction_of_gpu_being_used = self.n_gpus / (self.n_cores / self.n_jobs)
                 set_per_process_memory_fraction(fraction_of_gpu_being_used)
                 reset_peak_memory_stats()
-            fit_params = fit_params.copy() if fit_params is not None else {}
-            model_params = model_params.copy() if model_params is not None else {}
+            model_nickname = kwargs.get('model_nickname')
+            model_params = model_params if model_params else self.models_params.get(model_nickname, {}).copy()
+            fit_params = fit_params if fit_params else self.fits_params.get(kwargs.get('model_nickname'), {}).copy()
 
             # load data
             data_return = self.load_data(**kwargs, create_validation_set=create_validation_set,
@@ -558,11 +575,15 @@ class BaseExperiment:
                                     model_params=None, logging_to_mlflow=False,
                                     fit_params=None, return_results=False, parent_run_uuid=None, **kwargs):
         fit_params = fit_params.copy() if fit_params is not None else {}
-        model_params = model_params.copy() if model_params is not None else {}
         experiment_name = kwargs.pop('experiment_name', self.experiment_name)
         mlflow_tracking_uri = kwargs.pop('mlflow_tracking_uri', self.mlflow_tracking_uri)
         check_if_exists = kwargs.pop('check_if_exists', self.check_if_exists)
         unique_params = self.combination_args_to_kwargs(*args, **kwargs)
+        model_nickname = unique_params.get('model_nickname')
+        model_params = model_params if model_params else self.models_params.get(model_nickname, {}).copy()
+        fit_params = fit_params if fit_params else self.fits_params.get(kwargs.get('model_nickname'), {}).copy()
+        if 'n_jobs' in model_params:
+            n_jobs = model_params.pop('n_jobs')
         unique_params.update(model_params=model_params, create_validation_set=create_validation_set,
                              fit_params=fit_params)
         possible_existent_run, logging_to_mlflow = treat_mlflow(experiment_name, mlflow_tracking_uri, check_if_exists,
