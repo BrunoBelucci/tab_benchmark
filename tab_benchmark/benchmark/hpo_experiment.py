@@ -192,7 +192,7 @@ class HPOExperiment(BaseExperiment):
             # OBS.: This may lead to minor differences between training the entire model from scratch
             # for example, for xgboost, when we load the best model, the random state is not preserved, so the model
             # will build trees differently than the original model would have built
-
+            raise('The following does not work yet, we need to check how the directory is saved')
             # first we get the best model file
             best_model_dir = Path(best_result.path) / self.output_dir.name
             # get saved models

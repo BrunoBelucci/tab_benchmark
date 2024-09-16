@@ -3,6 +3,8 @@ import argparse
 import shlex
 import time
 from pathlib import Path
+from shutil import rmtree
+
 import mlflow
 import os
 import logging
@@ -67,6 +69,7 @@ class BaseExperiment:
             models_dict=None,
             log_dir=Path.cwd() / 'logs',
             output_dir=Path.cwd() / 'output',
+            clean_output_dir=True,
             mlflow_tracking_uri='sqlite:///' + str(Path.cwd().resolve()) + '/tab_benchmark.db', check_if_exists=True,
             retry_on_oom=True,
             raise_on_fit_error=False, parser=None,
@@ -120,6 +123,7 @@ class BaseExperiment:
         self.experiment_name = experiment_name
         self.log_dir = log_dir
         self.output_dir = output_dir
+        self.clean_output_dir = clean_output_dir
         self.mlflow_tracking_uri = mlflow_tracking_uri
         self.check_if_exists = check_if_exists
         self.retry_on_oom = retry_on_oom
@@ -189,6 +193,7 @@ class BaseExperiment:
 
         self.parser.add_argument('--log_dir', type=Path, default=self.log_dir)
         self.parser.add_argument('--output_dir', type=Path, default=self.output_dir)
+        self.parser.add_argument('--do_not_clean_output_dir', action='store_true')
         self.parser.add_argument('--mlflow_tracking_uri', type=str, default=self.mlflow_tracking_uri)
         self.parser.add_argument('--do_not_check_if_exists', action='store_true')
         self.parser.add_argument('--do_not_retry_on_oom', action='store_true')
@@ -246,6 +251,7 @@ class BaseExperiment:
         if isinstance(output_dir, str):
             output_dir = Path(output_dir)
         self.output_dir = output_dir
+        self.clean_output_dir = not args.do_not_clean_output_dir
         self.mlflow_tracking_uri = args.mlflow_tracking_uri
         self.check_if_exists = not args.do_not_check_if_exists
         self.retry_on_oom = not args.do_not_retry_on_oom
@@ -506,6 +512,7 @@ class BaseExperiment:
             model_nickname = kwargs.get('model_nickname')
             model_params = model_params if model_params else self.models_params.get(model_nickname, {}).copy()
             fit_params = fit_params if fit_params else self.fits_params.get(kwargs.get('model_nickname'), {}).copy()
+            clean_output_dir = kwargs.pop('clean_output_dir', self.clean_output_dir)
 
             # load data
             data_return = self.load_data(**kwargs, create_validation_set=create_validation_set,
@@ -565,6 +572,10 @@ class BaseExperiment:
         else:
             total_time = time.perf_counter() - start_time
             log_and_print_msg('Finished!', elapsed_time=total_time, **kwargs)
+            if clean_output_dir:
+                output_dir = model.output_dir
+                if output_dir.exists():
+                    rmtree(output_dir)
             if return_results:
                 return results
             else:
@@ -583,6 +594,7 @@ class BaseExperiment:
         model_nickname = unique_params.get('model_nickname')
         model_params = model_params if model_params else self.models_params.get(model_nickname, {}).copy()
         fit_params = fit_params if fit_params else self.fits_params.get(kwargs.get('model_nickname'), {}).copy()
+        clean_output_dir = kwargs.pop('clean_output_dir', self.clean_output_dir)
         if 'n_jobs' in model_params:
             n_jobs = model_params.pop('n_jobs')
         unique_params.update(model_params=model_params, create_validation_set=create_validation_set,
@@ -647,6 +659,7 @@ class BaseExperiment:
                     create_validation_set=create_validation_set,
                     model_params=model_params, fit_params=fit_params,
                     logging_to_mlflow=logging_to_mlflow, return_results=return_results,
+                    clean_output_dir=clean_output_dir,
                     **unique_params
                 )
         else:
@@ -655,6 +668,7 @@ class BaseExperiment:
                 create_validation_set=create_validation_set,
                 model_params=model_params, fit_params=fit_params,
                 logging_to_mlflow=logging_to_mlflow, return_results=return_results,
+                clean_output_dir=clean_output_dir,
                 **unique_params
             )
 
