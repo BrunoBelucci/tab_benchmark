@@ -1,3 +1,4 @@
+import re
 from collections import defaultdict, OrderedDict
 from pathlib import Path
 from typing import Optional, Dict, Any
@@ -223,7 +224,6 @@ map_our_metric_to_lgbm_metric = {
 def before_fit_lgbm(self, X, y, task=None, cat_features=None, cat_dims=None, n_classes=None, eval_set=None,
                     eval_name=None, report_to_ray=None,
                     init_model=None, **args_and_kwargs):
-
     if n_classes is not None:
         if n_classes > 2:
             self.set_params(**{'num_class': n_classes})
@@ -257,6 +257,14 @@ def before_fit_lgbm(self, X, y, task=None, cat_features=None, cat_dims=None, n_c
 
     if report_to_ray:
         callbacks.append(ReportToRayLGBM(default_metric=eval_metric))
+
+    # we will rename the columns to avoid problems with the lightgbm
+    X = X.rename(columns=lambda x: re.sub('[^A-Za-z0-9_]+', '', x))
+    if eval_set:
+        for i in range(len(eval_set)):
+            X_eval, y_eval = eval_set[i]
+            X_eval = X_eval.rename(columns=lambda x: re.sub('[^A-Za-z0-9_]+', '', x))
+            eval_set[i] = (X_eval, y_eval)
 
     fit_arguments['eval_names'] = eval_name
     fit_arguments['callbacks'] = callbacks
