@@ -248,9 +248,6 @@ def before_fit_lgbm(self, X, y, task=None, cat_features=None, cat_dims=None, n_c
     else:
         eval_metric = self.get_params().get('metric', None)
 
-    if cat_features is not None:
-        fit_arguments['categorical_feature'] = cat_features
-
     if self.log_to_mlflow_if_running:
         if mlflow.active_run():
             callbacks.append(LogToMLFlowLGBM(default_metric=eval_metric))
@@ -265,6 +262,10 @@ def before_fit_lgbm(self, X, y, task=None, cat_features=None, cat_dims=None, n_c
             X_eval, y_eval = eval_set[i]
             X_eval = X_eval.rename(columns=lambda x: re.sub('[^A-Za-z0-9_]+', '', x))
             eval_set[i] = (X_eval, y_eval)
+
+    if cat_features is not None:
+        cat_features = [re.sub('[^A-Za-z0-9_]+', '', x) for x in cat_features]
+        fit_arguments['categorical_feature'] = cat_features
 
     fit_arguments['eval_names'] = eval_name
     fit_arguments['callbacks'] = callbacks
