@@ -707,7 +707,7 @@ class BaseExperiment:
                 job_script_prologue = job_script_prologue + ['eval "$(conda shell.bash hook)"',
                                                              'conda activate tab_benchmark']
                 resources_per_work_string = ' '.join([f'{key}={value}' for key, value in resources_per_work.items()])
-                worker_extra_args = worker_extra_args + [f'--resources {resources_per_work_string}']
+                worker_extra_args = worker_extra_args + [f'--resources "{resources_per_work_string}"']
                 walltime = '364-23:59:59'
                 job_name = f'dask-worker-{self.experiment_name}'
                 cluster = SLURMCluster(cores=cores, memory=self.dask_memory, processes=processes,
