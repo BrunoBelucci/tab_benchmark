@@ -4,6 +4,7 @@ import shlex
 import time
 from pathlib import Path
 from shutil import rmtree
+from typing import Awaitable
 
 import mlflow
 import os
@@ -32,7 +33,14 @@ import json
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
 
-class LoggingSetter(WorkerPlugin):
+class MLFlowCleanupPlugin(WorkerPlugin):
+    def teardown(self, worker: Worker):
+        if mlflow.active_run() is not None:
+            mlflow.log_param('EXCEPTION', 'KILLED')
+            mlflow.end_run('KILLED')
+
+
+class LoggingSetterPlugin(WorkerPlugin):
     def __init__(self, logging_config=None):
         self.logging_config = logging_config if logging_config is not None else {}
         super().__init__()
@@ -719,8 +727,10 @@ class BaseExperiment:
                 raise ValueError("cluster_type must be either 'local' or 'slurm'.")
             log_and_print_msg("Cluster dashboard address", dashboard_address=cluster.dashboard_link)
             client = cluster.get_client()
-        plugin = LoggingSetter(logging_config={'level': logging.INFO})
-        client.register_plugin(plugin)
+        logging_plugin = LoggingSetterPlugin(logging_config={'level': logging.INFO})
+        client.register_plugin(logging_plugin)
+        mlflow_plugin = MLFlowCleanupPlugin()
+        client.register_plugin(mlflow_plugin)
         client.forward_logging()
         return client
 
