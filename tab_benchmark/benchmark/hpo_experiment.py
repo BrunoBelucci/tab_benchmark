@@ -95,12 +95,20 @@ class HPOExperiment(BaseExperiment):
     def get_training_fn_for_hpo(self, is_openml=True):
         def training_fn(config):
             # setup logger on ray worker
+            config = config.copy()
             self.setup_logger(log_dir=self.log_dir_dask, filemode='a')
             parent_run_uuid = config.pop('parent_run_uuid', None)
+            if is_openml:
+                args = (config.pop('model_nickname'), config.pop('seed_model'), config.pop('task_id'),
+                        config.pop('task_fold'), config.pop('task_repeat'), config.pop('task_sample'))
+            else:
+                args = (config.pop('model_nickname'), config.pop('seed_model'), config.pop('dataset_name_or_id'),
+                        config.pop('seed_dataset'), config.pop('fold'))
             results = super(HPOExperiment, self).run_combination_with_mlflow(
+                *args,
                 create_validation_set=True, parent_run_uuid=parent_run_uuid, is_openml=is_openml, return_results=True,
                 **config)
-            metrics_results = {metric: value for metric, value in results.items()
+            metrics_results = {metric: value for metric, value in results['evaluate_return'].items()
                                if metric.startswith('validation_') or metric.startswith('test_')}
             if parent_run_uuid:
                 mlflow.log_metrics(metrics_results, step=int(time.time_ns()), run_id=parent_run_uuid)
@@ -146,15 +154,10 @@ class HPOExperiment(BaseExperiment):
         )
         default_param_space = dict(
             seed_model=seed_model,
-            n_jobs=n_jobs,
             model_params=default_values,
-            parent_run_uuid=parent_run_uuid,
-            fit_params=fit_params,
-            model_nickname=model_nickname,
         )
         data_params = kwargs.copy()  # hopefully it only rest them
         param_space.update(**data_params)
-        default_param_space.update(**data_params)
         if issubclass(model_cls, DNNModel):
             max_t = early_stopping_patience_dnn
         else:
@@ -258,6 +261,7 @@ class HPOExperiment(BaseExperiment):
         model_params = model_params if model_params else self.models_params.get(model_nickname, {}).copy()
         fit_params = fit_params if fit_params else self.fits_params.get(kwargs.get('model_nickname'), {}).copy()
         unique_params.update(model_params=model_params, fit_params=fit_params,
+                             create_validation_set=create_validation_set,
                              search_algorithm=search_algorithm, trial_scheduler=trial_scheduler, n_trials=n_trials,
                              timeout_experiment=timeout_experiment, timeout_trial=timeout_trial,
                              max_concurrent=max_concurrent, retrain_best_model=retrain_best_model,
@@ -267,6 +271,7 @@ class HPOExperiment(BaseExperiment):
         unique_params.pop('model_params')
         unique_params.pop('fit_params')
         unique_params.pop('create_validation_set')
+        unique_params.pop('retrain_best_model')
 
         if possible_existent_run is not None:
             log_and_print_msg('Run already exists on MLflow. Skipping...')
