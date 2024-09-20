@@ -4,8 +4,6 @@ import shlex
 import time
 from pathlib import Path
 from shutil import rmtree
-from typing import Awaitable
-
 import mlflow
 import os
 import logging
@@ -525,7 +523,7 @@ class BaseExperiment:
             # load data
             data_return = self.load_data(**kwargs, create_validation_set=create_validation_set,
                                          logging_to_mlflow=logging_to_mlflow)
-            results.update(data_return)
+            results['data_return'] = data_return
 
             # load model
             model = self.get_model(model_params=model_params,
@@ -540,12 +538,12 @@ class BaseExperiment:
 
             # fit model
             fit_return = self.fit_model(model, fit_params, data_return, metrics, default_metric, **kwargs)
-            results.update(fit_return)
+            results['fit_return'] = fit_return
 
             # evaluate model
             evaluate_return = self.evaluate_model(metrics, default_metric, fit_return, data_return,
                                                   create_validation_set, logging_to_mlflow, **kwargs)
-            results.update(evaluate_return)
+            results['evaluate_return'] = evaluate_return
 
             if logging_to_mlflow:
                 mlflow.log_param('was_evaluated', True)
