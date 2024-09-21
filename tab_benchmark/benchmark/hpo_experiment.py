@@ -3,18 +3,40 @@ import os
 import time
 from pathlib import Path
 from random import SystemRandom
-from typing import Optional
 import ray
 from distributed import get_worker
 from oslo_concurrency import lockutils
-from ray.tune import Tuner, randint
+from ray import tune
+from ray.tune import Tuner, randint, Callback
 import mlflow
 from tab_benchmark.benchmark.base_experiment import BaseExperiment, log_and_print_msg
 from tab_benchmark.benchmark.utils import treat_mlflow, get_search_algorithm_tune_config_run_config
 from tab_benchmark.models.dnn_model import DNNModel
-from tab_benchmark.models.dnn_models import early_stopping_patience_dnn
-from tab_benchmark.models.xgboost import early_stopping_patience_gbdt
+from tab_benchmark.models.dnn_models import max_epochs_dnn
+from tab_benchmark.models.xgboost import n_estimators_gbdt
 from tab_benchmark.utils import get_git_revision_hash, flatten_dict, extends
+
+
+@ray.remote
+class LastMetricsActor:
+    def __init__(self):
+        self.last_reported_metrics = {}
+
+    def add_metrics(self, trial_id, result):
+        self.last_reported_metrics[trial_id] = result
+
+    def get_metrics(self, trial_id):
+        return self.last_reported_metrics.get(trial_id, [])
+
+
+class LastMetricsActorCallback(Callback):
+    def __init__(self, metrics_actor):
+        self.metrics_actor = metrics_actor
+
+    def on_trial_result(self, iteration, trials, trial, result, **info):
+        trial_id = trial.trial_id
+        # Store the metrics in the Ray Actor
+        self.metrics_actor.add_metrics.remote(trial_id, result)
 
 
 class HPOExperiment(BaseExperiment):
@@ -92,8 +114,8 @@ class HPOExperiment(BaseExperiment):
         return super().get_model(model_params, n_jobs, logging_to_mlflow,
                                  create_validation_set, output_dir, data_return, **kwargs)
 
-    def get_training_fn_for_hpo(self, is_openml=True):
-        def training_fn(config):
+    def get_training_fn_for_hpo(self, is_openml=True, has_early_stopping=False):
+        def training_fn(config, last_metrics_actor=None):
             # setup logger on ray worker
             config = config.copy()
             self.setup_logger(log_dir=self.log_dir_dask, filemode='a')
@@ -109,10 +131,19 @@ class HPOExperiment(BaseExperiment):
                 create_validation_set=True, parent_run_uuid=parent_run_uuid, is_openml=is_openml, return_results=True,
                 **config)
             metrics_results = {metric: value for metric, value in results['evaluate_return'].items()
-                               if metric.startswith('validation_') or metric.startswith('test_')}
+                               if metric.startswith('final_validation_') or metric.startswith('final_test_')}
             if parent_run_uuid:
                 mlflow.log_metrics(metrics_results, step=int(time.time_ns()), run_id=parent_run_uuid)
             metrics_results['was_evaluated'] = True
+            if has_early_stopping:
+                # We will repeat the last reported metrics, because the metric must be present for ray to work
+                # this is not clean, but it is the only way I found to make it work
+                train_context = ray.train.get_context()
+                trial_id = train_context.get_trial_id()
+                last_reported_metrics = ray.get(last_metrics_actor.get_metrics.remote(trial_id))
+                last_reported_metrics_results = {metric: value for metric, value in last_reported_metrics.items()
+                                                 if metric.startswith('validation_') or metric.startswith('test_')}
+                metrics_results.update(last_reported_metrics_results)
             return metrics_results
 
         return training_fn
@@ -135,10 +166,22 @@ class HPOExperiment(BaseExperiment):
             storage_path = Path(mlflow.get_artifact_uri())
         else:
             storage_path = self.output_dir
-        metric = 'validation_default'
-        mode = 'min'
-        trainable = self.get_training_fn_for_hpo(is_openml=is_openml)
         model_cls = models_dict[model_nickname][0]
+        # check if model_cls is a model that has early stopping
+        if model_cls.has_early_stopping:
+            # metric is reported inside the model
+            metric = 'validation_default'
+            trainable = self.get_training_fn_for_hpo(is_openml=is_openml, has_early_stopping=True)
+            last_metrics_actor = LastMetricsActor.remote()
+            callbacks = [LastMetricsActorCallback(last_metrics_actor)]
+            with_parameters = {'last_metrics_actor': last_metrics_actor}
+        else:
+            # metric is reported by the training function
+            metric = 'final_validation_default'
+            trainable = self.get_training_fn_for_hpo(is_openml=is_openml, has_early_stopping=False)
+            callbacks = []
+            with_parameters = {}
+        mode = 'min'
         search_space, default_values = model_cls.create_search_space()
         model_params = model_params if model_params is not None else {}
         search_space.update(model_params)
@@ -159,23 +202,14 @@ class HPOExperiment(BaseExperiment):
         data_params = kwargs.copy()  # hopefully it only rest them
         param_space.update(**data_params)
         if issubclass(model_cls, DNNModel):
-            max_t = early_stopping_patience_dnn
+            max_t = max_epochs_dnn
         else:
-            max_t = early_stopping_patience_gbdt
-        search_algorithm, tune_config, run_config = get_search_algorithm_tune_config_run_config(default_param_space,
-                                                                                                search_algorithm_str,
-                                                                                                trial_scheduler_str,
-                                                                                                max_t,
-                                                                                                n_trials,
-                                                                                                timeout_experiment,
-                                                                                                timeout_trial,
-                                                                                                storage_path,
-                                                                                                metric,
-                                                                                                mode,
-                                                                                                seed_model,
-                                                                                                max_concurrent)
-        tuner = Tuner(trainable=trainable, param_space=param_space, tune_config=tune_config,
-                      run_config=run_config)
+            max_t = n_estimators_gbdt
+        search_algorithm, tune_config, run_config = get_search_algorithm_tune_config_run_config(
+            default_param_space, search_algorithm_str, trial_scheduler_str, max_t, n_trials, timeout_experiment,
+            timeout_trial, storage_path, metric, mode, seed_model, max_concurrent, callbacks)
+        tuner = Tuner(tune.with_parameters(trainable, **with_parameters), param_space=param_space,
+                      tune_config=tune_config, run_config=run_config)
         # to test the trainable function uncomment the following 3 lines
         # param_space['model_params'] = default_values
         # param_space['seed_model'] = 0
@@ -187,35 +221,34 @@ class HPOExperiment(BaseExperiment):
         best_params_and_seed = best_result.metrics['config']['model_params'].copy()
         best_params_and_seed['seed_best_model'] = best_result.metrics['config']['seed_model']
         best_metric_results = {f'best_{metric}': value for metric, value in best_result.metrics.items()
-                               if metric.startswith('validation_') or metric.startswith('test_')}
+                               if metric.startswith('final_validation_') or metric.startswith('final_test_')}
         if not best_result_was_evaluated:
             # if early stopping was used, the best model may not have been evaluated on the final validation and test
             # sets, because of early stopping managed by the tuner scheduler,
-            # so we retrain them starting from the best model file
-            # OBS.: This may lead to minor differences between training the entire model from scratch
+            # so we retrain them from scratch
+            # OBS.: We could start from the last saved model but:
+            # This may lead to minor differences between training the entire model from scratch
             # for example, for xgboost, when we load the best model, the random state is not preserved, so the model
             # will build trees differently than the original model would have built
-            raise('The following does not work yet, we need to check how the directory is saved')
-            # first we get the best model file
-            best_model_dir = Path(best_result.path) / self.output_dir.name
-            # get saved models
-            models = list(best_model_dir.glob('model_*'))
-            # sort (hopefully) by iteration -> ok for xgboost, catboost, lightgbm
-            models.sort(key=lambda f: int(f.stem.split("_")[-1]))
-            # get the last model
-            best_model_file = models[-1]
-
+            # And we need to save as many models as the number of trials, which can be a lot
             # now we retrain the best model starting from the best model file
             config = best_result.metrics['config']
             config['fit_params']['report_to_ray'] = False
-            config['fit_params']['init_model'] = best_model_file
+            parent_run_uuid = config.pop('parent_run_uuid', None)
+            if is_openml:
+                args = (config.pop('model_nickname'), config.pop('seed_model'), config.pop('task_id'),
+                        config.pop('task_fold'), config.pop('task_repeat'), config.pop('task_sample'))
+            else:
+                args = (config.pop('model_nickname'), config.pop('seed_model'), config.pop('dataset_name_or_id'),
+                        config.pop('seed_dataset'), config.pop('fold'))
             best_model_results = super(HPOExperiment, self).run_combination_with_mlflow(
+                *args,
                 create_validation_set=True, parent_run_uuid=parent_run_uuid, is_openml=is_openml, return_results=True,
                 **config)
 
             # change best_metric_results with new results
             best_metric_results = {f'best_{metric}': value for metric, value in best_model_results.items()
-                                   if metric.startswith('validation_') or metric.startswith('test_')}
+                                   if metric.startswith('final_validation_') or metric.startswith('final_test_')}
 
         if logging_to_mlflow:
             mlflow.log_params(best_params_and_seed)
@@ -226,7 +259,7 @@ class HPOExperiment(BaseExperiment):
             # so maybe it is not the best idea to retrain them
             # this is most useful for models that do not have early stopping and will benefit from a
             # training set with the validation set included
-            config = best_result.metrics['config']
+            config = best_result.metrics['config'].copy()
             config['fit_params']['report_to_ray'] = False
             results = super(HPOExperiment, self).run_combination_with_mlflow(
                 create_validation_set=False, parent_run_uuid=parent_run_uuid, is_openml=is_openml, return_results=True,
@@ -301,6 +334,9 @@ class HPOExperiment(BaseExperiment):
                 mlflow.log_params(flatten_dict(unique_params))
                 mlflow.log_params(flatten_dict(fit_params))
                 mlflow.log_params(flatten_dict(model_params))
+                model_nickname = unique_params['model_nickname']
+                if model_nickname.find('TabBenchmark') != -1:
+                    mlflow.log_param('model_name', model_nickname[len('TabBenchmark'):])
                 mlflow.log_param('create_validation_set', create_validation_set)
                 mlflow.log_param('git_hash', get_git_revision_hash())
                 # slurm parameters

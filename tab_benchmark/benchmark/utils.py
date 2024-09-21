@@ -248,7 +248,7 @@ def get_search_algorithm_tune_config_run_config(default_param_space, search_algo
                                                 max_t,
                                                 n_trials,
                                                 timeout_experiment, timeout_trial, storage_path, metric, mode,
-                                                seed, max_concurrent):
+                                                seed, max_concurrent, callbacks):
     if isinstance(storage_path, Path):
         storage_path = str(storage_path.resolve())
     scheduler = None
@@ -276,5 +276,6 @@ def get_search_algorithm_tune_config_run_config(default_param_space, search_algo
     tune_config = TuneConfig(mode=mode, metric=metric, search_alg=search_algorithm,
                              scheduler=scheduler, num_samples=n_trials, time_budget_s=timeout_experiment)
     run_config = RunConfig(stop={'time_total_s': timeout_trial}, storage_path=storage_path, log_to_file=True,
-                           failure_config=FailureConfig(fail_fast='raise'), sync_config=sync_config)
+                           failure_config=FailureConfig(fail_fast='raise'), sync_config=sync_config,
+                           callbacks=callbacks)
     return search_algorithm, tune_config, run_config
