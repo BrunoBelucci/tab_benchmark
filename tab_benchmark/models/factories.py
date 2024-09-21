@@ -168,8 +168,8 @@ def early_stopping_init(self, *, auto_early_stopping: bool = True, early_stoppin
                         eval_metric: Optional[str] = None):
     """
     auto_early_stopping:
-            Whether to use early stopping automatically, i.e., split the training data into training and validation sets
-            and stop training when the validation score does not improve anymore.
+        Whether to use early stopping automatically, i.e., split the training data into training and validation sets
+        and stop training when the validation score does not improve anymore.
     early_stopping_validation_size:
         Size of the validation set when using auto early stopping.
     early_stopping_patience:
@@ -431,4 +431,4 @@ def sklearn_factory(sklearn_cls, has_early_stopping=False, default_values=None,
     # TabBenchmarkSklearn.__doc__ = init_doc
     TabBenchmarkSklearn.fit.__doc__ = fit_doc
     name = f'TabBenchmark{sklearn_cls.__name__}'
-    return type(name, (TabBenchmarkSklearn,), {'__doc__': init_doc})
+    return type(name, (TabBenchmarkSklearn,), {'__doc__': init_doc, 'has_early_stopping': has_early_stopping})
