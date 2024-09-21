@@ -467,10 +467,10 @@ class BaseExperiment:
         n_classes = data_return['n_classes']
         X_validation = fit_return['X_validation']
         y_validation = fit_return['y_validation']
-        evaluate_results = evaluate_model(model, (X_test, y_test), 'test', metrics, default_metric, n_classes,
+        evaluate_results = evaluate_model(model, (X_test, y_test), 'final_test', metrics, default_metric, n_classes,
                                           self.error_score, logging_to_mlflow)
         if create_validation_set:
-            validation_results = evaluate_model(model, (X_validation, y_validation), 'validation', metrics,
+            validation_results = evaluate_model(model, (X_validation, y_validation), 'final_validation', metrics,
                                                 default_metric, n_classes, self.error_score, logging_to_mlflow)
             evaluate_results.update(validation_results)
         return evaluate_results
