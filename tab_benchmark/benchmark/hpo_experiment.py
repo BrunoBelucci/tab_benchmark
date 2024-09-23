@@ -43,7 +43,7 @@ class HPOExperiment(BaseExperiment):
     @extends(BaseExperiment.__init__)
     def __init__(self, *args, search_algorithm='random_search', trial_scheduler=None, n_trials=30,
                  timeout_experiment=10 * 60 * 60,
-                 timeout_trial=2 * 60 * 60, retrain_best_model=False, max_concurrent=0, **kwargs):
+                 timeout_trial=2 * 60 * 60, retrain_best_model=False, max_concurrent_trials=0, **kwargs):
         super().__init__(*args, **kwargs)
         self.search_algorithm = search_algorithm
         self.trial_scheduler = trial_scheduler
@@ -51,7 +51,7 @@ class HPOExperiment(BaseExperiment):
         self.timeout_experiment = timeout_experiment  # 10 hours
         self.timeout_trial = timeout_trial  # 2 hours
         self.retrain_best_model = retrain_best_model
-        self.max_concurrent = max_concurrent
+        self.max_concurrent_trials = max_concurrent_trials
         self.log_dir_dask = None
 
     def add_arguments_to_parser(self):
@@ -62,7 +62,7 @@ class HPOExperiment(BaseExperiment):
         self.parser.add_argument('--timeout_experiment', type=int, default=self.timeout_experiment)
         self.parser.add_argument('--timeout_trial', type=int, default=self.timeout_trial)
         self.parser.add_argument('--retrain_best_model', action='store_true')
-        self.parser.add_argument('--max_concurrent', type=int, default=self.max_concurrent)
+        self.parser.add_argument('--max_concurrent_trials', type=int, default=self.max_concurrent_trials)
 
     def unpack_parser(self):
         args = super().unpack_parser()
@@ -72,7 +72,7 @@ class HPOExperiment(BaseExperiment):
         self.timeout_experiment = args.timeout_experiment
         self.timeout_trial = args.timeout_trial
         self.retrain_best_model = args.retrain_best_model
-        self.max_concurrent = args.max_concurrent
+        self.max_concurrent_trials = args.max_concurrent_trials
 
     def get_model(self, model_params=None, n_jobs=1,
                   logging_to_mlflow=False, create_validation_set=False, output_dir=None, data_return=None, **kwargs):
@@ -152,6 +152,9 @@ class HPOExperiment(BaseExperiment):
                             n_jobs=1, create_validation_set=True,
                             model_params=None, is_openml=True, logging_to_mlflow=False,
                             fit_params=None, return_results=False, retrain_best_model=False, **kwargs):
+        num_cpus = n_jobs
+        num_gpus = self.n_gpus / (self.n_cores / n_jobs)
+        ray.init(address='local', num_cpus=num_cpus, num_gpus=num_gpus, ignore_reinit_error=True)
         model_nickname = kwargs.pop('model_nickname')
         seed_model = kwargs.pop('seed_model')
         models_dict = kwargs.pop('models_dict', self.models_dict)
@@ -161,7 +164,7 @@ class HPOExperiment(BaseExperiment):
         n_trials = kwargs.pop('n_trials', self.n_trials)
         timeout_experiment = kwargs.pop('timeout_experiment', self.timeout_experiment)
         timeout_trial = kwargs.pop('timeout_trial', self.timeout_trial)
-        max_concurrent = kwargs.pop('max_concurrent', self.max_concurrent)
+        max_concurrent_trials = kwargs.pop('max_concurrent_trials', self.max_concurrent_trials)
         if logging_to_mlflow:
             storage_path = Path(mlflow.get_artifact_uri())
         else:
@@ -207,8 +210,10 @@ class HPOExperiment(BaseExperiment):
             max_t = n_estimators_gbdt
         search_algorithm, tune_config, run_config = get_search_algorithm_tune_config_run_config(
             default_param_space, search_algorithm_str, trial_scheduler_str, max_t, n_trials, timeout_experiment,
-            timeout_trial, storage_path, metric, mode, seed_model, max_concurrent, callbacks)
-        tuner = Tuner(tune.with_parameters(trainable, **with_parameters), param_space=param_space,
+            timeout_trial, storage_path, metric, mode, seed_model, max_concurrent_trials, callbacks)
+        trainable_with_parameters = tune.with_parameters(trainable, **with_parameters)
+        trainable_with_resources = tune.with_resources(trainable_with_parameters, {'cpu': num_cpus, 'gpu': num_gpus})
+        tuner = Tuner(trainable_with_resources, param_space=param_space,
                       tune_config=tune_config, run_config=run_config)
         # to test the trainable function uncomment the following 3 lines
         # param_space['model_params'] = default_values
@@ -287,7 +292,7 @@ class HPOExperiment(BaseExperiment):
         n_trials = kwargs.get('n_trials', self.n_trials)
         timeout_experiment = kwargs.get('timeout_experiment', self.timeout_experiment)
         timeout_trial = kwargs.get('timeout_trial', self.timeout_trial)
-        max_concurrent = kwargs.get('max_concurrent', self.max_concurrent)
+        max_concurrent_trials = kwargs.get('max_concurrent_trials', self.max_concurrent_trials)
         retrain_best_model = kwargs.pop('retrain_best_model', self.retrain_best_model)
         unique_params = self.combination_args_to_kwargs(*args, **kwargs)
         model_nickname = unique_params.get('model_nickname')
@@ -297,7 +302,7 @@ class HPOExperiment(BaseExperiment):
                              create_validation_set=create_validation_set,
                              search_algorithm=search_algorithm, trial_scheduler=trial_scheduler, n_trials=n_trials,
                              timeout_experiment=timeout_experiment, timeout_trial=timeout_trial,
-                             max_concurrent=max_concurrent, retrain_best_model=retrain_best_model,
+                             max_concurrent_trials=max_concurrent_trials, retrain_best_model=retrain_best_model,
                              **kwargs)
         possible_existent_run, logging_to_mlflow = treat_mlflow(experiment_name, mlflow_tracking_uri, check_if_exists,
                                                                 **unique_params)
@@ -357,7 +362,7 @@ class HPOExperiment(BaseExperiment):
                 mlflow.log_param('n_trials', n_trials)
                 mlflow.log_param('timeout_experiment', timeout_experiment)
                 mlflow.log_param('timeout_trial', timeout_trial)
-                mlflow.log_param('max_concurrent', max_concurrent)
+                mlflow.log_param('max_concurrent_trials', max_concurrent_trials)
                 mlflow.log_param('retrain_best_model', retrain_best_model)
                 parent_run_uuid = run.info.run_uuid
                 return self.run_combination_hpo(n_jobs=n_jobs,
