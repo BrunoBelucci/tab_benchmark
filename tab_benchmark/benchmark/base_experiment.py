@@ -34,7 +34,7 @@ warnings.simplefilter(action='ignore', category=FutureWarning)
 class MLFlowCleanupPlugin(WorkerPlugin):
     def teardown(self, worker: Worker):
         if mlflow.active_run() is not None:
-            mlflow.log_param('EXCEPTION', 'KILLED')
+            mlflow.log_param('EXCEPTION', f'KILLED, worker status {worker.status}')
             mlflow.end_run('KILLED')
 
 
