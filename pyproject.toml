@@ -71,7 +71,8 @@ dependencies = [
     "dask-jobqueue",
     "openml",
     "oslo.concurrency",
-    "ray[tune]"
+    "ray[tune]",
+    "optuna"
 ]
 
 [project.urls]
