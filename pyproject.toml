@@ -70,7 +70,6 @@ dependencies = [
     "distributed",
     "dask-jobqueue",
     "openml",
-    "oslo.concurrency",
     "ray[tune]",
     "optuna"
 ]

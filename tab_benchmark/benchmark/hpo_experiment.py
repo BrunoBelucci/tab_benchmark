@@ -5,7 +5,6 @@ from pathlib import Path
 from random import SystemRandom
 import ray
 from distributed import get_worker
-from oslo_concurrency import lockutils
 from ray import tune
 from ray.tune import Tuner, randint, Callback
 import mlflow
@@ -275,8 +274,9 @@ class HPOExperiment(BaseExperiment):
                 mlflow.log_metrics(metrics_results)
         if return_results:
             return results
+        else:
+            return True
 
-    @lockutils.synchronized('run_combination_with_mlflow_hpo')
     def run_combination_with_mlflow(self, *args,
                                     n_jobs=1, create_validation_set=False,
                                     model_params=None, logging_to_mlflow=False,
