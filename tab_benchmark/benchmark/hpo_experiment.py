@@ -3,6 +3,8 @@ import os
 import time
 from pathlib import Path
 from random import SystemRandom
+from typing import List
+
 import dask
 import ray
 from distributed import get_worker
@@ -28,6 +30,9 @@ class LastMetricsActor:
     def get_metrics(self, trial_id):
         return self.last_reported_metrics.get(trial_id, [])
 
+    def clean_metrics(self, trial_id):
+        self.last_reported_metrics.pop(trial_id, None)
+
 
 class LastMetricsActorCallback(Callback):
     def __init__(self, metrics_actor):
@@ -37,6 +42,11 @@ class LastMetricsActorCallback(Callback):
         trial_id = trial.trial_id
         # Store the metrics in the Ray Actor
         self.metrics_actor.add_metrics.remote(trial_id, result)
+
+    def on_trial_complete(self, iteration, trials, trial, **info):
+        # Remove the metrics from the Ray Actor to save memory
+        trial_id = trial.trial_id
+        self.metrics_actor.clean_metrics.remote(trial_id)
 
 
 class HPOExperiment(BaseExperiment):
