@@ -24,8 +24,8 @@ def check_if_exists_mlflow(experiment_name, **kwargs):
     filter_string = " AND ".join([f'params."{k}" = "{v}"' for k, v in flatten_dict(kwargs).items()])
     runs = mlflow.search_runs(experiment_names=[experiment_name], filter_string=filter_string)
     # remove ./mlruns if it is automatically created
-    if os.path.exists('./mlruns'):
-        os.rmdir('./mlruns')
+    # if os.path.exists('./mlruns'):
+    #     os.rmdir('./mlruns')
     runs = runs.loc[runs['status'] == 'FINISHED']
     if not runs.empty:
         return runs.iloc[0]
