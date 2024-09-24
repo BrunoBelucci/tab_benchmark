@@ -698,13 +698,13 @@ class BaseExperiment:
                 if self.n_gpus > 0:
                     resources_per_work['gpus'] = self.n_gpus
                 job_extra_directives = dask.config.get(
-                    "jobqueue.%s.job-extra-directives" % 'slurm', []
+                    "jobqueue.slurm.job-extra-directives", []
                 )
                 job_script_prologue = dask.config.get(
-                    "jobqueue.%s.job-script-prologue" % 'slurm', []
+                    "jobqueue.slurm.job-script-prologue", []
                 )
                 worker_extra_args = dask.config.get(
-                    "jobqueue.%s.worker-extra-args" % 'slurm', []
+                    "jobqueue.slurm.worker-extra-args", []
                 )
                 job_extra_directives = job_extra_directives + self.dask_job_extra_directives
                 job_script_prologue = job_script_prologue + ['eval "$(conda shell.bash hook)"',

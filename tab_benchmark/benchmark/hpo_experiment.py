@@ -3,6 +3,7 @@ import os
 import time
 from pathlib import Path
 from random import SystemRandom
+import dask
 import ray
 from distributed import get_worker
 from ray import tune
@@ -380,6 +381,24 @@ class HPOExperiment(BaseExperiment):
                                             logging_to_mlflow=logging_to_mlflow,
                                             retrain_best_model=retrain_best_model, return_results=return_results,
                                             **unique_params)
+
+    def setup_dask(self, n_workers, cluster_type='local', address=None):
+        # we need to increase number of threads and open files for ray to work,
+        # it creates a lot of threads and open files, even though only some are active at the same time
+        # if it is a local cluster this must be setup manually before running the program
+        if cluster_type == 'slurm':
+            job_script_prologue = dask.config.get(
+                "jobqueue.slurm.job-script-prologue", []
+            )
+            job_script_prologue = job_script_prologue + [
+                # https://docs.ray.io/en/latest/cluster/vms/user-guides/large-cluster-best-practices.html
+                "ulimit -n 65535",
+                "ulimit -u 65535",
+            ]
+            dask.config.set({
+                'jobqueue.slurm.job-script-prologue': job_script_prologue
+            })
+        return super().setup_dask(n_workers, cluster_type, address)
 
 
 if __name__ == '__main__':
