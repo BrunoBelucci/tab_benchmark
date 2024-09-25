@@ -56,19 +56,13 @@ def get_model(model_nickname, seed_model, model_params=None, models_dict=None, n
     return model
 
 
-def treat_mlflow(experiment_name, mlflow_tracking_uri, check_if_exists, **kwargs):
-    if mlflow_tracking_uri:
-        mlflow.set_tracking_uri(mlflow_tracking_uri)
-    if mlflow_tracking_uri and experiment_name:
-        run = None
-        if check_if_exists:
-            run = check_if_exists_mlflow(experiment_name, **kwargs)
-        if run is not None:
-            return run, False
-        else:
-            return run, True
+def set_mlflow_tracking_uri_check_if_exists(experiment_name, mlflow_tracking_uri, check_if_exists, **kwargs):
+    mlflow.set_tracking_uri(mlflow_tracking_uri)
+    run = check_if_exists_mlflow(experiment_name, **kwargs)
+    if run is not None:
+        return run
     else:
-        return None, False
+        return None
 
 
 def fit_model(model, X, y, cat_ind, att_names, cat_dims, n_classes, task_name, train_indices, test_indices,
