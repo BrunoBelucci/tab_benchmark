@@ -165,6 +165,7 @@ class TabBenchmarkModel(ABC):
 
 def early_stopping_init(self, *, auto_early_stopping: bool = True, early_stopping_validation_size=0.1,
                         early_stopping_patience: int = 0, log_to_mlflow_if_running: bool = True,
+                        log_interval: int = 50, save_checkpoint: bool = False, checkpoint_interval: int = 100,
                         eval_metric: Optional[str] = None):
     """
     auto_early_stopping:
@@ -176,6 +177,12 @@ def early_stopping_init(self, *, auto_early_stopping: bool = True, early_stoppin
         Patience for early stopping.
     log_to_mlflow_if_running:
         Whether to log intermediate results to MLflow if it is running.
+    log_interval:
+        Interval for logging.
+    save_checkpoint:
+        Whether to save a checkpoint.
+    checkpoint_interval:
+        Interval for saving a checkpoint.
     eval_metric:
         Evaluation metric. If None, the default metric of the model will be used. This metric can be any defined
         in get_metric_fn, and if there is an equivalent metric in the model, it will be used.
@@ -184,6 +191,9 @@ def early_stopping_init(self, *, auto_early_stopping: bool = True, early_stoppin
     self.early_stopping_validation_size = early_stopping_validation_size
     self.early_stopping_patience = early_stopping_patience
     self.log_to_mlflow_if_running = log_to_mlflow_if_running
+    self.log_interval = log_interval
+    self.save_checkpoint = save_checkpoint
+    self.checkpoint_interval = checkpoint_interval
     self.eval_metric = eval_metric
 
 
@@ -275,7 +285,7 @@ def dnn_model_factory(dnn_architecture_cls, dnn_model_cls=DNNModel, default_valu
 
 
 def sklearn_factory(sklearn_cls, has_early_stopping=False, default_values=None,
-                    map_task_to_default_values=None, before_fit_method=None, extra_dct=None):
+                    map_task_to_default_values=None, before_fit_method=None, after_fit_method=None, extra_dct=None):
     default_values = default_values.copy() if default_values else {}
     map_task_to_default_values = map_task_to_default_values.copy() if map_task_to_default_values else {}
     extra_dct = extra_dct.copy() if extra_dct else {}
@@ -362,7 +372,8 @@ def sklearn_factory(sklearn_cls, has_early_stopping=False, default_values=None,
                 self.map_task_to_default_values = map_task_to_default_values
 
         def fit(self, X, y, task=None, cat_features=None, cat_dims=None, n_classes=None, eval_set=None, eval_name=None,
-                report_to_ray=False, init_model=None, *args, **kwargs):
+                init_model=None,
+                report_to_optuna=False, optuna_trial=None, *args, **kwargs):
             eval_set = sequence_to_list(eval_set) if eval_set is not None else []
             eval_name = sequence_to_list(eval_name) if eval_name is not None else []
             if eval_set and not eval_name:
@@ -401,7 +412,7 @@ def sklearn_factory(sklearn_cls, has_early_stopping=False, default_values=None,
 
             if hasattr(self, 'auto_early_stopping'):
                 X, y, eval_set, eval_name = fn_to_add_auto_early_stopping(
-                    self.auto_early_stopping, self.early_stopping_validation_size, X, y, task, eval_set, eval_name)
+                    self.auto_early_stopgfping, self.early_stopping_validation_size, X, y, task, eval_set, eval_name)
 
             # if we have a before_fit method, we call it here
             if hasattr(self, 'before_fit'):
@@ -412,15 +423,26 @@ def sklearn_factory(sklearn_cls, has_early_stopping=False, default_values=None,
                 del arg_and_kwargs['self'], arg_and_kwargs['X'], arg_and_kwargs['y']
                 fit_arguments = self.before_fit(X, y, task=task, cat_features=cat_features,
                                                 cat_dims=cat_dims, n_classes=n_classes,
-                                                eval_set=eval_set,  eval_name=eval_name, report_to_ray=report_to_ray,
+                                                eval_set=eval_set,  eval_name=eval_name,
+                                                report_to_optuna=report_to_optuna, optuna_trial=optuna_trial,
                                                 init_model=init_model, **arg_and_kwargs)
-                return sklearn_cls.fit(self, **fit_arguments)
+                fit_return = sklearn_cls.fit(self, **fit_arguments)
             # otherwise we assume that we will only call the original fit method with X, y, *args, **kwargs
             else:
-                return sklearn_cls.fit(self, X, y, *args, **kwargs)
+                fit_return = sklearn_cls.fit(self, X, y, *args, **kwargs)
+
+            # if we have an after_fit method, we call it here
+            if hasattr(self, 'after_fit'):
+                # fn takes the fit_return and returns the modified fit_return
+                fit_return = self.after_fit(fit_return)
+            return fit_return
+
     # END OF CLASS DEFINITION
     if before_fit_method:
         TabBenchmarkSklearn.before_fit = before_fit_method
+
+    if after_fit_method:
+        TabBenchmarkSklearn.after_fit = after_fit_method
 
     if extra_dct:
         for key, value in extra_dct.items():

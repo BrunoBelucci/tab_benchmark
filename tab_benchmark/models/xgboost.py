@@ -6,14 +6,13 @@ from typing import Optional, cast, Dict, Any
 import mlflow
 import numpy
 import numpy as np
+import optuna
 from sklearn.base import BaseEstimator
 from xgboost import XGBClassifier, XGBRegressor, XGBModel, collective
 from xgboost.callback import (TrainingCallback, _Model, TrainingCheckPoint as OriginalTrainingCheckPoint,
                               EarlyStopping as OriginalEarlyStopping, _Score, _ScoreList)
 from tab_benchmark.models.factories import sklearn_factory
 from tab_benchmark.utils import extends, get_metric_fn
-from ray import tune
-from ray.train import report
 
 n_estimators_gbdt = 10000
 early_stopping_patience_gbdt = 100
@@ -62,20 +61,27 @@ def get_recommended_params_xgboost():
     return default_values_from_search_space
 
 
-class ReportToRayXGBoost(TrainingCallback):
-    def __init__(self, eval_name, default_metric=None):
+class ReportToOptunaXGBoost(TrainingCallback):
+    def __init__(self, optuna_trial, default_eval_name, metric_name=None):
         super().__init__()
-        self.map_default_name_to_eval_name = {f'validation_{i}': name for i, name in enumerate(eval_name)}
-        self.default_metric = default_metric
+        # self.map_default_name_to_eval_name = {f'validation_{i}': name for i, name in enumerate(eval_name)}
+        self.default_eval_name = default_eval_name
+        self.metric_name = metric_name
+        self.optuna_trial = optuna_trial
+        self.pruned_trial = False
 
     def after_iteration(self, model: _Model, epoch: int, evals_log):
-        dict_to_report = {}
-        for default_name, metrics in evals_log.items():
-            our_name = self.map_default_name_to_eval_name[default_name]
-            dict_to_report.update({f'{our_name}_{metric}': value[-1] for metric, value in metrics.items()})
-            if self.default_metric:
-                dict_to_report[f'{our_name}_default'] = metrics[self.default_metric][-1]
-        report(dict_to_report)
+        if self.metric_name:
+            metric_to_report = evals_log[self.default_eval_name][self.metric_name][-1]
+        else:
+            # if we do not have a metric name, we will report the last metric
+            metric_to_report = evals_log[self.default_eval_name][list(evals_log[self.default_eval_name].keys())[-1]][-1]
+        self.optuna_trial.report(metric_to_report, step=epoch)
+        if self.optuna_trial.should_prune():
+            self.pruned_trial = True
+            message = f'Trial was pruned at epoch {epoch}.'
+            print(message)
+            return True
 
 
 class LogToMLFlowXGBoost(TrainingCallback):
@@ -288,7 +294,7 @@ map_our_metric_to_xgboost_metric = {
 
 
 def before_fit_xgboost(self, X, y, task=None, cat_features=None, cat_dims=None, n_classes=None, eval_set=None,
-                       eval_name=None, report_to_ray=False, init_model=None, **args_and_kwargs):
+                       eval_name=None, init_model=None, report_to_optuna=False, optuna_trial=None,  **args_and_kwargs):
 
     eval_set.insert(0, (X, y))
     eval_name.insert(0, 'train')
@@ -321,16 +327,23 @@ def before_fit_xgboost(self, X, y, task=None, cat_features=None, cat_dims=None, 
         # create early stopping callback
         early_stopping_callback = EarlyStopping(self.early_stopping_patience, metric_name=eval_metric,
                                                 maximize=higher_is_better)
+        self.callbacks.append(early_stopping_callback)
+
+    if self.save_checkpoint:
         checkpoint_callback = TrainingCheckPoint(self.output_dir, eval_metric=eval_metric,
-                                                 maximize=higher_is_better, save_top_k=1, as_pickle=False)
-        self.callbacks.extend([checkpoint_callback, early_stopping_callback])
+                                                 maximize=higher_is_better, save_top_k=1, as_pickle=False,
+                                                 interval=self.checkpoint_interval)
+        self.callbacks.append(checkpoint_callback)
 
     if self.log_to_mlflow_if_running:
         if mlflow.active_run():
-            self.callbacks.append(LogToMLFlowXGBoost(eval_name, default_metric=self.eval_metric))
+            self.callbacks.append(LogToMLFlowXGBoost(eval_name, default_metric=eval_metric,
+                                                     log_every_n_steps=self.log_interval))
 
-    if report_to_ray:
-        self.callbacks.append(ReportToRayXGBoost(eval_name, default_metric=self.eval_metric))
+    if report_to_optuna:
+        default_eval_name = f'validation_{len(eval_name) - 1}'
+        self.callbacks.append(ReportToOptunaXGBoost(optuna_trial=optuna_trial, default_eval_name=default_eval_name,
+                                                    metric_name=eval_metric))
 
     fit_arguments.update(dict(
         X=X,
@@ -339,6 +352,14 @@ def before_fit_xgboost(self, X, y, task=None, cat_features=None, cat_dims=None, 
         xgb_model=init_model,
     ))
     return fit_arguments
+
+
+def after_fit_xgboost(self, **args_and_kwargs):
+    for callback in self.callbacks:
+        if isinstance(callback, ReportToOptunaXGBoost):
+            self.pruned_trial = callback.pruned_trial
+            break
+    return args_and_kwargs
 
 
 # Just to get the parameters of the XGBModel, because XGBClassifier and XGBRegressor do not show them
@@ -404,6 +425,7 @@ TabBenchmarkXGBClassifier = sklearn_factory(
         'binary_classification': {'objective': 'binary:logistic'},
     },
     before_fit_method=before_fit_xgboost,
+    after_fit_method=after_fit_xgboost,
     extra_dct={
         'create_search_space': staticmethod(create_search_space_xgboost),
         'get_recommended_params': staticmethod(get_recommended_params_xgboost),
@@ -422,6 +444,7 @@ TabBenchmarkXGBRegressor = sklearn_factory(
         'eval_metric': 'rmse'
     },
     before_fit_method=before_fit_xgboost,
+    after_fit_method=after_fit_xgboost,
     extra_dct={
         'create_search_space': staticmethod(create_search_space_xgboost),
         'get_recommended_params': staticmethod(get_recommended_params_xgboost),
