@@ -616,6 +616,8 @@ class BaseExperiment:
                                      fit_params=run_unique_params.pop('fit_params'), return_results=return_results,
                                      clean_output_dir=clean_output_dir,
                                      log_to_mlflow=True,
+                                     parent_run_uuid=parent_run_uuid, experiment_name=experiment_name,
+                                     mlflow_tracking_uri=mlflow_tracking_uri, check_if_exists=check_if_exists,
                                      **run_unique_params)
 
     def setup_dask(self, n_workers, cluster_type='local', address=None):
