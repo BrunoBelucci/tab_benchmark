@@ -23,17 +23,17 @@ def create_search_space_xgboost():
     # Not tunning n_estimators following discussion at
     # https://openreview.net/forum?id=Fp7__phQszn&noteId=Z7Y_qxwDjiM
     search_space = dict(
-        learning_rate=tune.loguniform(1e-3, 1.0),
-        reg_lambda=tune.loguniform(1e-10, 1),
-        reg_alpha=tune.loguniform(1e-10, 1.0),
-        gamma=tune.loguniform(1e-1, 1.0),
-        colsample_bylevel=tune.uniform(0.1, 1),
-        colsample_bynode=tune.uniform(0.1, 1),
-        colsample_bytree=tune.uniform(0.1, 1),
-        max_depth=tune.randint(1, 20),
-        max_delta_step=tune.randint(0, 10),
-        min_child_weight=tune.loguniform(0.1, 20),
-        subsample=tune.uniform(0.01, 1),
+        learning_rate=optuna.distributions.FloatDistribution(1e-3, 1.0, log=True),
+        reg_lambda=optuna.distributions.FloatDistribution(1e-10, 1.0, log=True),
+        reg_alpha=optuna.distributions.FloatDistribution(1e-10, 1.0, log=True),
+        gamma=optuna.distributions.FloatDistribution(1e-1, 1.0, log=True),
+        colsample_bylevel=optuna.distributions.FloatDistribution(0.1, 1.0),
+        colsample_bynode=optuna.distributions.FloatDistribution(0.1, 1.0),
+        colsample_bytree=optuna.distributions.FloatDistribution(0.1, 1.0),
+        max_depth=optuna.distributions.IntDistribution(1, 20),
+        max_delta_step=optuna.distributions.IntDistribution(0, 10),
+        min_child_weight=optuna.distributions.FloatDistribution(0.1, 20.0, log=True),
+        subsample=optuna.distributions.FloatDistribution(0.01, 1.0),
     )
     default_values = dict(
         learning_rate=0.3,
@@ -354,12 +354,14 @@ def before_fit_xgboost(self, X, y, task=None, cat_features=None, cat_dims=None, 
     return fit_arguments
 
 
-def after_fit_xgboost(self, **args_and_kwargs):
+def after_fit_xgboost(self, fit_return):
     for callback in self.callbacks:
         if isinstance(callback, ReportToOptunaXGBoost):
             self.pruned_trial = callback.pruned_trial
+            if self.log_to_mlflow_if_running:
+                mlflow.log_metric('pruned', int(callback.pruned_trial))
             break
-    return args_and_kwargs
+    return fit_return
 
 
 # Just to get the parameters of the XGBModel, because XGBClassifier and XGBRegressor do not show them

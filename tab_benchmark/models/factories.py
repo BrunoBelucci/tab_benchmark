@@ -412,7 +412,7 @@ def sklearn_factory(sklearn_cls, has_early_stopping=False, default_values=None,
 
             if hasattr(self, 'auto_early_stopping'):
                 X, y, eval_set, eval_name = fn_to_add_auto_early_stopping(
-                    self.auto_early_stopgfping, self.early_stopping_validation_size, X, y, task, eval_set, eval_name)
+                    self.auto_early_stopping, self.early_stopping_validation_size, X, y, task, eval_set, eval_name)
 
             # if we have a before_fit method, we call it here
             if hasattr(self, 'before_fit'):

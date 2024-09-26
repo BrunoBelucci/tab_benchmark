@@ -366,28 +366,22 @@ class BaseExperiment:
 
     def load_data(self, create_validation_set=False, log_to_mlflow=False, **kwargs):
         is_openml_task = kwargs.get('is_openml_task', False)
-        data_params = kwargs.copy()
-        data_params.pop('model_nickname')
-        data_params.pop('seed_model')
-        data_params.pop('is_openml_task')
+        if is_openml_task:
+            keys = ['task_id', 'task_repeat', 'task_fold', 'task_sample']
+        else:
+            keys = ['dataset_name_or_id', 'seed_dataset', 'resample_strategy', 'n_folds', 'fold', 'pct_test',
+                    'validation_resample_strategy', 'pct_validation']
+        data_params = {key: kwargs.get(key) for key in keys}
         if is_openml_task:
             (X, y, cat_ind, att_names, cat_features_names, cat_dims, task_name, n_classes, train_indices,
              test_indices, validation_indices) = load_openml_task(**data_params,
                                                                   create_validation_set=create_validation_set,
                                                                   logging_to_mlflow=log_to_mlflow)
         else:
-            resample_strategy = self.resample_strategy
-            n_folds = self.k_folds
-            pct_test = self.pct_test
-            validation_resample_strategy = self.validation_resample_strategy
-            pct_validation = self.pct_validation
             (X, y, cat_ind, att_names, cat_features_names, cat_dims, task_name, n_classes, train_indices,
              test_indices, validation_indices) = (
                 load_own_task(**data_params,
-                              resample_strategy=resample_strategy, n_folds=n_folds, pct_test=pct_test,
-                              create_validation_set=create_validation_set,
-                              validation_resample_strategy=validation_resample_strategy,
-                              pct_validation=pct_validation, logging_to_mlflow=log_to_mlflow)
+                              create_validation_set=create_validation_set, logging_to_mlflow=log_to_mlflow)
             )
         data_return = dict(X=X, y=y, cat_ind=cat_ind, att_names=att_names, cat_features_names=cat_features_names,
                            cat_dims=cat_dims, task_name=task_name, n_classes=n_classes, train_indices=train_indices,

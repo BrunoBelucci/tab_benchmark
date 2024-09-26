@@ -58,7 +58,10 @@ def get_model(model_nickname, seed_model, model_params=None, models_dict=None, n
 
 def set_mlflow_tracking_uri_check_if_exists(experiment_name, mlflow_tracking_uri, check_if_exists, **kwargs):
     mlflow.set_tracking_uri(mlflow_tracking_uri)
-    run = check_if_exists_mlflow(experiment_name, **kwargs)
+    if check_if_exists:
+        run = check_if_exists_mlflow(experiment_name, **kwargs)
+    else:
+        run = None
     if run is not None:
         return run
     else:

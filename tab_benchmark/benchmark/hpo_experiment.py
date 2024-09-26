@@ -1,5 +1,6 @@
 import argparse
 import time
+from functools import partial
 from math import floor
 import optuna
 import optuna_integration
@@ -58,13 +59,19 @@ class HPOExperiment(BaseExperiment):
         self.pruner = args.pruner
 
     def training_fn(self, config):
-        results = super(HPOExperiment, self).run_mlflow_and_train_model(
-            fn_to_train_model=BaseExperiment.train_model, **config)
-        metrics_results = {metric: value for metric, value in results['evaluate_return'].items()
-                           if metric.startswith('final_validation_') or metric.startswith('final_test_')}
-        parent_run_uuid = config.get('parent_run_uuid', None)
-        if parent_run_uuid:
-            mlflow.log_metrics(metrics_results, step=int(time.time_ns()), run_id=parent_run_uuid)
+        log_to_mlflow = config.pop('log_to_mlflow', False)
+        if log_to_mlflow:
+            results = super(HPOExperiment, self).run_mlflow_and_train_model(
+                fn_to_train_model=partial(BaseExperiment.train_model, self=self), **config)
+            metrics_results = {metric: value for metric, value in results['evaluate_return'].items()
+                               if metric.startswith('final_validation_') or metric.startswith('final_test_')}
+            parent_run_uuid = config.get('parent_run_uuid', None)
+            if parent_run_uuid:
+                mlflow.log_metrics(metrics_results, step=int(time.time_ns()), run_id=parent_run_uuid)
+        else:
+            results = super(HPOExperiment, self).train_model(log_to_mlflow=False, **config)
+            metrics_results = {metric: value for metric, value in results['evaluate_return'].items()
+                               if metric.startswith('final_validation_') or metric.startswith('final_test_')}
         metrics_results['was_evaluated'] = True
         return metrics_results
 
@@ -89,6 +96,7 @@ class HPOExperiment(BaseExperiment):
                 sampler = optuna.samplers.TPESampler(multivariate=True, constant_liar=True, seed=seed_model)
             elif sampler == 'random':
                 sampler = optuna.samplers.RandomSampler(seed=seed_model)
+            else:
                 raise NotImplementedError(f'Sampler {sampler} not implemented for optuna')
 
             # pruner
@@ -103,6 +111,8 @@ class HPOExperiment(BaseExperiment):
                 reduction_factor = floor((max_resources / min_resources) ** (1 / (n_brackets - 1)))
                 pruner = optuna.pruners.HyperbandPruner(min_resource=min_resources, max_resource=max_resources,
                                                         reduction_factor=reduction_factor)
+            elif pruner == 'sha':
+                pruner = optuna.pruners.SuccessiveHalvingPruner(min_resource=10)
             elif pruner is None:
                 pruner = None
             else:
@@ -127,8 +137,10 @@ class HPOExperiment(BaseExperiment):
                 parent_run_uuid = mlflow.active_run().info.run_id
             else:
                 parent_run_uuid = None
-            config = dict(
-                # search_space=search_space,  # model_params and seed_model
+            fit_params['report_to_optuna'] = True
+            config = kwargs.copy()
+            config.update(dict(
+                # model_params and seed_model defined below
                 n_jobs=n_jobs,
                 create_validation_set=create_validation_set,
                 fit_params=fit_params,
@@ -136,10 +148,7 @@ class HPOExperiment(BaseExperiment):
                 clean_output_dir=clean_output_dir,
                 log_to_mlflow=log_to_mlflow,
                 parent_run_uuid=parent_run_uuid,
-                experiment_name=kwargs.get('experiment_name'),
-                mlflow_tracking_uri=kwargs.get('mlflow_tracking_uri'),
-                check_if_exists=kwargs.get('check_if_exists'),
-            )
+            ))
             study.enqueue_trial(default_values)
 
             # run
@@ -156,6 +165,7 @@ class HPOExperiment(BaseExperiment):
                             seed_model = model_params.pop('seed_model')
                             config_trial = config.copy()
                             config_trial.update(dict(model_params=model_params, seed_model=seed_model))
+                            config_trial['fit_params']['optuna_trial'] = trial
                             resources = {'cpu': n_jobs, 'gpu': self.n_gpus / (self.n_cores / n_jobs)}
                             futures.append(client.submit(self.training_fn, resources=resources, **config_trial))
                         results = client.gather(futures)
@@ -174,6 +184,7 @@ class HPOExperiment(BaseExperiment):
                     seed_model = model_params.pop('seed_model')
                     config_trial = config.copy()
                     config_trial.update(dict(model_params=model_params, seed_model=seed_model))
+                    config_trial['fit_params']['optuna_trial'] = trial
                     results = self.training_fn(config_trial)
                     trial.set_user_attr('was_evaluated', True)
                     for metric, value in results.items():
@@ -185,6 +196,7 @@ class HPOExperiment(BaseExperiment):
 
             best_trial = study.best_trial
             best_model_params_and_seed = best_trial.params.copy()
+            best_model_params_and_seed['seed_best_model'] = best_model_params_and_seed.pop('seed_model')
             best_metric_results = {f'best_{metric}': value for metric, value in best_trial.user_attrs.items()
                                    if metric.startswith('final_validation_') or metric.startswith('final_test_')}
             if log_to_mlflow:
