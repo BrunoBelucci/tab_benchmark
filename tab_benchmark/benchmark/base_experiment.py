@@ -603,9 +603,7 @@ class BaseExperiment:
         else:
             nested = False
 
-        run_name = '_'.join([f'{k}={v}' for k, v in run_unique_params.items()])
-
-        with mlflow.start_run(run_name=run_name, nested=nested) as run:
+        with mlflow.start_run(nested=nested) as run:
             self.log_run_start_params(**run_unique_params)
             ret = fn_to_train_model(n_jobs=n_jobs,
                                     create_validation_set=run_unique_params.pop('create_validation_set'),
