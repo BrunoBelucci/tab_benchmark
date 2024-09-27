@@ -588,14 +588,17 @@ class BaseExperiment:
         if experiment is None:
             mlflow.create_experiment(experiment_name, artifact_location=str(self.output_dir))
         mlflow.set_experiment(experiment_name)
+        parent_run_was_started = False
         if parent_run_uuid is not None:
             # check if parent run is active, if not start it
             possible_parent_run = mlflow.active_run()
             if possible_parent_run is not None:
                 if possible_parent_run.info.run_uuid != parent_run_uuid:
                     mlflow.start_run(run_id=parent_run_uuid, nested=True)
+                    parent_run_was_started = True
             else:
                 mlflow.start_run(parent_run_uuid)
+                parent_run_was_started = True
             nested = True
         else:
             nested = False
@@ -604,15 +607,18 @@ class BaseExperiment:
 
         with mlflow.start_run(run_name=run_name, nested=nested) as run:
             self.log_run_start_params(**run_unique_params)
-            return fn_to_train_model(n_jobs=n_jobs,
-                                     create_validation_set=run_unique_params.pop('create_validation_set'),
-                                     model_params=run_unique_params.pop('model_params'),
-                                     fit_params=run_unique_params.pop('fit_params'), return_results=return_results,
-                                     clean_output_dir=clean_output_dir,
-                                     log_to_mlflow=True,
-                                     parent_run_uuid=parent_run_uuid, experiment_name=experiment_name,
-                                     mlflow_tracking_uri=mlflow_tracking_uri, check_if_exists=check_if_exists,
-                                     **run_unique_params)
+            ret = fn_to_train_model(n_jobs=n_jobs,
+                                    create_validation_set=run_unique_params.pop('create_validation_set'),
+                                    model_params=run_unique_params.pop('model_params'),
+                                    fit_params=run_unique_params.pop('fit_params'), return_results=return_results,
+                                    clean_output_dir=clean_output_dir,
+                                    log_to_mlflow=True,
+                                    parent_run_uuid=parent_run_uuid, experiment_name=experiment_name,
+                                    mlflow_tracking_uri=mlflow_tracking_uri, check_if_exists=check_if_exists,
+                                    **run_unique_params)
+        if parent_run_was_started:
+            mlflow.end_run()
+        return ret
 
     def setup_dask(self, n_workers, cluster_type='local', address=None):
         if address is not None:
@@ -624,18 +630,14 @@ class BaseExperiment:
                 if cpu_count() < threads_per_worker * n_workers:
                     warnings.warn(f"n_workers * threads_per_worker (n_jobs) is greater than the number of cores "
                                   f"available ({cpu_count}). This may lead to performance issues.")
-                resources = {'cores': cpu_count()}
-                if self.n_gpus > 0:
-                    resources['gpus'] = self.n_gpus
-                cluster = LocalCluster(n_workers=0, memory_limit=self.dask_memory, processes=False,
+                resources = {'cores': cpu_count(), 'gpus': self.n_gpus}
+                cluster = LocalCluster(n_workers=0, memory_limit=self.dask_memory, processes=True,
                                        threads_per_worker=threads_per_worker, resources=resources)
                 cluster.scale(n_workers)
             elif cluster_type == 'slurm':
                 cores = self.n_cores
                 processes = self.n_processes
-                resources_per_work = {'cores': cores}
-                if self.n_gpus > 0:
-                    resources_per_work['gpus'] = self.n_gpus
+                resources_per_work = {'cores': cores, 'gpus': self.n_gpus}
                 job_extra_directives = dask.config.get(
                     "jobqueue.slurm.job-extra-directives", []
                 )
@@ -764,9 +766,7 @@ class BaseExperiment:
         n_combinations_failed = 0
         n_combinations_none = 0
         if client is not None:
-            resources_per_task = {'cores': self.n_jobs}
-            if self.n_gpus > 0:
-                resources_per_task['gpus'] = self.n_gpus / (self.n_cores / self.n_jobs)
+            resources_per_task = {'cores': self.n_jobs, 'gpus': self.n_gpus / (self.n_cores / self.n_jobs)}
             log_and_print_msg(f'{total_combinations} models are being trained and evaluated in parallel, '
                               f'check the logs for real time information. We will display information about the '
                               f'completion of the tasks right after sending all the tasks to the cluster. '
@@ -777,11 +777,13 @@ class BaseExperiment:
             list_of_args = [[combination[i] for combination in combinations[1:]] for i in range(n_args)]
             first_future = client.submit(self.run_combination, *combinations[0],
                                          resources=resources_per_task, **extra_params)
-            # wait a little bit for the first submission to create folders, experiments, etc
-            time.sleep(5)
-            futures = client.map(self.run_combination, *list_of_args,
-                                 batch_size=self.n_workers, resources=resources_per_task, **extra_params)
-            futures = [first_future] + futures
+            futures = [first_future]
+            if total_combinations > 1:
+                # wait a little bit for the first submission to create folders, experiments, etc
+                time.sleep(5)
+                other_futures = client.map(self.run_combination, *list_of_args,
+                                           batch_size=self.n_workers, resources=resources_per_task, **extra_params)
+                futures.extend(other_futures)
         else:
             progress_bar = tqdm(combinations, desc='Combinations completed')
             for combination in progress_bar:
@@ -805,6 +807,7 @@ class BaseExperiment:
                     n_combinations_failed += 1
                 else:
                     n_combinations_none += 1
+                future.release()  # release the memory of the future
                 del future  # to free memory
                 log_and_print_msg(str(progress_bar), succesfully_completed=n_combinations_successfully_completed,
                                   failed=n_combinations_failed, none=n_combinations_none, i=i)
@@ -813,8 +816,6 @@ class BaseExperiment:
                 if n_remaining_tasks < self.n_workers:
                     n_remaining_workers = max(n_remaining_tasks, 1)
                     client.cluster.scale(n_remaining_workers)
-            # ensure all futures are done
-            client.gather(futures)
             client.close()
 
         return total_combinations, n_combinations_successfully_completed, n_combinations_failed, n_combinations_none

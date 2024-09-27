@@ -3,10 +3,10 @@ import time
 from functools import partial
 from math import floor
 import optuna
-import optuna_integration
+from optuna_integration import DaskStorage
 from distributed import get_client, worker_client
 import mlflow
-from tab_benchmark.benchmark.base_experiment import BaseExperiment, log_and_print_msg
+from tab_benchmark.benchmark.base_experiment import BaseExperiment
 from tab_benchmark.models.dnn_model import DNNModel
 from tab_benchmark.models.dnn_models import max_epochs_dnn
 from tab_benchmark.models.xgboost import n_estimators_gbdt
@@ -121,7 +121,7 @@ class HPOExperiment(BaseExperiment):
             # storage
             if self.dask_cluster_type is not None:
                 client = get_client()
-                storage = optuna_integration.DaskStorage(client=client)
+                storage = DaskStorage(client=client)
             else:
                 storage = None
 
@@ -166,18 +166,20 @@ class HPOExperiment(BaseExperiment):
                             config_trial = config.copy()
                             config_trial.update(dict(model_params=model_params, seed_model=seed_model))
                             config_trial['fit_params']['optuna_trial'] = trial
-                            resources = {'cpu': n_jobs, 'gpu': self.n_gpus / (self.n_cores / n_jobs)}
-                            futures.append(client.submit(self.training_fn, resources=resources, **config_trial))
+                            resources = {'cores': n_jobs, 'gpus': self.n_gpus / (self.n_cores / n_jobs)}
+                            futures.append(client.submit(self.training_fn, resources=resources,
+                                                         **dict(config=config_trial)))
                         results = client.gather(futures)
-                        for trial_number, result in zip(trial_numbers, results):
-                            trial = study.trials[trial_number]
-                            trial.set_user_attr('was_evaluated', True)
-                            for metric, value in result.items():
-                                trial.set_user_attr(metric, value)
-                            study.tell(trial_number, result['final_validation_default'])
-                        elapsed_time = time.perf_counter() - start_time
-                        if elapsed_time > timeout_experiment:
-                            break
+                    for trial_number, result in zip(trial_numbers, results):
+                        study_id = storage.get_study_id_from_name(study.study_name)
+                        trial_id = storage.get_trial_id_from_study_id_trial_number(study_id, trial_number)
+                        storage.set_trial_user_attr(trial_id, 'was_evaluated', True)
+                        for metric, value in result.items():
+                            storage.set_trial_user_attr(trial_id, metric, value)
+                        study.tell(trial_number, result['final_validation_default'])
+                    elapsed_time = time.perf_counter() - start_time
+                    if elapsed_time > timeout_experiment:
+                        break
                 else:
                     trial = study.ask(search_space)
                     model_params = trial.params
