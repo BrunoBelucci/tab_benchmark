@@ -134,9 +134,14 @@ class HPOExperiment(BaseExperiment):
             search_space['seed_model'] = optuna.distributions.IntUniformDistribution(0, 10000)
             default_values['seed_model'] = seed_model
             if log_to_mlflow:
-                parent_run_uuid = mlflow.active_run().info.run_id
+                parent_run = mlflow.active_run()
+                parent_run_uuid = parent_run.info.run_id
+                child_runs = parent_run.data.tags
+                child_runs_uuids = [child_run_uuid for key, child_run_uuid in child_runs.items()
+                                    if key.startswith('child_run_uuid_')]
             else:
                 parent_run_uuid = None
+                child_runs_uuids = [None for _ in range(n_trials)]
             fit_params['report_to_optuna'] = True
             config = kwargs.copy()
             config.update(dict(
@@ -150,15 +155,6 @@ class HPOExperiment(BaseExperiment):
                 parent_run_uuid=parent_run_uuid,
             ))
             study.enqueue_trial(default_values)
-
-            # create mlflow runs
-            run_uuids = []
-            for _ in range(n_trials):
-                if log_to_mlflow:
-                    with mlflow.start_run(nested=True) as run:
-                        run_uuids.append(run.info.run_id)
-                else:
-                    run_uuids.append(None)
 
             # run
             start_time = time.perf_counter()
@@ -175,7 +171,7 @@ class HPOExperiment(BaseExperiment):
                             config_trial = config.copy()
                             config_trial.update(dict(model_params=model_params, seed_model=seed_model))
                             config_trial['fit_params']['optuna_trial'] = trial
-                            config_trial['run_uuid'] = run_uuids[n_trial]
+                            config_trial['run_uuid'] = child_runs_uuids[n_trial]
                             resources = {'cores': n_jobs, 'gpus': self.n_gpus / (self.n_cores / n_jobs)}
                             # send task to workers different from the current one
                             workers = client.scheduler_info()['workers'].keys()
@@ -318,6 +314,25 @@ class HPOExperiment(BaseExperiment):
                                  max_concurrent_trials=self.max_concurrent_trials, sampler=self.sampler,
                                  pruner=self.pruner, create_validation_set=True))
         return combinations, extra_params
+
+    def create_mlflow_run(self, *args,
+                          create_validation_set=False,
+                          model_params=None,
+                          fit_params=None,
+                          experiment_name=None, mlflow_tracking_uri=None, check_if_exists=None,
+                          **kwargs):
+        run_uuid = super().create_mlflow_run(*args, create_validation_set=create_validation_set,
+                                             model_params=model_params, fit_params=fit_params,
+                                             experiment_name=experiment_name, mlflow_tracking_uri=mlflow_tracking_uri,
+                                             check_if_exists=check_if_exists,
+                                             **kwargs)
+        mlflow_client = mlflow.client.MlflowClient(tracking_uri=mlflow_tracking_uri)
+        # we will initialize the nested runs from the trials
+        for trial in range(self.n_trials):
+            with mlflow.start_run(run_uuid) as parent_run:
+                with mlflow.start_run(nested=True) as child_run:
+                    mlflow_client.set_tag(parent_run.info.run_id, f'child_run_uuid_{trial}', child_run.info.run_id)
+        return run_uuid
 
 
 if __name__ == '__main__':

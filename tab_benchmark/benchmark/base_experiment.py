@@ -760,7 +760,6 @@ class BaseExperiment:
                           create_validation_set=False,
                           model_params=None,
                           fit_params=None,
-                          parent_run_uuid=None,
                           experiment_name=None, mlflow_tracking_uri=None, check_if_exists=None,
                           **kwargs):
         is_openml_task = kwargs.get('is_openml_task', False)
@@ -795,11 +794,7 @@ class BaseExperiment:
             if experiment is None:
                 mlflow.create_experiment(experiment_name, artifact_location=str(self.output_dir))
             mlflow.set_experiment(experiment_name)
-            if parent_run_uuid is not None:
-                nested = True
-            else:
-                nested = False
-            with mlflow.start_run(nested=nested) as run:
+            with mlflow.start_run() as run:
                 run_uuid = run.info.run_uuid
             return run_uuid
 
@@ -829,7 +824,11 @@ class BaseExperiment:
                 run_uuids = client.gather(futures)
                 first_args.append(run_uuids[0])  # add the run_uuid to the first args
                 list_of_args.append(run_uuids[1:])  # add the run_uuids to the list of args
-            resources_per_task = {'cores': self.n_jobs, 'gpus': self.n_gpus / (self.n_cores / self.n_jobs)}
+            if hasattr(self, 'n_trials'):
+                # the resources are actually used when training the models, here we will launch the hpo framework
+                resources_per_task = {'cores': 0, 'gpus': 0, 'processes': 1}
+            else:
+                resources_per_task = {'cores': self.n_jobs, 'gpus': self.n_gpus / (self.n_cores / self.n_jobs)}
             log_and_print_msg(f'{total_combinations} models are being trained and evaluated in parallel, '
                               f'check the logs for real time information. We will display information about the '
                               f'completion of the tasks right after sending all the tasks to the cluster. '
@@ -871,13 +870,13 @@ class BaseExperiment:
                     n_combinations_failed += 1
                 else:
                     n_combinations_none += 1
-                future.release()  # release the memory of the future
-                del future  # to free memory
+                # future.release()  # release the memory of the future
+                # del future  # to free memory
                 # scale down the cluster if there is fewer tasks than workers
-                n_remaining_tasks = total_combinations - i
-                if n_remaining_tasks < self.n_workers:
-                    n_remaining_workers = max(n_remaining_tasks, 1)
-                    client.cluster.scale(n_remaining_workers)
+                # n_remaining_tasks = total_combinations - i
+                # if n_remaining_tasks < self.n_workers:
+                #     n_remaining_workers = max(n_remaining_tasks, 1)
+                #     client.cluster.scale(n_remaining_workers)
             client.close()
 
         return total_combinations, n_combinations_successfully_completed, n_combinations_failed, n_combinations_none
