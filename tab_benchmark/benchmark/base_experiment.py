@@ -19,7 +19,6 @@ from tab_benchmark.utils import get_git_revision_hash, flatten_dict
 from dask.distributed import LocalCluster, get_worker, as_completed
 from dask_jobqueue import SLURMCluster
 from tqdm.auto import tqdm
-from multiprocessing import cpu_count
 from torch.cuda import (set_per_process_memory_fraction, max_memory_reserved, max_memory_allocated,
                         reset_peak_memory_stats)
 from resource import getrusage, RUSAGE_SELF
@@ -563,7 +562,7 @@ class BaseExperiment:
                                    n_jobs=1, create_validation_set=False,
                                    model_params=None,
                                    fit_params=None, return_results=False, clean_output_dir=True,
-                                   parent_run_uuid=None,
+                                   run_uuid=None, parent_run_uuid=None,
                                    experiment_name=None, mlflow_tracking_uri=None, check_if_exists=None,
                                    fn_to_train_model=None,
                                    **kwargs):
@@ -603,7 +602,7 @@ class BaseExperiment:
         else:
             nested = False
 
-        with mlflow.start_run(nested=nested) as run:
+        with mlflow.start_run(run_id=run_uuid, nested=nested) as run:
             self.log_run_start_params(**run_unique_params)
             ret = fn_to_train_model(n_jobs=n_jobs,
                                     create_validation_set=run_unique_params.pop('create_validation_set'),
@@ -625,17 +624,18 @@ class BaseExperiment:
             if cluster_type == 'local':
                 threads_per_worker = self.n_jobs
                 processes = self.n_processes
-                if cpu_count() < threads_per_worker * n_workers:
+                cores = self.n_cores
+                if cores < threads_per_worker * n_workers:
                     warnings.warn(f"n_workers * threads_per_worker (n_jobs) is greater than the number of cores "
-                                  f"available ({cpu_count}). This may lead to performance issues.")
-                resources = {'cores': cpu_count(), 'gpus': self.n_gpus}
+                                  f"available ({cores}). This may lead to performance issues.")
+                resources = {'cores': cores, 'gpus': self.n_gpus, 'processes': processes}
                 cluster = LocalCluster(n_workers=0, memory_limit=self.dask_memory, processes=True,
                                        threads_per_worker=threads_per_worker, resources=resources)
                 cluster.scale(n_workers)
             elif cluster_type == 'slurm':
                 cores = self.n_cores
                 processes = self.n_processes
-                resources_per_work = {'cores': cores, 'gpus': self.n_gpus}
+                resources_per_work = {'cores': cores, 'gpus': self.n_gpus, 'processes': processes}
                 job_extra_directives = dask.config.get(
                     "jobqueue.slurm.job-extra-directives", []
                 )
@@ -670,7 +670,7 @@ class BaseExperiment:
         return client
 
     def run_openml_task_combination(self, model_nickname, seed_model, task_id,
-                                    task_fold=0, task_repeat=0, task_sample=0,
+                                    task_fold=0, task_repeat=0, task_sample=0, run_uuid=None,
                                     n_jobs=1, create_validation_set=False,
                                     model_params=None,
                                     fit_params=None, return_results=False, clean_output_dir=True,
@@ -686,7 +686,8 @@ class BaseExperiment:
                                                    model_params=model_params,
                                                    fit_params=fit_params, return_results=return_results,
                                                    clean_output_dir=clean_output_dir,
-                                                   parent_run_uuid=parent_run_uuid, experiment_name=experiment_name,
+                                                   run_uuid=run_uuid, parent_run_uuid=parent_run_uuid,
+                                                   experiment_name=experiment_name,
                                                    mlflow_tracking_uri=mlflow_tracking_uri,
                                                    check_if_exists=check_if_exists,
                                                    **task_combination)
@@ -696,7 +697,7 @@ class BaseExperiment:
                                 **task_combination)
 
     def run_openml_dataset_combination(self, model_nickname, seed_model, dataset_name_or_id, seed_dataset,
-                                       fold=0,
+                                       fold=0, run_uuid=None,
                                        resample_strategy='k-fold_cv', n_folds=10, pct_test=0.2,
                                        validation_resample_strategy='next_fold', pct_validation=0.1,
                                        n_jobs=1, create_validation_set=False,
@@ -717,7 +718,8 @@ class BaseExperiment:
                                                    model_params=model_params,
                                                    fit_params=fit_params, return_results=return_results,
                                                    clean_output_dir=clean_output_dir,
-                                                   parent_run_uuid=parent_run_uuid, experiment_name=experiment_name,
+                                                   run_uuid=run_uuid, parent_run_uuid=parent_run_uuid,
+                                                   experiment_name=experiment_name,
                                                    mlflow_tracking_uri=mlflow_tracking_uri,
                                                    check_if_exists=check_if_exists,
                                                    **dataset_combination)
@@ -754,6 +756,54 @@ class BaseExperiment:
                                  mlflow_tracking_uri=self.mlflow_tracking_uri, check_if_exists=self.check_if_exists))
         return combinations, extra_params
 
+    def create_mlflow_run(self, *args,
+                          create_validation_set=False,
+                          model_params=None,
+                          fit_params=None,
+                          parent_run_uuid=None,
+                          experiment_name=None, mlflow_tracking_uri=None, check_if_exists=None,
+                          **kwargs):
+        is_openml_task = kwargs.get('is_openml_task', False)
+        if is_openml_task:
+            model_nickname, seed_model, task_id, task_fold, task_repeat, task_sample = args
+            data_combination = dict(model_nickname=model_nickname, seed_model=seed_model, task_id=task_id,
+                                    task_fold=task_fold, task_repeat=task_repeat, task_sample=task_sample,
+                                    is_openml_task=True)
+        else:
+            model_nickname, seed_model, dataset_name_or_id, seed_dataset, fold = args
+            # resample_strategy = kwargs.get('resample_strategy')
+            # n_folds = kwargs.get('n_folds')
+            # pct_test = kwargs.get('pct_test')
+            # validation_resample_strategy = kwargs.get('validation_resample_strategy')
+            # pct_validation = kwargs.get('pct_validation')
+            data_combination = dict(model_nickname=model_nickname, seed_model=seed_model,
+                                    dataset_name_or_id=dataset_name_or_id,
+                                    seed_dataset=seed_dataset, fold=fold, is_openml_task=False)
+        # get unique parameters for mlflow and check if the run already exists
+        model_nickname = kwargs.get('model_nickname')
+        model_params = model_params if model_params else self.models_params.get(model_nickname, {}).copy()
+        fit_params = fit_params if fit_params else self.fits_params.get(model_nickname, {}).copy()
+        run_unique_params = dict(model_params=model_params, fit_params=fit_params,
+                                 create_validation_set=create_validation_set, **kwargs)
+        run_unique_params.update(data_combination)
+        possible_existent_run = set_mlflow_tracking_uri_check_if_exists(experiment_name, mlflow_tracking_uri,
+                                                                        check_if_exists, **run_unique_params)
+        if possible_existent_run is not None:
+            return possible_existent_run.run_id
+        else:
+            experiment = mlflow.get_experiment_by_name(experiment_name)
+            if experiment is None:
+                mlflow.create_experiment(experiment_name, artifact_location=str(self.output_dir))
+            mlflow.set_experiment(experiment_name)
+            if parent_run_uuid is not None:
+                nested = True
+            else:
+                nested = False
+            with mlflow.start_run(nested=nested) as run:
+                run_uuid = run.info.run_uuid
+                self.log_run_start_params(**run_unique_params)
+            return run_uuid
+
     def run_experiment(self, client=None):
 
         combinations, extra_params = self.get_combinations()
@@ -764,6 +814,22 @@ class BaseExperiment:
         n_combinations_failed = 0
         n_combinations_none = 0
         if client is not None:
+            first_args = list(combinations[0])
+            list_of_args = [[combination[i] for combination in combinations[1:]] for i in range(n_args)]
+            # we will first create the mlflow runs to avoid threading problems
+            if self.log_to_mlflow:
+                resources_per_task = {'processes': 1}
+                first_future = client.submit(self.create_mlflow_run, *first_args, resources=resources_per_task,
+                                             **extra_params)
+                futures = [first_future]
+                if total_combinations > 1:
+                    time.sleep(5)
+                    other_futures = client.map(self.create_mlflow_run, *list_of_args,
+                                               batch_size=self.n_workers, resources=resources_per_task, **extra_params)
+                    futures.extend(other_futures)
+                run_uuids = client.gather(futures)
+                first_args.append(run_uuids[0])  # add the run_uuid to the first args
+                list_of_args.append(run_uuids[1:])  # add the run_uuids to the list of args
             resources_per_task = {'cores': self.n_jobs, 'gpus': self.n_gpus / (self.n_cores / self.n_jobs)}
             log_and_print_msg(f'{total_combinations} models are being trained and evaluated in parallel, '
                               f'check the logs for real time information. We will display information about the '
@@ -772,8 +838,7 @@ class BaseExperiment:
                               f'You can check the dask dashboard to get more information about the progress and '
                               f'the workers.')
 
-            list_of_args = [[combination[i] for combination in combinations[1:]] for i in range(n_args)]
-            first_future = client.submit(self.run_combination, *combinations[0],
+            first_future = client.submit(self.run_combination, *first_args,
                                          resources=resources_per_task, **extra_params)
             futures = [first_future]
             if total_combinations > 1:
@@ -798,6 +863,8 @@ class BaseExperiment:
         if client is not None:
             progress_bar = tqdm(as_completed(futures), total=len(futures), desc='Combinations completed')
             for i, future in enumerate(progress_bar):
+                log_and_print_msg(str(progress_bar), succesfully_completed=n_combinations_successfully_completed,
+                                  failed=n_combinations_failed, none=n_combinations_none, i=i)
                 combination_success = future.result()
                 if combination_success is True:
                     n_combinations_successfully_completed += 1
@@ -807,8 +874,6 @@ class BaseExperiment:
                     n_combinations_none += 1
                 future.release()  # release the memory of the future
                 del future  # to free memory
-                log_and_print_msg(str(progress_bar), succesfully_completed=n_combinations_successfully_completed,
-                                  failed=n_combinations_failed, none=n_combinations_none, i=i)
                 # scale down the cluster if there is fewer tasks than workers
                 n_remaining_tasks = total_combinations - i
                 if n_remaining_tasks < self.n_workers:

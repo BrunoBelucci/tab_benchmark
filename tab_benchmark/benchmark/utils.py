@@ -26,9 +26,12 @@ def check_if_exists_mlflow(experiment_name, **kwargs):
     # remove ./mlruns if it is automatically created
     # if os.path.exists('./mlruns'):
     #     os.rmdir('./mlruns')
-    runs = runs.loc[runs['status'] == 'FINISHED']
-    if not runs.empty:
-        return runs.iloc[0]
+    if 'params.was_evaluated' in runs.columns:
+        runs = runs.loc[(runs['status'] == 'FINISHED') & (runs['params.was_evaluated'])]
+        if not runs.empty:
+            return runs.iloc[0]
+        else:
+            return None
     else:
         return None
 
