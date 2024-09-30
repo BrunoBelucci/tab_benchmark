@@ -130,21 +130,22 @@ def fit_model(model, X, y, cat_ind, att_names, cat_dims, n_classes, task_name, t
 
 
 def evaluate_model(model, eval_set, eval_name, metrics, default_metric=None, n_classes=None, error_score='raise',
-                   logging_to_mlflow=False):
+                   log_to_mlflow=False, run_id=None):
     results = evaluate_set(model, eval_set, metrics, n_classes, error_score)
     if default_metric is not None:
         results['default'] = results[default_metric]
-        if logging_to_mlflow:
-            mlflow.log_param('default_metric', default_metric)
+        if log_to_mlflow:
+            log_params = {'default_metric': default_metric}
+            mlflow.log_params(log_params, run_id=run_id)
     results_dict = {f'{eval_name}_{metric}': value for metric, value in results.items()}
-    if logging_to_mlflow:
-        mlflow.log_metrics(results_dict)
+    if log_to_mlflow:
+        mlflow.log_metrics(results_dict, run_id=run_id)
     return results_dict
 
 
 def load_own_task(dataset_name_or_id, seed_dataset, resample_strategy, n_folds, pct_test, fold,
                   create_validation_set=False, validation_resample_strategy='next_fold', pct_validation=0.1,
-                  logging_to_mlflow=False):
+                  log_to_mlflow=False, run_id=None):
     dataset, task_name, target, n_classes = get_dataset(dataset_name_or_id)
     X, y, cat_ind, att_names = dataset.get_data(target=target)
     cat_features_names = [att_names[i] for i, value in enumerate(cat_ind) if value is True]
@@ -199,15 +200,15 @@ def load_own_task(dataset_name_or_id, seed_dataset, resample_strategy, n_folds, 
             raise NotImplementedError
     else:
         validation_indices = None
-    if logging_to_mlflow:
-        mlflow.log_param('task_name', task_name)
-        mlflow.log_param('dataset_name', dataset.name)
+    if log_to_mlflow:
+        log_params = {'task_name': task_name, 'dataset_name': dataset.name}
+        mlflow.log_params(log_params, run_id=run_id)
     return (X, y, cat_ind, att_names, cat_features_names, cat_dims, task_name, n_classes, train_indices, test_indices,
             validation_indices)
 
 
 def load_openml_task(task_id, task_repeat, task_sample, task_fold, create_validation_set=False,
-                     logging_to_mlflow=False):
+                     log_to_mlflow=False, run_id=None):
     task = openml.tasks.get_task(task_id)
     split = task.get_train_test_split_indices(task_fold, task_repeat, task_sample)
     train_indices = split.train
@@ -237,9 +238,9 @@ def load_openml_task(task_id, task_repeat, task_sample, task_fold, create_valida
         task_name = 'regression'
     else:
         raise NotImplementedError
-    if logging_to_mlflow:
-        mlflow.log_param('task_name', task_name)
-        mlflow.log_param('dataset_name', dataset.name)
+    if log_to_mlflow:
+        params_to_log = {'task_name': task_name, 'dataset_name': dataset.name}
+        mlflow.log_params(params_to_log, run_id=run_id)
     return (X, y, cat_ind, att_names, cat_features_names, cat_dims, task_name, n_classes, train_indices, test_indices,
             validation_indices)
 

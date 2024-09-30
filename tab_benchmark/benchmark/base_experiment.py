@@ -314,7 +314,8 @@ class BaseExperiment:
                             level=logging.INFO, filemode=filemode)
 
     def get_model(self, model_params=None, n_jobs=1,
-                  log_to_mlflow=False, create_validation_set=False, output_dir=None, data_return=None, **kwargs):
+                  log_to_mlflow=False, run_id=None, create_validation_set=False, output_dir=None, data_return=None,
+                  **kwargs):
         model_nickname = kwargs.get('model_nickname')
         seed_model = kwargs.get('seed_model')
         model_params = model_params if model_params else self.models_params.get(model_nickname, {}).copy()
@@ -327,7 +328,9 @@ class BaseExperiment:
             # if logging to mlflow we use the mlflow artifact directory
             if log_to_mlflow:
                 # this is already unique
-                output_dir = Path(mlflow.get_artifact_uri())
+                run = mlflow.get_run(run_id)
+                artifact_uri = run.info.artifact_uri
+                output_dir = Path(artifact_uri)
                 unique_name = output_dir.parts[-2]
             else:
                 # if we only save the model in the output_dir we will have some problems when running in parallel
@@ -348,6 +351,9 @@ class BaseExperiment:
                 output_dir = output_dir
             os.makedirs(output_dir, exist_ok=True)
         model = get_model(model_nickname, seed_model, model_params, models_dict, n_jobs, output_dir=output_dir)
+        if log_to_mlflow:
+            if hasattr(model, 'run_id'):
+                setattr(model, 'run_id', run_id)
         if create_validation_set:
             # we disable auto early stopping when creating a validation set, because we will use it to validate
             if hasattr(model, 'auto_early_stopping'):
@@ -357,13 +363,14 @@ class BaseExperiment:
             if hasattr(model, 'loss_fn'):
                 # will be logged after
                 del model_params['loss_fn']
-            mlflow.log_params(model_params)
+            mlflow.log_params(model_params, run_id=run_id)
             # just to make it easier to filter after
             if model_nickname.find('TabBenchmark') != -1:
-                mlflow.log_param('model_name', model_nickname[len('TabBenchmark'):])
+                log_params = {'model_name': model_nickname[len('TabBenchmark'):]}
+                mlflow.log_params(log_params, run_id=run_id)
         return model
 
-    def load_data(self, create_validation_set=False, log_to_mlflow=False, **kwargs):
+    def load_data(self, create_validation_set=False, log_to_mlflow=False, run_id=None, **kwargs):
         is_openml_task = kwargs.get('is_openml_task', False)
         if is_openml_task:
             keys = ['task_id', 'task_repeat', 'task_fold', 'task_sample']
@@ -373,14 +380,13 @@ class BaseExperiment:
         data_params = {key: kwargs.get(key) for key in keys}
         if is_openml_task:
             (X, y, cat_ind, att_names, cat_features_names, cat_dims, task_name, n_classes, train_indices,
-             test_indices, validation_indices) = load_openml_task(**data_params,
-                                                                  create_validation_set=create_validation_set,
-                                                                  logging_to_mlflow=log_to_mlflow)
+             test_indices, validation_indices) = load_openml_task(create_validation_set=create_validation_set,
+                                                                  **data_params)
         else:
             (X, y, cat_ind, att_names, cat_features_names, cat_dims, task_name, n_classes, train_indices,
              test_indices, validation_indices) = (
                 load_own_task(**data_params,
-                              create_validation_set=create_validation_set, logging_to_mlflow=log_to_mlflow)
+                              create_validation_set=create_validation_set, log_to_mlflow=log_to_mlflow, run_id=run_id)
             )
         data_return = dict(X=X, y=y, cat_ind=cat_ind, att_names=att_names, cat_features_names=cat_features_names,
                            cat_dims=cat_dims, task_name=task_name, n_classes=n_classes, train_indices=train_indices,
@@ -442,25 +448,29 @@ class BaseExperiment:
         return fit_return
 
     def evaluate_model(self, metrics, default_metric, fit_return, data_return, create_validation_set=False,
-                       log_to_mlflow=False, **kwargs):
+                       log_to_mlflow=False, run_id=None, **kwargs):
         model = fit_return['model']
         X_test = fit_return['X_test']
         y_test = fit_return['y_test']
         n_classes = data_return['n_classes']
         X_validation = fit_return['X_validation']
         y_validation = fit_return['y_validation']
-        evaluate_results = evaluate_model(model, (X_test, y_test), 'final_test', metrics, default_metric, n_classes,
-                                          self.error_score, log_to_mlflow)
+        evaluate_results = evaluate_model(model=model, eval_set=(X_test, y_test), eval_name='final_test',
+                                          metrics=metrics, default_metric=default_metric, n_classes=n_classes,
+                                          error_score=self.error_score, log_to_mlflow=log_to_mlflow, run_id=run_id)
         if create_validation_set:
-            validation_results = evaluate_model(model, (X_validation, y_validation), 'final_validation', metrics,
-                                                default_metric, n_classes, self.error_score, log_to_mlflow)
+            validation_results = evaluate_model(model=model, eval_set=(X_validation, y_validation),
+                                                eval_name='final_validation', metrics=metrics,
+                                                default_metric=default_metric, n_classes=n_classes,
+                                                error_score=self.error_score, log_to_mlflow=log_to_mlflow,
+                                                run_id=run_id)
             evaluate_results.update(validation_results)
         return evaluate_results
 
     def train_model(self,
                     n_jobs=1, create_validation_set=False,
                     model_params=None,
-                    fit_params=None, return_results=False, clean_output_dir=True, log_to_mlflow=False,
+                    fit_params=None, return_results=False, clean_output_dir=True, log_to_mlflow=False, run_id=None,
                     **kwargs):
         try:
             results = {}
@@ -478,11 +488,12 @@ class BaseExperiment:
 
             # load data
             data_return = self.load_data(create_validation_set=create_validation_set, log_to_mlflow=log_to_mlflow,
+                                         run_id=run_id,
                                          **kwargs)
             results['data_return'] = data_return
 
             # load model
-            model = self.get_model(model_params=model_params, n_jobs=n_jobs, log_to_mlflow=log_to_mlflow,
+            model = self.get_model(model_params=model_params, n_jobs=n_jobs, log_to_mlflow=log_to_mlflow, run_id=run_id,
                                    create_validation_set=create_validation_set, data_return=data_return, **kwargs)
             results['model'] = model
 
@@ -492,28 +503,37 @@ class BaseExperiment:
             results['default_metric'] = default_metric
 
             # fit model
-            fit_return = self.fit_model(model, fit_params, data_return, metrics, default_metric, **kwargs)
+            fit_return = self.fit_model(model=model, fit_params=fit_params, data_return=data_return, metrics=metrics,
+                                        default_metric=default_metric, **kwargs)
             results['fit_return'] = fit_return
 
             # evaluate model
-            evaluate_return = self.evaluate_model(metrics, default_metric, fit_return, data_return,
-                                                  create_validation_set, log_to_mlflow, **kwargs)
+            evaluate_return = self.evaluate_model(metrics=metrics, default_metric=default_metric, fit_return=fit_return,
+                                                  data_return=data_return, create_validation_set=create_validation_set,
+                                                  log_to_mlflow=log_to_mlflow, run_id=run_id, **kwargs)
             results['evaluate_return'] = evaluate_return
 
             if log_to_mlflow:
-                mlflow.log_param('was_evaluated', True)
+                log_params = {'was_evaluated': True}
+                mlflow.log_params(log_params, run_id=run_id)
                 # in MB (in linux getrusage seems to returns in KB)
-                mlflow.log_metric('max_memory_used', getrusage(RUSAGE_SELF).ru_maxrss / 1000)
+                log_metrics = {'max_memory_used': getrusage(RUSAGE_SELF).ru_maxrss / 1000}
                 if self.n_gpus > 0:
-                    mlflow.log_metric('max_cuda_memory_reserved', max_memory_reserved() / (1024 ** 2))  # in MB
-                    mlflow.log_metric('max_cuda_memory_allocated', max_memory_allocated() / (1024 ** 2))  # in MB
+                    log_metrics['max_cuda_memory_reserved'] = max_memory_reserved() / (1024 ** 2)  # in MB
+                    log_metrics['max_cuda_memory_allocated'] = max_memory_allocated() / (1024 ** 2)  # in MB
+                mlflow.log_metrics(log_metrics, run_id=run_id)
 
         except Exception as exception:
             if log_to_mlflow:
-                mlflow.log_param('EXCEPTION', str(exception))
-                mlflow.end_run('FAILED')
+                log_params = {'was_evaluated': False, 'EXCEPTION': str(exception)}
+                mlflow.log_params(log_params, run_id=run_id)
+                mlflow_client = mlflow.client.MlflowClient(tracking_uri=self.mlflow_tracking_uri)
+                mlflow_client.set_terminated(run_id, status='FAILED')
             try:
                 total_time = time.perf_counter() - start_time
+                if log_to_mlflow:
+                    log_params = {'elapsed_time': total_time}
+                    mlflow.log_params(log_params, run_id=run_id)
             except UnboundLocalError:
                 total_time = 'unknown'
             try:
@@ -532,6 +552,11 @@ class BaseExperiment:
                 return False
         else:
             total_time = time.perf_counter() - start_time
+            if log_to_mlflow:
+                log_params = {'elapsed_time': total_time}
+                mlflow.log_params(log_params, run_id=run_id)
+                mlflow_client = mlflow.client.MlflowClient(tracking_uri=self.mlflow_tracking_uri)
+                mlflow_client.set_terminated(run_id, status='FINISHED')
             log_and_print_msg('Finished!', elapsed_time=total_time, **kwargs)
             if clean_output_dir:
                 output_dir = model.output_dir
@@ -542,27 +567,30 @@ class BaseExperiment:
             else:
                 return True
 
-    def log_run_start_params(self, **run_unique_params):
-        mlflow.log_params(flatten_dict(run_unique_params))
-        mlflow.log_param('git_hash', get_git_revision_hash())
-        # slurm parameters
-        mlflow.log_param('SLURM_JOB_ID', os.getenv('SLURM_JOB_ID', None))
-        mlflow.log_param('SLURMD_NODENAME', os.getenv('SLURMD_NODENAME', None))
-        # dask parameters
-        mlflow.log_param('dask_cluster_type', self.dask_cluster_type)
-        mlflow.log_param('n_workers', self.n_workers)
-        mlflow.log_param('n_cores', self.n_cores)
-        mlflow.log_param('n_processes', self.n_processes)
-        mlflow.log_param('dask_memory', self.dask_memory)
-        mlflow.log_param('dask_job_extra_directives', self.dask_job_extra_directives)
-        mlflow.log_param('dask_address', self.dask_address)
-        mlflow.log_param('n_gpus', self.n_gpus)
+    def log_run_start_params(self, run_id, **run_unique_params):
+        params_to_log = flatten_dict(run_unique_params).copy()
+        params_to_log.update(dict(
+            git_hash=get_git_revision_hash(),
+            # slurm parameters
+            SLURM_JOB_ID=os.getenv('SLURM_JOB_ID', None),
+            SLURMD_NODENAME=os.getenv('SLURMD_NODENAME', None),
+            # dask parameters
+            dask_cluster_type=self.dask_cluster_type,
+            n_workers=self.n_workers,
+            n_cores=self.n_cores,
+            n_processes=self.n_processes,
+            dask_memory=self.dask_memory,
+            dask_job_extra_directives=self.dask_job_extra_directives,
+            dask_address=self.dask_address,
+            n_gpus=self.n_gpus,
+        ))
+        mlflow.log_params(params_to_log, run_id=run_id)
 
     def run_mlflow_and_train_model(self,
                                    n_jobs=1, create_validation_set=False,
                                    model_params=None,
                                    fit_params=None, return_results=False, clean_output_dir=True,
-                                   run_uuid=None, parent_run_uuid=None,
+                                   run_id=None,
                                    experiment_name=None, mlflow_tracking_uri=None, check_if_exists=None,
                                    fn_to_train_model=None,
                                    **kwargs):
@@ -585,37 +613,26 @@ class BaseExperiment:
 
         experiment = mlflow.get_experiment_by_name(experiment_name)
         if experiment is None:
-            mlflow.create_experiment(experiment_name, artifact_location=str(self.output_dir))
-        mlflow.set_experiment(experiment_name)
-        parent_run_was_started = False
-        if parent_run_uuid is not None:
-            # check if parent run is active, if not start it
-            possible_parent_run = mlflow.active_run()
-            if possible_parent_run is not None:
-                if possible_parent_run.info.run_uuid != parent_run_uuid:
-                    mlflow.start_run(run_id=parent_run_uuid, nested=True)
-                    parent_run_was_started = True
-            else:
-                mlflow.start_run(parent_run_uuid)
-                parent_run_was_started = True
-            nested = True
+            experiment_id = mlflow.create_experiment(experiment_name, artifact_location=str(self.output_dir))
         else:
-            nested = False
+            experiment_id = experiment.experiment_id
+        mlflow.set_experiment(experiment_name)
+        mlflow_client = mlflow.client.MlflowClient(tracking_uri=mlflow_tracking_uri)
+        if run_id is None:
+            run = mlflow_client.create_run(experiment_id)
+            run_id = run.info.run_id
 
-        with mlflow.start_run(run_id=run_uuid, nested=nested) as run:
-            self.log_run_start_params(**run_unique_params)
-            ret = fn_to_train_model(n_jobs=n_jobs,
-                                    create_validation_set=run_unique_params.pop('create_validation_set'),
-                                    model_params=run_unique_params.pop('model_params'),
-                                    fit_params=run_unique_params.pop('fit_params'), return_results=return_results,
-                                    clean_output_dir=clean_output_dir,
-                                    log_to_mlflow=True,
-                                    parent_run_uuid=parent_run_uuid, experiment_name=experiment_name,
-                                    mlflow_tracking_uri=mlflow_tracking_uri, check_if_exists=check_if_exists,
-                                    **run_unique_params)
-        if parent_run_was_started:
-            mlflow.end_run()
-        return ret
+        mlflow_client.update_run(run_id, status='RUNNING')
+        self.log_run_start_params(run_id, **run_unique_params)
+        return fn_to_train_model(n_jobs=n_jobs,
+                                 create_validation_set=run_unique_params.pop('create_validation_set'),
+                                 model_params=run_unique_params.pop('model_params'),
+                                 fit_params=run_unique_params.pop('fit_params'), return_results=return_results,
+                                 clean_output_dir=clean_output_dir,
+                                 log_to_mlflow=True, run_id=run_id,
+                                 experiment_name=experiment_name,
+                                 mlflow_tracking_uri=mlflow_tracking_uri, check_if_exists=check_if_exists,
+                                 **run_unique_params)
 
     def setup_dask(self, n_workers, cluster_type='local', address=None):
         if address is not None:
@@ -670,11 +687,11 @@ class BaseExperiment:
         return client
 
     def run_openml_task_combination(self, model_nickname, seed_model, task_id,
-                                    task_fold=0, task_repeat=0, task_sample=0, run_uuid=None,
+                                    task_fold=0, task_repeat=0, task_sample=0, run_id=None,
                                     n_jobs=1, create_validation_set=False,
                                     model_params=None,
                                     fit_params=None, return_results=False, clean_output_dir=True,
-                                    log_to_mlflow=False, parent_run_uuid=None,
+                                    log_to_mlflow=False,
                                     experiment_name=None, mlflow_tracking_uri=None, check_if_exists=None,
                                     **kwargs):
         task_combination = dict(model_nickname=model_nickname, seed_model=seed_model, task_id=task_id,
@@ -683,11 +700,9 @@ class BaseExperiment:
         task_combination.update(kwargs)
         if log_to_mlflow:
             return self.run_mlflow_and_train_model(n_jobs=n_jobs, create_validation_set=create_validation_set,
-                                                   model_params=model_params,
-                                                   fit_params=fit_params, return_results=return_results,
-                                                   clean_output_dir=clean_output_dir,
-                                                   run_uuid=run_uuid, parent_run_uuid=parent_run_uuid,
-                                                   experiment_name=experiment_name,
+                                                   model_params=model_params, fit_params=fit_params,
+                                                   return_results=return_results, clean_output_dir=clean_output_dir,
+                                                   run_id=run_id, experiment_name=experiment_name,
                                                    mlflow_tracking_uri=mlflow_tracking_uri,
                                                    check_if_exists=check_if_exists,
                                                    **task_combination)
@@ -697,13 +712,13 @@ class BaseExperiment:
                                 **task_combination)
 
     def run_openml_dataset_combination(self, model_nickname, seed_model, dataset_name_or_id, seed_dataset,
-                                       fold=0, run_uuid=None,
+                                       fold=0, run_id=None,
                                        resample_strategy='k-fold_cv', n_folds=10, pct_test=0.2,
                                        validation_resample_strategy='next_fold', pct_validation=0.1,
                                        n_jobs=1, create_validation_set=False,
                                        model_params=None,
                                        fit_params=None, return_results=False, clean_output_dir=True,
-                                       log_to_mlflow=False, parent_run_uuid=None,
+                                       log_to_mlflow=False,
                                        experiment_name=None, mlflow_tracking_uri=None, check_if_exists=None,
                                        **kwargs):
         dataset_combination = dict(model_nickname=model_nickname, seed_model=seed_model,
@@ -715,11 +730,9 @@ class BaseExperiment:
         dataset_combination.update(kwargs)
         if log_to_mlflow:
             return self.run_mlflow_and_train_model(n_jobs=n_jobs, create_validation_set=create_validation_set,
-                                                   model_params=model_params,
-                                                   fit_params=fit_params, return_results=return_results,
-                                                   clean_output_dir=clean_output_dir,
-                                                   run_uuid=run_uuid, parent_run_uuid=parent_run_uuid,
-                                                   experiment_name=experiment_name,
+                                                   model_params=model_params, fit_params=fit_params,
+                                                   return_results=return_results, clean_output_dir=clean_output_dir,
+                                                   run_id=run_id, experiment_name=experiment_name,
                                                    mlflow_tracking_uri=mlflow_tracking_uri,
                                                    check_if_exists=check_if_exists,
                                                    **dataset_combination)
@@ -792,11 +805,15 @@ class BaseExperiment:
         else:
             experiment = mlflow.get_experiment_by_name(experiment_name)
             if experiment is None:
-                mlflow.create_experiment(experiment_name, artifact_location=str(self.output_dir))
+                experiment_id = mlflow.create_experiment(experiment_name, artifact_location=str(self.output_dir))
+            else:
+                experiment_id = experiment.experiment_id
             mlflow.set_experiment(experiment_name)
-            with mlflow.start_run() as run:
-                run_uuid = run.info.run_uuid
-            return run_uuid
+            mlflow_client = mlflow.client.MlflowClient(tracking_uri=mlflow_tracking_uri)
+            run = mlflow_client.create_run(experiment_id)
+            run_id = run.info.run_id
+            mlflow_client.update_run(run_id, status='SCHEDULED')
+            return run_id
 
     def run_experiment(self, client=None):
 
@@ -821,9 +838,9 @@ class BaseExperiment:
                     other_futures = client.map(self.create_mlflow_run, *list_of_args,
                                                batch_size=self.n_workers, resources=resources_per_task, **extra_params)
                     futures.extend(other_futures)
-                run_uuids = client.gather(futures)
-                first_args.append(run_uuids[0])  # add the run_uuid to the first args
-                list_of_args.append(run_uuids[1:])  # add the run_uuids to the list of args
+                run_ids = client.gather(futures)
+                first_args.append(run_ids[0])  # add the run_id to the first args
+                list_of_args.append(run_ids[1:])  # add the run_ids to the list of args
             if hasattr(self, 'n_trials'):
                 # the resources are actually used when training the models, here we will launch the hpo framework
                 resources_per_task = {'cores': 0, 'gpus': 0, 'processes': 1}

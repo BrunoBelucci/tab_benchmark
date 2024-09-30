@@ -164,7 +164,7 @@ class TabBenchmarkModel(ABC):
 
 
 def early_stopping_init(self, *, auto_early_stopping: bool = True, early_stopping_validation_size=0.1,
-                        early_stopping_patience: int = 0, log_to_mlflow_if_running: bool = True,
+                        early_stopping_patience: int = 0, log_to_mlflow_if_running: bool = True, run_id=None,
                         log_interval: int = 50, save_checkpoint: bool = False, checkpoint_interval: int = 100,
                         eval_metric: Optional[str] = None):
     """
@@ -191,6 +191,7 @@ def early_stopping_init(self, *, auto_early_stopping: bool = True, early_stoppin
     self.early_stopping_validation_size = early_stopping_validation_size
     self.early_stopping_patience = early_stopping_patience
     self.log_to_mlflow_if_running = log_to_mlflow_if_running
+    self.run_id = run_id
     self.log_interval = log_interval
     self.save_checkpoint = save_checkpoint
     self.checkpoint_interval = checkpoint_interval

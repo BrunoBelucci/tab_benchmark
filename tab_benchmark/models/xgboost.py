@@ -85,11 +85,12 @@ class ReportToOptunaXGBoost(TrainingCallback):
 
 
 class LogToMLFlowXGBoost(TrainingCallback):
-    def __init__(self, eval_name, log_every_n_steps=50, default_metric=None):
+    def __init__(self, eval_name, log_every_n_steps=50, default_metric=None, run_id=None):
         super().__init__()
         self.map_default_name_to_eval_name = {f'validation_{i}': name for i, name in enumerate(eval_name)}
         self.log_every_n_steps = log_every_n_steps
         self.default_metric = default_metric
+        self.run_id = run_id
 
     def after_iteration(self, model: _Model, epoch: int, evals_log):
         if epoch % self.log_every_n_steps != 0:
@@ -100,7 +101,7 @@ class LogToMLFlowXGBoost(TrainingCallback):
             dict_to_log.update({f'{our_name}_{metric}': value[-1] for metric, value in metrics.items()})
             if self.default_metric:
                 dict_to_log[f'{our_name}_default'] = metrics[self.default_metric][-1]
-        mlflow.log_metrics(dict_to_log, step=epoch)
+        mlflow.log_metrics(dict_to_log, step=epoch, run_id=self.run_id)
 
 
 def remove_old_models(path, name, extension, save_top_k):
@@ -336,9 +337,9 @@ def before_fit_xgboost(self, X, y, task=None, cat_features=None, cat_dims=None, 
         self.callbacks.append(checkpoint_callback)
 
     if self.log_to_mlflow_if_running:
-        if mlflow.active_run():
+        if self.run_id is not None:
             self.callbacks.append(LogToMLFlowXGBoost(eval_name, default_metric=eval_metric,
-                                                     log_every_n_steps=self.log_interval))
+                                                     log_every_n_steps=self.log_interval, run_id=self.run_id))
 
     if report_to_optuna:
         default_eval_name = f'validation_{len(eval_name) - 1}'
@@ -359,7 +360,8 @@ def after_fit_xgboost(self, fit_return):
         if isinstance(callback, ReportToOptunaXGBoost):
             self.pruned_trial = callback.pruned_trial
             if self.log_to_mlflow_if_running:
-                mlflow.log_metric('pruned', int(callback.pruned_trial))
+                log_metrics = {'pruned': int(callback.pruned_trial)}
+                mlflow.log_metrics(log_metrics, run_id=self.run_id)
             break
     return fit_return
 
