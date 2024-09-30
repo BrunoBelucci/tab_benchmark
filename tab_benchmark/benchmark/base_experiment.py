@@ -801,7 +801,6 @@ class BaseExperiment:
                 nested = False
             with mlflow.start_run(nested=nested) as run:
                 run_uuid = run.info.run_uuid
-                self.log_run_start_params(**run_unique_params)
             return run_uuid
 
     def run_experiment(self, client=None):

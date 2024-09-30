@@ -151,6 +151,15 @@ class HPOExperiment(BaseExperiment):
             ))
             study.enqueue_trial(default_values)
 
+            # create mlflow runs
+            run_uuids = []
+            for _ in range(n_trials):
+                if log_to_mlflow:
+                    with mlflow.start_run(nested=True) as run:
+                        run_uuids.append(run.info.run_id)
+                else:
+                    run_uuids.append(None)
+
             # run
             start_time = time.perf_counter()
             for n_trial in range(n_trials):
@@ -166,6 +175,7 @@ class HPOExperiment(BaseExperiment):
                             config_trial = config.copy()
                             config_trial.update(dict(model_params=model_params, seed_model=seed_model))
                             config_trial['fit_params']['optuna_trial'] = trial
+                            config_trial['run_uuid'] = run_uuids[n_trial]
                             resources = {'cores': n_jobs, 'gpus': self.n_gpus / (self.n_cores / n_jobs)}
                             # send task to workers different from the current one
                             workers = client.scheduler_info()['workers'].keys()
