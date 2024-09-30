@@ -240,7 +240,7 @@ class HPOExperiment(BaseExperiment):
                                                   **kwargs)
 
     def run_openml_task_combination(self, model_nickname, seed_model, task_id,
-                                    task_fold=0, task_repeat=0, task_sample=0,
+                                    task_fold=0, task_repeat=0, task_sample=0, run_uuid=None,
                                     n_jobs=1, create_validation_set=False,
                                     model_params=None,
                                     fit_params=None, return_results=False, clean_output_dir=True,
@@ -256,7 +256,8 @@ class HPOExperiment(BaseExperiment):
                                                    n_jobs=n_jobs, create_validation_set=create_validation_set,
                                                    model_params=model_params, fit_params=fit_params,
                                                    return_results=return_results, clean_output_dir=clean_output_dir,
-                                                   log_to_mlflow=log_to_mlflow, parent_run_uuid=parent_run_uuid,
+                                                   log_to_mlflow=log_to_mlflow,
+                                                   run_uuid=run_uuid, parent_run_uuid=parent_run_uuid,
                                                    experiment_name=experiment_name,
                                                    mlflow_tracking_uri=mlflow_tracking_uri,
                                                    check_if_exists=check_if_exists,
@@ -267,7 +268,7 @@ class HPOExperiment(BaseExperiment):
                                                    **kwargs)
 
     def run_openml_dataset_combination(self, model_nickname, seed_model, dataset_name_or_id, seed_dataset,
-                                       fold=0,
+                                       fold=0, run_uuid=None,
                                        resample_strategy='k-fold_cv', n_folds=10, pct_test=0.2,
                                        validation_resample_strategy='next_fold', pct_validation=0.1,
                                        n_jobs=1, create_validation_set=False,
@@ -288,7 +289,8 @@ class HPOExperiment(BaseExperiment):
                                                       n_jobs=n_jobs, create_validation_set=create_validation_set,
                                                       model_params=model_params, fit_params=fit_params,
                                                       return_results=return_results, clean_output_dir=clean_output_dir,
-                                                      log_to_mlflow=log_to_mlflow, parent_run_uuid=parent_run_uuid,
+                                                      log_to_mlflow=log_to_mlflow,
+                                                      run_uuid=run_uuid, parent_run_uuid=parent_run_uuid,
                                                       experiment_name=experiment_name,
                                                       mlflow_tracking_uri=mlflow_tracking_uri,
                                                       check_if_exists=check_if_exists,
