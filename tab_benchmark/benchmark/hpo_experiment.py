@@ -253,7 +253,7 @@ class HPOExperiment(BaseExperiment):
                                                   pruner=pruner, **kwargs)
 
     def run_openml_task_combination(self, model_nickname, seed_model, task_id,
-                                    task_fold=0, task_repeat=0, task_sample=0, run_uuid=None,
+                                    task_fold=0, task_repeat=0, task_sample=0, run_id=None,
                                     n_jobs=1, create_validation_set=False,
                                     model_params=None,
                                     fit_params=None, return_results=False, clean_output_dir=True,
@@ -265,7 +265,7 @@ class HPOExperiment(BaseExperiment):
                                     **kwargs):
         return super().run_openml_task_combination(model_nickname, seed_model, task_id,
                                                    task_fold=task_fold, task_repeat=task_repeat,
-                                                   task_sample=task_sample,
+                                                   task_sample=task_sample, run_id=run_id,
                                                    n_jobs=n_jobs, create_validation_set=create_validation_set,
                                                    model_params=model_params, fit_params=fit_params,
                                                    return_results=return_results, clean_output_dir=clean_output_dir,
