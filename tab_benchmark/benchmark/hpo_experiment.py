@@ -4,7 +4,7 @@ from functools import partial
 from math import floor
 import optuna
 from optuna_integration import DaskStorage
-from distributed import get_client, worker_client
+from distributed import get_client, worker_client, get_worker
 import mlflow
 from tab_benchmark.benchmark.base_experiment import BaseExperiment
 from tab_benchmark.models.dnn_model import DNNModel
@@ -167,7 +167,11 @@ class HPOExperiment(BaseExperiment):
                             config_trial.update(dict(model_params=model_params, seed_model=seed_model))
                             config_trial['fit_params']['optuna_trial'] = trial
                             resources = {'cores': n_jobs, 'gpus': self.n_gpus / (self.n_cores / n_jobs)}
-                            futures.append(client.submit(self.training_fn, resources=resources,
+                            # send task to workers different from the current one
+                            workers = client.scheduler_info()['workers'].keys()
+                            current_worker = get_worker().worker_address
+                            workers = [worker for worker in workers if worker != current_worker]
+                            futures.append(client.submit(self.training_fn, resources=resources, workers=workers,
                                                          **dict(config=config_trial)))
                         results = client.gather(futures)
                     for trial_number, result in zip(trial_numbers, results):
@@ -202,8 +206,8 @@ class HPOExperiment(BaseExperiment):
             best_metric_results = {f'best_{metric}': value for metric, value in best_trial.user_attrs.items()
                                    if metric.startswith('final_validation_') or metric.startswith('final_test_')}
             if log_to_mlflow:
-                mlflow.log_params(best_model_params_and_seed)
-                mlflow.log_metrics(best_metric_results)
+                mlflow.log_params(best_model_params_and_seed, run_id=parent_run_uuid)
+                mlflow.log_metrics(best_metric_results, run_id=parent_run_uuid)
 
             if return_results:
                 return study
