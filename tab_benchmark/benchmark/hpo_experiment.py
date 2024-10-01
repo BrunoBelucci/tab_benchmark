@@ -85,6 +85,7 @@ class HPOExperiment(BaseExperiment):
                     max_concurrent_trials=1, sampler='tpe', pruner='hyperband',
                     **kwargs):
         try:
+            results = {}
             model_nickname = kwargs.get('model_nickname')
             model_params = model_params if model_params else self.models_params.get(model_nickname, {}).copy()
             fit_params = fit_params if fit_params else self.fits_params.get(kwargs.get('model_nickname'), {}).copy()
@@ -99,6 +100,7 @@ class HPOExperiment(BaseExperiment):
                     sampler = optuna.samplers.RandomSampler(seed=seed_model)
                 else:
                     raise NotImplementedError(f'Sampler {sampler} not implemented for optuna')
+                results['sampler'] = sampler
 
                 # pruner
                 if pruner == 'hyperband':
@@ -118,6 +120,7 @@ class HPOExperiment(BaseExperiment):
                     pruner = None
                 else:
                     raise NotImplementedError(f'Pruner {pruner} not implemented for optuna')
+                results['pruner'] = pruner
 
                 # storage
                 if self.dask_cluster_type is not None:
@@ -125,9 +128,11 @@ class HPOExperiment(BaseExperiment):
                     storage = DaskStorage(client=client)
                 else:
                     storage = None
+                results['storage'] = storage
 
                 # study
                 study = optuna.create_study(storage=storage, sampler=sampler, pruner=pruner, direction='minimize')
+                results['study'] = study
 
                 # objective and search space (distribution)
                 search_space, default_values = model_cls.create_search_space()
@@ -158,7 +163,8 @@ class HPOExperiment(BaseExperiment):
 
                 # run
                 start_time = time.perf_counter()
-                for n_trial in range(n_trials):
+                n_trial = 0
+                while n_trial < n_trials:
                     if self.dask_cluster_type is not None:
                         with worker_client() as client:
                             futures = []
@@ -175,6 +181,10 @@ class HPOExperiment(BaseExperiment):
                                 resources = {'cores': n_jobs, 'gpus': self.n_gpus / (self.n_cores / n_jobs)}
                                 futures.append(client.submit(self.training_fn, resources=resources,
                                                              **dict(config=config_trial)))
+                                n_trial += 1
+                                if n_trial >= n_trials:
+                                    # we have already enqueued all the trials
+                                    break
                             results = client.gather(futures)
                             for future in futures:
                                 future.release()
@@ -200,6 +210,7 @@ class HPOExperiment(BaseExperiment):
                         for metric, value in results.items():
                             trial.set_user_attr(metric, value)
                         study.tell(trial, results['final_validation_default'])
+                        n_trial += 1
                         elapsed_time = time.perf_counter() - start_time
                         if elapsed_time > timeout_experiment:
                             break
@@ -215,13 +226,22 @@ class HPOExperiment(BaseExperiment):
 
             else:
                 raise NotImplementedError(f'HPO framework {hpo_framework} not implemented')
-        except Exception as e:
+        except Exception as exception:
             if log_to_mlflow:
+                log_params = {'was_evaluated': False, 'EXCEPTION': str(exception)}
+                mlflow.log_params(log_params, run_id=run_id)  # run_id should be the same as parent_run_id
                 mlflow_client = mlflow.client.MlflowClient(tracking_uri=self.mlflow_tracking_uri)
-                mlflow_client.set_terminated(parent_run_id, status='FAILED')
-            raise e
+                mlflow_client.set_terminated(run_id, status='FAILED')
+            if self.raise_on_fit_error:
+                raise exception
+            if return_results:
+                return results
+            else:
+                return False
         else:
             if log_to_mlflow:
+                log_params = {'was_evaluated': True}
+                mlflow.log_params(log_params, run_id=parent_run_id)
                 mlflow_client = mlflow.client.MlflowClient(tracking_uri=self.mlflow_tracking_uri)
                 mlflow_client.set_terminated(parent_run_id, status='FINISHED')
             if return_results:
