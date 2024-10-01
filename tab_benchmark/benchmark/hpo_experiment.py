@@ -4,7 +4,7 @@ from functools import partial
 from math import floor
 import optuna
 from optuna_integration import DaskStorage
-from distributed import get_client, worker_client, get_worker
+from distributed import get_client, worker_client
 import mlflow
 from mlflow.utils.mlflow_tags import MLFLOW_PARENT_RUN_ID
 from tab_benchmark.benchmark.base_experiment import BaseExperiment
@@ -176,6 +176,8 @@ class HPOExperiment(BaseExperiment):
                                 futures.append(client.submit(self.training_fn, resources=resources,
                                                              **dict(config=config_trial)))
                             results = client.gather(futures)
+                            for future in futures:
+                                future.release()
                         for trial_number, result in zip(trial_numbers, results):
                             study_id = storage.get_study_id_from_name(study.study_name)
                             trial_id = storage.get_trial_id_from_study_id_trial_number(study_id, trial_number)

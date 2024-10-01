@@ -879,7 +879,7 @@ class BaseExperiment:
             progress_bar = tqdm(as_completed(futures), total=len(futures), desc='Combinations completed')
             for i, future in enumerate(progress_bar):
                 log_and_print_msg(str(progress_bar), succesfully_completed=n_combinations_successfully_completed,
-                                  failed=n_combinations_failed, none=n_combinations_none, i=i)
+                                  failed=n_combinations_failed, none=n_combinations_none)
                 combination_success = future.result()
                 if combination_success is True:
                     n_combinations_successfully_completed += 1
@@ -887,13 +887,26 @@ class BaseExperiment:
                     n_combinations_failed += 1
                 else:
                     n_combinations_none += 1
-                # future.release()  # release the memory of the future
-                # del future  # to free memory
+                future.release()  # release the memory of the future
                 # scale down the cluster if there is fewer tasks than workers
-                # n_remaining_tasks = total_combinations - i
+                # unfortunately this causes task recalculation (at least in the SLURMCluster), so we will not do it
+                # if hasattr(self, 'n_trials'):
+                #     n_remaining_tasks = total_combinations * self.n_trials - (i + 1) * self.n_trials
+                # else:
+                #     n_remaining_tasks = total_combinations - (i + 1)
                 # if n_remaining_tasks < self.n_workers:
-                #     n_remaining_workers = max(n_remaining_tasks, 1)
-                #     client.cluster.scale(n_remaining_workers)
+                #     n_workers_to_retire = self.n_workers - n_remaining_tasks
+                #     workers = client.scheduler_info()['workers']
+                #     for worker_name, worker_dict in workers.items():
+                #         if not worker_dict['metrics']['task_counts']:
+                #             client.retire_workers([worker_name])
+                #             n_workers_to_retire -= 1
+                #         if n_workers_to_retire == 0:
+                #             # maybe we will not break, but we will retire at least some of the workers
+                #             break
+            # print last time with completed task bar
+            log_and_print_msg(str(progress_bar), succesfully_completed=n_combinations_successfully_completed,
+                              failed=n_combinations_failed, none=n_combinations_none)
             client.close()
 
         return total_combinations, n_combinations_successfully_completed, n_combinations_failed, n_combinations_none
