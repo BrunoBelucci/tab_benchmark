@@ -86,6 +86,7 @@ class HPOExperiment(BaseExperiment):
                     **kwargs):
         try:
             results = {}
+            start_time = time.perf_counter()
             model_nickname = kwargs.get('model_nickname')
             model_params = model_params if model_params else self.models_params.get(model_nickname, {}).copy()
             fit_params = fit_params if fit_params else self.fits_params.get(kwargs.get('model_nickname'), {}).copy()
@@ -162,7 +163,6 @@ class HPOExperiment(BaseExperiment):
                 study.enqueue_trial(default_values)
 
                 # run
-                start_time = time.perf_counter()
                 n_trial = 0
                 while n_trial < n_trials:
                     if self.dask_cluster_type is not None:
@@ -227,8 +227,9 @@ class HPOExperiment(BaseExperiment):
             else:
                 raise NotImplementedError(f'HPO framework {hpo_framework} not implemented')
         except Exception as exception:
+            total_time = time.perf_counter() - start_time
             if log_to_mlflow:
-                log_params = {'was_evaluated': False, 'EXCEPTION': str(exception)}
+                log_params = {'was_evaluated': False, 'EXCEPTION': str(exception), 'elapsed_time': total_time}
                 mlflow.log_params(log_params, run_id=run_id)  # run_id should be the same as parent_run_id
                 mlflow_client = mlflow.client.MlflowClient(tracking_uri=self.mlflow_tracking_uri)
                 mlflow_client.set_terminated(run_id, status='FAILED')
@@ -239,8 +240,9 @@ class HPOExperiment(BaseExperiment):
             else:
                 return False
         else:
+            total_time = time.perf_counter() - start_time
             if log_to_mlflow:
-                log_params = {'was_evaluated': True}
+                log_params = {'was_evaluated': True, 'elapsed_time': total_time}
                 mlflow.log_params(log_params, run_id=parent_run_id)
                 mlflow_client = mlflow.client.MlflowClient(tracking_uri=self.mlflow_tracking_uri)
                 mlflow_client.set_terminated(parent_run_id, status='FINISHED')
