@@ -173,11 +173,7 @@ class HPOExperiment(BaseExperiment):
                                 config_trial['fit_params']['optuna_trial'] = trial
                                 config_trial['run_id'] = child_runs_ids[n_trial]
                                 resources = {'cores': n_jobs, 'gpus': self.n_gpus / (self.n_cores / n_jobs)}
-                                # send task to workers different from the current one
-                                workers = client.scheduler_info()['workers'].keys()
-                                current_worker = get_worker().worker_address
-                                workers = [worker for worker in workers if worker != current_worker]
-                                futures.append(client.submit(self.training_fn, resources=resources, workers=workers,
+                                futures.append(client.submit(self.training_fn, resources=resources,
                                                              **dict(config=config_trial)))
                             results = client.gather(futures)
                         for trial_number, result in zip(trial_numbers, results):
