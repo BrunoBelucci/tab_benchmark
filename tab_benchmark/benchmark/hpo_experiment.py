@@ -174,12 +174,15 @@ class HPOExperiment(BaseExperiment):
                                 trial_numbers.append(trial.number)
                                 model_params = trial.params
                                 seed_model = model_params.pop('seed_model')
+                                child_run_id = child_runs_ids[n_trial]
                                 config_trial = config.copy()
                                 config_trial.update(dict(model_params=model_params, seed_model=seed_model))
                                 config_trial['fit_params']['optuna_trial'] = trial
-                                config_trial['run_id'] = child_runs_ids[n_trial]
+                                config_trial['run_id'] = child_run_id
                                 resources = {'cores': n_jobs, 'gpus': self.n_gpus / (self.n_cores / n_jobs)}
-                                futures.append(client.submit(self.training_fn, resources=resources,
+                                key = '_'.join([str(value) for value in kwargs.values()])  # shared prefix
+                                key = key + f'-{child_run_id}'  # unique key
+                                futures.append(client.submit(self.training_fn, resources=resources, key=key, pure=False,
                                                              **dict(config=config_trial)))
                                 n_trial += 1
                                 if n_trial >= n_trials:

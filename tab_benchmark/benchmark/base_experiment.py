@@ -831,11 +831,11 @@ class BaseExperiment:
             if self.log_to_mlflow:
                 resources_per_task = {'processes': 1}
                 first_future = client.submit(self.create_mlflow_run, *first_args, resources=resources_per_task,
-                                             **extra_params)
+                                             pure=False, **extra_params)
                 futures = [first_future]
                 if total_combinations > 1:
                     time.sleep(5)
-                    other_futures = client.map(self.create_mlflow_run, *list_of_args,
+                    other_futures = client.map(self.create_mlflow_run, *list_of_args, pure=False,
                                                batch_size=self.n_workers, resources=resources_per_task, **extra_params)
                     futures.extend(other_futures)
                 run_ids = client.gather(futures)
@@ -853,13 +853,15 @@ class BaseExperiment:
                               f'You can check the dask dashboard to get more information about the progress and '
                               f'the workers.')
 
-            first_future = client.submit(self.run_combination, *first_args,
+            first_key = '_'.join([str(arg) for arg in combinations[0]])
+            first_future = client.submit(self.run_combination, *first_args, pure=False, key=first_key,
                                          resources=resources_per_task, **extra_params)
             futures = [first_future]
             if total_combinations > 1:
                 # wait a little bit for the first submission to create folders, experiments, etc
                 time.sleep(5)
-                other_futures = client.map(self.run_combination, *list_of_args,
+                other_keys = ['_'.join(str(arg) for arg in combination) for combination in combinations[1:]]
+                other_futures = client.map(self.run_combination, *list_of_args, pure=False, key=other_keys,
                                            batch_size=self.n_workers, resources=resources_per_task, **extra_params)
                 futures.extend(other_futures)
         else:
