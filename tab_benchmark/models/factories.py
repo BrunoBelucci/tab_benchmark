@@ -239,7 +239,7 @@ def dnn_architecture_init(self, dnn_architecture_cls, **kwargs):
 
 def dnn_model_factory(dnn_architecture_cls, dnn_model_cls=DNNModel, default_values=None,
                       map_task_to_default_values=None,
-                      before_fit_method=None, extra_dct=None):
+                      before_fit_method=None, after_fit_method=None, extra_dct=None):
     default_values = default_values.copy() if default_values else {}
 
     dnn_parameters = {name: param for name, param in signature(dnn_architecture_cls.__init__).parameters.items()
@@ -257,7 +257,8 @@ def dnn_model_factory(dnn_architecture_cls, dnn_model_cls=DNNModel, default_valu
 
     TabBenchmarkSklearn = sklearn_factory(dnn_model_cls, has_early_stopping=True, default_values=default_values,
                                           map_task_to_default_values=map_task_to_default_values,
-                                          before_fit_method=before_fit_method, extra_dct=extra_dct)
+                                          before_fit_method=before_fit_method, after_fit_method=after_fit_method,
+                                          extra_dct=extra_dct)
 
     class TabBenchmarkDNN(TabBenchmarkSklearn):
         def __init__(self, *args, **kwargs):

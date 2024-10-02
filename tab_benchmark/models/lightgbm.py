@@ -7,11 +7,10 @@ import numpy as np
 from lightgbm import LGBMRegressor, LGBMClassifier
 from lightgbm.basic import _is_numpy_1d_array, _to_string, _NUMERIC_TYPES, _is_numeric, _log_info
 from lightgbm.callback import CallbackEnv, _EarlyStoppingCallback, _format_eval_result, EarlyStopException
-from ray import tune
-from ray.train import report
 from tab_benchmark.models.xgboost import n_estimators_gbdt, early_stopping_patience_gbdt, remove_old_models
 from tab_benchmark.models.factories import sklearn_factory
 import lightgbm.basic
+import optuna
 
 
 # Monkey patching the lightgbm to support nested dictionaries
@@ -109,20 +108,20 @@ def create_search_space_lgbm():
     # Not tunning n_estimators following discussion at
     # https://openreview.net/forum?id=Fp7__phQszn&noteId=Z7Y_qxwDjiM
     search_space = dict(
-        learning_rate=tune.loguniform(1e-3, 1.0),
-        reg_lambda=tune.loguniform(1e-10, 1),
-        reg_alpha=tune.loguniform(1e-10, 1.0),
-        min_split_gain=tune.loguniform(1e-10, 1.0),
-        colsample_bytree=tune.uniform(0.1, 1),
-        feature_fraction_bynode=tune.uniform(0.1, 1),
-        max_depth=tune.randint(1, 20),
-        max_delta_step=tune.randint(0, 10),
-        min_child_weight=tune.loguniform(1e-3, 20),
-        subsample=tune.uniform(0.01, 1),
-        subsample_freq=tune.randint(1, 11),
-        # num_leaves=tune.randint(1, 4096),  # should be < 2^(max_depth)
-        num_leaves=tune.sample_from(conditional_num_leaves),
-        min_child_samples=tune.randint(1, 1000000)
+        learning_rate=optuna.distributions.FloatDistribution(1e-3, 1.0, log=True),
+        reg_lambda=optuna.distributions.FloatDistribution(1e-10, 1, log=True),
+        reg_alpha=optuna.distributions.FloatDistribution(1e-10, 1.0, log=True),
+        min_split_gain=optuna.distributions.FloatDistribution(1e-10, 1.0, log=True),
+        colsample_bytree=optuna.distributions.FloatDistribution(0.1, 1),
+        feature_fraction_bynode=optuna.distributions.FloatDistribution(0.1, 1),
+        max_depth=optuna.distributions.IntDistribution(1, 20),
+        max_delta_step=optuna.distributions.IntDistribution(0, 10),
+        min_child_weight=optuna.distributions.FloatDistribution(1e-3, 20, log=True),
+        subsample=optuna.distributions.FloatDistribution(0.01, 1),
+        subsample_freq=optuna.distributions.IntDistribution(1, 11),
+        # num_leaves=optuna.distributions.IntDistribution(1, 4096),  # should be < 2^(max_depth)
+        # num_leaves=tune.sample_from(conditional_num_leaves),
+        min_child_samples=optuna.distributions.IntDistribution(1, 1000000)
     )
     default_values = dict(
         learning_rate=0.1,
@@ -152,32 +151,34 @@ def get_recommended_params_lgbm():
     return default_values_from_search_space
 
 
-class ReportToRayLGBM:
-    def __init__(self, default_metric=None):
+class ReportToOptunaLGBM:
+    def __init__(self, metric_name, eval_name, optuna_trial):
         super().__init__()
-        self.default_metric = default_metric
+        self.metric_name = metric_name
+        self.eval_name = eval_name
+        self.optuna_trial = optuna_trial
+        self.pruned_trial = False
 
     def __call__(self, env: CallbackEnv) -> None:
         result_list = env.evaluation_result_list
-        report_dict = {}
         for result in result_list:
             eval_name, metric_name, eval_result, is_higher_better = result
             # this is done everywhere on the original code with the comment
             # split is needed for "<dataset type> <metric>" case (e.g. "train l1")
             # so we do the same here
             metric_name = metric_name.split(" ")[-1]
-            report_dict[f'{eval_name}_{metric_name}'] = eval_result
-            if self.default_metric:
-                if metric_name == self.default_metric:
-                    report_dict[f'{eval_name}_default'] = eval_result
-        report(report_dict)
+            if eval_name == self.eval_name and metric_name == self.metric_name:
+                self.optuna_trial.report(eval_result, step=env.iteration)
+                if self.optuna_trial.should_prune():
+                    self.pruned_trial = True
+                    raise EarlyStopException(env.iteration, result)
+                break
 
 
 class LogToMLFlowLGBM:
     def __init__(self, log_every_n_steps=50, default_metric=None):
         super().__init__()
         self.log_every_n_steps = log_every_n_steps
-        self.default_metric = default_metric
 
     def __call__(self, env: CallbackEnv) -> None:
         if env.iteration % self.log_every_n_steps != 0:
@@ -191,9 +192,6 @@ class LogToMLFlowLGBM:
             # so we do the same here
             metric_name = metric_name.split(" ")[-1]
             log_dict[f'{eval_name}_{metric_name}'] = eval_result
-            if self.default_metric:
-                if metric_name == self.default_metric:
-                    log_dict[f'{eval_name}_default'] = eval_result
         log_dict['epoch'] = env.iteration
         mlflow.log_metrics(log_dict, step=env.iteration)
 
@@ -222,7 +220,7 @@ map_our_metric_to_lgbm_metric = {
 
 
 def before_fit_lgbm(self, X, y, task=None, cat_features=None, cat_dims=None, n_classes=None, eval_set=None,
-                    eval_name=None, report_to_ray=None,
+                    eval_name=None, report_to_optuna=None, optuna_trial=None,
                     init_model=None, **args_and_kwargs):
     if n_classes is not None:
         if n_classes > 2:
@@ -252,8 +250,8 @@ def before_fit_lgbm(self, X, y, task=None, cat_features=None, cat_dims=None, n_c
         if mlflow.active_run():
             callbacks.append(LogToMLFlowLGBM(default_metric=eval_metric))
 
-    if report_to_ray:
-        callbacks.append(ReportToRayLGBM(default_metric=eval_metric))
+    if report_to_optuna:
+        callbacks.append(ReportToOptunaLGBM(eval_metric, eval_name[-1], optuna_trial))
 
     # we will rename the columns to avoid problems with the lightgbm
     X = X.rename(columns=lambda x: re.sub('[^A-Za-z0-9_]+', '', x))
@@ -269,8 +267,20 @@ def before_fit_lgbm(self, X, y, task=None, cat_features=None, cat_dims=None, n_c
 
     fit_arguments['eval_names'] = eval_name
     fit_arguments['callbacks'] = callbacks
+    self.callbacks = callbacks
     fit_arguments.update(dict(X=X, y=y, eval_set=eval_set, init_model=init_model))
     return fit_arguments
+
+
+def after_fit_lgbm(self, fit_return):
+    for callback in self.callbacks:
+        if isinstance(callback, ReportToOptunaLGBM):
+            self.pruned_trial = callback.pruned_trial
+            if self.log_to_mlflow_if_running:
+                log_metrics = {'pruned': int(callback.pruned_trial)}
+                mlflow.log_metrics(log_metrics, run_id=self.run_id)
+            break
+    return fit_return
 
 
 TabBenchmarkLGBMRegressor = sklearn_factory(
@@ -284,6 +294,7 @@ TabBenchmarkLGBMRegressor = sklearn_factory(
         'eval_metric': 'rmse'
     },
     before_fit_method=before_fit_lgbm,
+    after_fit_method=after_fit_lgbm,
     extra_dct={
         'create_search_space': staticmethod(create_search_space_lgbm),
         'get_recommended_params': staticmethod(get_recommended_params_lgbm),
@@ -303,6 +314,7 @@ TabBenchmarkLGBMClassifier = sklearn_factory(
         'classification': {'objective': 'multiclass', 'eval_metric': 'logloss'},
     },
     before_fit_method=before_fit_lgbm,
+    after_fit_method=after_fit_lgbm,
     extra_dct={
         'create_search_space': staticmethod(create_search_space_lgbm),
         'get_recommended_params': staticmethod(get_recommended_params_lgbm),

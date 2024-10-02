@@ -105,6 +105,7 @@ TabBenchmarkMLP = dnn_model_factory(
         'multi_regression': {'loss_fn': torch.nn.functional.mse_loss},
     },
     before_fit_method=before_fit_dnn,
+    after_fit_method=after_fit_dnn,
     extra_dct={
         'create_search_space': staticmethod(create_search_space_mlp),
         'get_recommended_params': staticmethod(partial(get_recommended_params_dnn, create_search_space_mlp)),
@@ -153,6 +154,7 @@ TabBenchmarkResNet = dnn_model_factory(
         'multi_regression': {'loss_fn': torch.nn.functional.mse_loss},
     },
     before_fit_method=before_fit_dnn,
+    after_fit_method=after_fit_dnn,
     extra_dct={
         'create_search_space': staticmethod(create_search_space_resnet),
         'get_recommended_params': staticmethod(partial(get_recommended_params_dnn, create_search_space_resnet)),
@@ -200,6 +202,7 @@ TabBenchmarkTransformer = dnn_model_factory(
         'multi_regression': {'loss_fn': torch.nn.functional.mse_loss},
     },
     before_fit_method=before_fit_dnn,
+    after_fit_method=after_fit_dnn,
     extra_dct={
         'create_search_space': staticmethod(create_search_space_transformer),
         'get_recommended_params': staticmethod(partial(get_recommended_params_dnn, create_search_space_transformer)),
@@ -240,6 +243,7 @@ TabBenchmarkNode = dnn_model_factory(
         'multi_regression': {'loss_fn': torch.nn.functional.mse_loss},
     },
     before_fit_method=before_fit_dnn,
+    after_fit_method=after_fit_dnn,
     extra_dct={
         'create_search_space': staticmethod(create_search_space_node),
         'get_recommended_params': staticmethod(partial(get_recommended_params_dnn, create_search_space_node)),
@@ -290,6 +294,7 @@ TabBenchmarkSaint = dnn_model_factory(
         'multi_regression': {'loss_fn': torch.nn.functional.mse_loss},
     },
     before_fit_method=before_fit_dnn,
+    after_fit_method=after_fit_dnn,
     extra_dct={
         'create_search_space': staticmethod(create_search_space_saint),
         'get_recommended_params': staticmethod(partial(get_recommended_params_dnn, create_search_space_saint)),
@@ -312,6 +317,7 @@ TabBenchmarkTabTransformer = dnn_model_factory(
         'multi_regression': {'loss_fn': torch.nn.functional.mse_loss},
     },
     before_fit_method=before_fit_dnn,
+    after_fit_method=after_fit_dnn,
     extra_dct={
         'create_search_space': staticmethod(create_search_space_saint),
         'get_recommended_params': staticmethod(partial(get_recommended_params_dnn, create_search_space_saint)),
@@ -393,6 +399,7 @@ TabBenchmarkTabNet = dnn_model_factory(
         'multi_regression': {'loss_fn': torch.nn.functional.mse_loss},
     },
     before_fit_method=before_fit_dnn,
+    after_fit_method=after_fit_dnn,
     extra_dct={
         'create_search_space': staticmethod(create_search_space_tabnet),
         'get_recommended_params': staticmethod(partial(get_recommended_params_dnn, create_search_space_tabnet)),
