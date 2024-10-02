@@ -2,8 +2,8 @@ from copy import deepcopy
 from functools import partial
 import mlflow
 import torch
+import optuna
 from lightning.pytorch.loggers import MLFlowLogger
-from ray import tune
 from tab_benchmark.dnns.architectures import Node, Saint, TabTransformer, TabNet
 from tab_benchmark.dnns.architectures.mlp import MLP
 from tab_benchmark.dnns.architectures.resnet import ResNet
@@ -58,13 +58,15 @@ def create_search_space_mlp():
     # “Revisiting Deep Learning Models for Tabular Data.” arXiv, November 10, 2021.
     # https://doi.org/10.48550/arXiv.2106.11959.
     search_space = dict(
-        n_layers=tune.randint(1, 16),
-        hidden_dims=tune.choice([1, 2, 4, 8, 16, 24, 32, 64, 128, 256, 512, 1024]),
-        dropouts=tune.uniform(0.0, 0.5),
-        lr=tune.loguniform(1e-5, 1e-2),
-        weight_decay=tune.loguniform(1e-6, 1e-2),
-        categorical_embedding_dim=tune.choice([1, 2, 4, 8, 16, 24, 32, 64, 128, 256, 512]),
-        continuous_embedding_dim=tune.choice([1, 2, 4, 8, 16, 24, 32, 64, 128, 256, 512]),
+        n_layers=optuna.distributions.IntDistribution(1, 16),
+        hidden_dims=optuna.distributions.CategoricalDistribution([1, 2, 4, 8, 16, 24, 32, 64, 128, 256, 512, 1024]),
+        dropouts=optuna.distributions.FloatDistribution(0.0, 0.5),
+        lr=optuna.distributions.FloatDistribution(1e-5, 1e-2, log=True),
+        weight_decay=optuna.distributions.FloatDistribution(1e-6, 1e-2, log=True),
+        categorical_embedding_dim=optuna.distributions.CategoricalDistribution([1, 2, 4, 8, 16, 24, 32, 64, 128, 256,
+                                                                                512]),
+        continuous_embedding_dim=optuna.distributions.CategoricalDistribution([1, 2, 4, 8, 16, 24, 32, 64, 128, 256,
+                                                                               512]),
     )
     default_values = dict(
         n_layers=4,
@@ -114,14 +116,14 @@ def create_search_space_resnet():
     # “Revisiting Deep Learning Models for Tabular Data.” arXiv, November 10, 2021.
     # https://doi.org/10.48550/arXiv.2106.11959.
     search_space = dict(
-        n_blocks=tune.randint(1, 16),
-        blocks_dim=tune.choice([1, 2, 4, 8, 16, 24, 32, 64, 128, 256, 512, 1024]),
-        dropout_1=tune.uniform(0.0, 0.5),
-        dropout_2=tune.uniform(0.0, 0.5),
-        lr=tune.loguniform(1e-5, 1e-2),
-        weight_decay=tune.loguniform(1e-6, 1e-2),
-        categorical_embedding_dim=tune.choice([1, 2, 4, 8, 16, 24, 32, 64, 128, 256, 512]),
-        continuous_embedding_dim=tune.choice([1, 2, 4, 8, 16, 24, 32, 64, 128, 256, 512]),
+        n_blocks=optuna.distributions.IntDistribution(1, 16),
+        blocks_dim=optuna.distributions.CategoricalDistribution([1, 2, 4, 8, 16, 24, 32, 64, 128, 256, 512, 1024]),
+        dropout_1=optuna.distributions.FloatDistribution(0.0, 0.5),
+        dropout_2=optuna.distributions.FloatDistribution(0.0, 0.5),
+        lr=optuna.distributions.FloatDistribution(1e-5, 1e-2, log=True),
+        weight_decay=optuna.distributions.FloatDistribution(1e-6, 1e-2, log=True),
+        categorical_embedding_dim=optuna.distributions.CategoricalDistribution([1, 2, 4, 8, 16, 24, 32, 64, 128, 256, 512]),
+        continuous_embedding_dim=optuna.distributions.CategoricalDistribution([1, 2, 4, 8, 16, 24, 32, 64, 128, 256, 512]),
     )
     default_values = dict(
         n_blocks=4,
@@ -163,13 +165,13 @@ def create_search_space_transformer():
     # “Revisiting Deep Learning Models for Tabular Data.” arXiv, November 10, 2021.
     # https://doi.org/10.48550/arXiv.2106.11959.
     search_space = dict(
-        n_heads=tune.randint(1, 6),
-        feedforward_dims=tune.choice([16, 24, 32, 64, 128, 256, 512, 1024, 2048]),
-        dropouts_attn=tune.uniform(0.0, 0.5),
-        dropouts_ff=tune.uniform(0.0, 0.5),
-        lr=tune.loguniform(1e-5, 1e-2),
-        weight_decay=tune.loguniform(1e-6, 1e-2),
-        embedding_dim=tune.choice([1, 2, 4, 8, 16, 24, 32, 64, 128, 256, 512]),
+        n_heads=optuna.distributions.IntDistribution(1, 6),
+        feedforward_dims=optuna.distributions.CategoricalDistribution([16, 24, 32, 64, 128, 256, 512, 1024, 2048]),
+        dropouts_attn=optuna.distributions.FloatDistribution(0.0, 0.5),
+        dropouts_ff=optuna.distributions.FloatDistribution(0.0, 0.5),
+        lr=optuna.distributions.FloatDistribution(1e-5, 1e-2, log=True),
+        weight_decay=optuna.distributions.FloatDistribution(1e-6, 1e-2, log=True),
+        embedding_dim=optuna.distributions.CategoricalDistribution([1, 2, 4, 8, 16, 24, 32, 64, 128, 256, 512]),
     )
     default_values = dict(
         n_heads=3,
@@ -208,10 +210,10 @@ TabBenchmarkTransformer = dnn_model_factory(
 def create_search_space_node():
     # Following the paper
     search_space = dict(
-        num_NODE_layers=tune.choice([1, 2, 4, 8]),
-        depth=tune.choice([6, 8]),
-        num_trees=tune.choice([1024, 2048]),
-        extra_tree_dim=tune.choice([1, 2, 3]),
+        num_NODE_layers=optuna.distributions.CategoricalDistribution([1, 2, 4, 8]),
+        depth=optuna.distributions.CategoricalDistribution([6, 8]),
+        num_trees=optuna.distributions.CategoricalDistribution([1024, 2048]),
+        extra_tree_dim=optuna.distributions.CategoricalDistribution([1, 2, 3]),
     )
     default_values = dict(
         num_NODE_layers=1,
@@ -248,15 +250,15 @@ TabBenchmarkNode = dnn_model_factory(
 def create_search_space_saint():
     # From TabTransformer...there is no hyperparameter tuning policy described in Saint paper.
     search_space = dict(
-        embedding_dim=tune.choice([1, 2, 4, 8, 16, 32, 64, 128, 256]),
-        n_heads=tune.choice([1, 2, 4, 8]),
-        n_blocks=tune.choice([1, 2, 3, 6, 12]),
-        mlp_hidden_mult_1=tune.randint(1, 8),
-        mlp_hidden_mult_2=tune.randint(1, 3),
-        lr=tune.loguniform(1e-6, 1e-3),
-        weight_decay=tune.loguniform(1e-6, 1e-1),
-        attn_dropout=tune.choice([0.1, 0.2, 0.3, 0.4, 0.5]),
-        ff_dropout=tune.choice([0.1, 0.2, 0.3, 0.4, 0.5]),
+        embedding_dim=optuna.distributions.CategoricalDistribution([1, 2, 4, 8, 16, 32, 64, 128, 256]),
+        n_heads=optuna.distributions.CategoricalDistribution([1, 2, 4, 8]),
+        n_blocks=optuna.distributions.CategoricalDistribution([1, 2, 3, 6, 12]),
+        mlp_hidden_mult_1=optuna.distributions.IntDistribution(1, 8),
+        mlp_hidden_mult_2=optuna.distributions.IntDistribution(1, 3),
+        lr=optuna.distributions.FloatDistribution(1e-6, 1e-3, log=True),
+        weight_decay=optuna.distributions.FloatDistribution(1e-6, 1e-1, log=True),
+        attn_dropout=optuna.distributions.CategoricalDistribution([0.1, 0.2, 0.3, 0.4, 0.5]),
+        ff_dropout=optuna.distributions.CategoricalDistribution([0.1, 0.2, 0.3, 0.4, 0.5]),
     )
     default_values = dict(
         embedding_dim=32,
@@ -320,16 +322,16 @@ TabBenchmarkTabTransformer = dnn_model_factory(
 def create_search_space_tabnet():
     # From tabnet
     search_space = dict(
-        n_d=tune.choice([8, 16, 24, 32, 64, 128]),
-        n_a=tune.choice([8, 16, 24, 32, 64, 128]),
-        n_steps=tune.randint(3, 10),
-        gamma=tune.uniform(1, 2),
-        lambda_sparse=tune.loguniform(1e-10, 0.1),
-        virtual_batch_size=tune.choice([256, 512, 1024, 2048, 4096]),
-        lr=tune.loguniform(0.005, 0.025),
-        momentum=tune.uniform(0.6, 0.98),
-        gamma_sched=tune.uniform(0.4, 0.95),
-        step_sched=tune.randint(500, 20000),
+        n_d=optuna.distributions.CategoricalDistribution([8, 16, 24, 32, 64, 128]),
+        n_a=optuna.distributions.CategoricalDistribution([8, 16, 24, 32, 64, 128]),
+        n_steps=optuna.distributions.IntDistribution(3, 10),
+        gamma=optuna.distributions.FloatDistribution(1, 2),
+        lambda_sparse=optuna.distributions.FloatDistribution(1e-10, 0.1, log=True),
+        virtual_batch_size=optuna.distributions.CategoricalDistribution([256, 512, 1024, 2048, 4096]),
+        lr=optuna.distributions.FloatDistribution(0.005, 0.025, log=True),
+        momentum=optuna.distributions.FloatDistribution(0.6, 0.98),
+        gamma_sched=optuna.distributions.FloatDistribution(0.4, 0.95),
+        step_sched=optuna.distributions.IntDistribution(500, 20000),
     )
     default_values = dict(
         n_d=64,
