@@ -8,6 +8,8 @@ from tab_benchmark.dnns.architectures import Node, Saint, TabTransformer, TabNet
 from tab_benchmark.dnns.architectures.mlp import MLP
 from tab_benchmark.dnns.architectures.resnet import ResNet
 from tab_benchmark.dnns.architectures.transformer import Transformer
+from tab_benchmark.dnns.callbacks import DefaultLogs
+from tab_benchmark.dnns.callbacks.evaluate_metric import EvaluateMetric
 from tab_benchmark.dnns.modules import TabNetModule
 from tab_benchmark.dnns.utils.external.node.lib.facebook_optimizer.optimizer import QHAdam
 from tab_benchmark.models.dnn_model import DNNModel
@@ -19,16 +21,36 @@ max_epochs_dnn = 300
 
 
 def before_fit_dnn(self, X, y, task=None, cat_features=None, cat_dims=None, n_classes=None, eval_set=None,
-                   eval_name=None, report_to_ray=False, init_model=None, **args_and_kwargs):
+                   eval_name=None, report_to_optuna=False, optuna_trial=None, init_model=None, **args_and_kwargs):
     fit_arguments = args_and_kwargs.copy() if args_and_kwargs else {}
     if self.log_to_mlflow_if_running:
-        run = mlflow.active_run()
-        if run:
-            self.lit_trainer_params['logger'] = MLFlowLogger(run_id=run.info.run_id,
-                                                             tracking_uri=mlflow.get_tracking_uri())
+        self.lit_trainer_params['logger'] = MLFlowLogger(run_id=self.run_id,
+                                                         tracking_uri=mlflow.get_tracking_uri())
     fit_arguments.update(dict(X=X, y=y, task=task, cat_features=cat_features, cat_dims=cat_dims, n_classes=n_classes,
-                              eval_set=eval_set, eval_name=eval_name, report_to_ray=report_to_ray, init_model=init_model))
+                              eval_set=eval_set, eval_name=eval_name, report_to_optuna=report_to_optuna,
+                              optuna_trial=optuna_trial, init_model=init_model))
     return fit_arguments
+
+
+def after_fit_dnn(self, fit_return):
+    if self.report_to_optuna:
+        if self.report_loss_to_optuna:
+            for callback in self.lit_callbacks_:
+                if isinstance(callback, DefaultLogs):
+                    self.pruned_trial = callback.pruned_trial
+                    if self.log_to_mlflow_if_running:
+                        log_metrics = {'pruned': int(callback.pruned_trial)}
+                        mlflow.log_metrics(log_metrics, run_id=self.run_id)
+                    break
+        else:
+            for callback in self.lit_callbacks_:
+                if isinstance(callback, EvaluateMetric):
+                    self.pruned_trial = callback.pruned_trial
+                    if self.log_to_mlflow_if_running:
+                        log_metrics = {'pruned': int(callback.pruned_trial)}
+                        mlflow.log_metrics(log_metrics, run_id=self.run_id)
+                    break
+    return fit_return
 
 
 def create_search_space_mlp():

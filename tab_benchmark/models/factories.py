@@ -4,6 +4,8 @@ from abc import ABC, abstractmethod
 from copy import deepcopy
 from pathlib import Path
 from typing import Optional, Sequence
+
+import optuna
 import pandas as pd
 
 from tab_benchmark.models.dnn_model import DNNModel
@@ -98,7 +100,8 @@ class TabBenchmarkModel(ABC):
             n_classes: Optional[int] = None,
             eval_set: Optional[list[tuple]] = None,
             eval_name: Optional[list[str]] = None,
-            report_to_ray: bool = False,
+            report_to_optuna: bool = False,
+            optuna_trial: Optional[optuna.Trial] = None,
             init_model: Optional[str | Path] = None,
             *args,
             **kwargs
@@ -125,8 +128,10 @@ class TabBenchmarkModel(ABC):
             Evaluation set.
         eval_name:
             Evaluation name.
-        report_to_ray:
-            Whether to report to Ray for tuning.
+        report_to_optuna:
+            Whether to report to optuna for tuning.
+        optuna_trial:
+            Optuna trial.
         init_model:
             Initial model to start from.
         """
@@ -430,7 +435,7 @@ def sklearn_factory(sklearn_cls, has_early_stopping=False, default_values=None,
                 fit_return = sklearn_cls.fit(self, **fit_arguments)
             # otherwise we assume that we will only call the original fit method with X, y, *args, **kwargs
             else:
-                fit_return = sklearn_cls.fit(self, X, y, *args, **kwargs)
+                fit_return = sklearn_cls.fit(self, X, y, **kwargs)
 
             # if we have an after_fit method, we call it here
             if hasattr(self, 'after_fit'):

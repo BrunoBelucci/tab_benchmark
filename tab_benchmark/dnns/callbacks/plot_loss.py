@@ -1,5 +1,5 @@
 from IPython.core.display_functions import display
-from tabular_benchmark.dnns.callbacks import DefaultLogs
+from tab_benchmark.dnns.callbacks import DefaultLogs
 import torch
 import matplotlib.pyplot as plt
 

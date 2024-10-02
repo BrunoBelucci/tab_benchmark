@@ -4,6 +4,8 @@ import copy
 from shutil import rmtree
 from typing import Optional, Callable, Sequence
 from warnings import warn
+
+import optuna
 import pandas as pd
 import torch
 import lightning as L
@@ -160,6 +162,9 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
         self.cat_features_idx_ = None
         self.cat_dims_ = None
         self.n_classes_ = None
+        self.pruned_trial = False
+        self.report_to_optuna = None
+        self.report_loss_to_optuna = None
 
     def __post_init__(self):
         if self.architecture_params is None and self.architecture_params_not_from_dataset is None:
@@ -207,7 +212,8 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
             delete_checkpoints: bool = False,
             eval_set: Optional[Sequence[tuple[pd.DataFrame, pd.DataFrame]]] = None,
             eval_name: Optional[Sequence[str]] = None,
-            report_to_ray: bool = False,
+            report_to_optuna: bool = False,
+            optuna_trial: Optional[optuna.Trial] = None,
             init_model: Optional[Path | str] = None,
     ):
         """Fit the model.
@@ -233,8 +239,10 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
         eval_name:
             Names of the evaluation sets. If None, they will be named as 'validation_i', where i is the index of
             the set.
-        report_to_ray:
-            If True, it will report the metrics to Ray Tune. Default is False.
+        report_to_optuna:
+            If True, it will report the metrics to optuna. Default is False.
+        optuna_trial:
+            If report_to_optuna is True, it will report the metrics to this trial. Default is None.
         init_model:
             Path to a lightning model checkpoint to initialize the model and resume training. Default is None.
         """
@@ -308,19 +316,22 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
 
         callbacks_tuples = []
         if eval_metric:
-            callbacks_tuples.append((EvaluateMetric, dict(eval_metric=eval_metric, eval_name=eval_name[-1],
-                                                          report_to_ray=report_to_ray, default_metric=eval_metric[-1])))
+            callbacks_tuples.append((EvaluateMetric, dict(eval_metric=eval_metric,
+                                                          report_to_optuna=report_to_optuna, optuna_trial=optuna_trial,
+                                                          report_eval_metric=eval_metric[-1],
+                                                          report_eval_name=eval_name[-1])))
 
+        report_loss_to_optuna = False
         if self.log_losses:
             if not eval_metric:
-                is_default_metric = True
+                report_loss_to_optuna = True
                 eval_metric = ['loss']
-            else:
-                is_default_metric = False
-            callbacks_tuples.append((DefaultLogs, dict(report_to_ray=report_to_ray,
-                                                       is_default_metric=is_default_metric)))
+            callbacks_tuples.append((DefaultLogs, dict(report_to_optuna=report_loss_to_optuna,
+                                                       optuna_trial=optuna_trial,
+                                                       report_eval_name=eval_name[-1])))
 
-        callbacks_tuples.extend(get_early_stopping_callback(eval_name[-1], eval_metric[-1], self.early_stopping_patience))
+        callbacks_tuples.extend(get_early_stopping_callback(eval_name[-1], eval_metric[-1],
+                                                            self.early_stopping_patience))
 
         callbacks_tuples.extend(self.lit_callbacks_tuples)
         self.lit_callbacks_ = [fn(**kwargs) for fn, kwargs in callbacks_tuples]
@@ -340,6 +351,18 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
 
         # fit
         self.lit_trainer_.fit(self.lit_module_, self.lit_datamodule_, ckpt_path=ckpt_path)
+
+        if report_to_optuna:
+            if report_loss_to_optuna:
+                for callback in self.lit_callbacks_:
+                    if isinstance(callback, DefaultLogs):
+                        self.pruned_trial = callback.pruned_trial
+                        break
+            else:
+                for callback in self.lit_callbacks_:
+                    if isinstance(callback, EvaluateMetric):
+                        self.pruned_trial = callback.pruned_trial
+                        break
 
         # load best model
         if self.use_best_model:
@@ -369,7 +392,8 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
         self.cat_features_idx_ = cat_features_idx
         self.cat_dims_ = cat_dims
         self.n_classes_ = n_classes
-
+        self.report_to_optuna = report_to_optuna
+        self.report_loss_to_optuna = report_loss_to_optuna
         return self
 
     def predict(self, X: pd.DataFrame, logits: bool = False):
