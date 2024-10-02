@@ -171,6 +171,8 @@ class ReportToOptunaLGBM:
                 self.optuna_trial.report(eval_result, step=env.iteration)
                 if self.optuna_trial.should_prune():
                     self.pruned_trial = True
+                    message = f'Trial was pruned at epoch {env.iteration}.'
+                    print(message)
                     raise EarlyStopException(env.iteration, result)
                 break
 

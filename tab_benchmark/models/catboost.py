@@ -1,9 +1,8 @@
 import mlflow
 from catboost import CatBoostRegressor, CatBoostClassifier
-from ray import tune
-from ray.train import report
 from tab_benchmark.models.xgboost import n_estimators_gbdt, early_stopping_patience_gbdt
 from tab_benchmark.models.factories import sklearn_factory
+import optuna
 
 
 def create_search_space_catboost():
@@ -11,12 +10,12 @@ def create_search_space_catboost():
     # Not tunning n_estimators following discussion at
     # https://openreview.net/forum?id=Fp7__phQszn&noteId=Z7Y_qxwDjiM
     search_space = dict(
-        learning_rate=tune.loguniform(1e-6, 1.0),
-        random_strength=tune.randint(1, 20),
-        one_hot_max_size=tune.randint(0, 25),
-        l2_leaf_reg=tune.uniform(1, 10),
-        bagging_temperature=tune.uniform(0, 1),
-        leaf_estimation_iterations=tune.randint(1, 10),
+        learning_rate=optuna.distributions.FloatDistribution(1e-6, 1.0, log=True),
+        random_strength=optuna.distributions.IntDistribution(1, 20),
+        one_hot_max_size=optuna.distributions.IntDistribution(0, 25),
+        l2_leaf_reg=optuna.distributions.FloatDistribution(1, 10),
+        bagging_temperature=optuna.distributions.FloatDistribution(0, 1),
+        leaf_estimation_iterations=optuna.distributions.IntDistribution(1, 10),
     )
     default_values = dict(
         learning_rate=0.03,
@@ -67,24 +66,33 @@ def output_dir_set(self, value):
 output_dir_property = property(output_dir_get, output_dir_set)
 
 
-class ReportToRayCatboost:
-    def __init__(self, eval_name, default_metric=None):
+class ReportToOptunaCatboost:
+    def __init__(self, eval_names, eval_name_to_report, eval_metric_to_report, optuna_trial):
         super().__init__()
-        if len(eval_name) > 1:
-            self.map_default_name_to_eval_name = {f'validation_{i}': name for i, name in enumerate(eval_name)}
+        if len(eval_names) > 1:
+            self.map_default_name_to_eval_name = {f'validation_{i}': name for i, name in enumerate(eval_names)}
         else:
-            self.map_default_name_to_eval_name = {'validation': eval_name[0]}
+            self.map_default_name_to_eval_name = {'validation': eval_names[0]}
         self.map_default_name_to_eval_name['learn'] = 'train'
-        self.default_metric = default_metric
+        self.eval_metric_to_report = eval_metric_to_report
+        self.eval_name_to_report = eval_name_to_report
+        self.optuna_trial = optuna_trial
+        self.pruned_trial = False
 
     def after_iteration(self, info):
-        dict_to_report = {}
         for default_name, metrics in info.metrics.items():
             our_name = self.map_default_name_to_eval_name[default_name]
-            dict_to_report.update({f'{our_name}_{metric}': value[-1] for metric, value in metrics.items()})
-            if self.default_metric:
-                dict_to_report[f'{our_name}_default'] = metrics[self.default_metric][-1]
-        report(dict_to_report)
+            if our_name == self.eval_name_to_report:
+                for metric, value in metrics.items():
+                    if metric == self.eval_metric_to_report:
+                        self.optuna_trial.report(value[-1], step=info.iteration)
+                        if self.optuna_trial.should_prune():
+                            self.pruned_trial = True
+                            message = f'Trial was pruned at epoch {info.iteration}.'
+                            print(message)
+                            return False
+                        break
+                break
         return True
 
 
@@ -121,7 +129,7 @@ map_our_metric_to_catboost_metric = {
 
 
 def before_fit_catboost(self, X, y, task=None, cat_features=None, cat_dims=None, n_classes=None, eval_set=None,
-                        eval_name=None, report_to_ray=False, init_model=None, **args_and_kwargs):
+                        eval_name=None, report_to_optuna=False, optuna_trial=None, init_model=None, **args_and_kwargs):
     callbacks = args_and_kwargs.get('callbacks', [])
     fit_arguments = args_and_kwargs.copy() if args_and_kwargs else {}
 
@@ -153,12 +161,25 @@ def before_fit_catboost(self, X, y, task=None, cat_features=None, cat_dims=None,
         if mlflow.active_run():
             callbacks.append(LogToMLFlowCatboost(eval_name, default_metric=self.get_param('eval_metric')))
 
-    if report_to_ray:
-        callbacks.append(ReportToRayCatboost(eval_name, default_metric=self.get_param('eval_metric')))
+    if report_to_optuna:
+        callbacks.append(ReportToOptunaCatboost(eval_name, eval_name_to_report=eval_name[-1],
+                                                eval_metric_to_report=eval_metric[-1], optuna_trial=optuna_trial))
 
     fit_arguments['callbacks'] = callbacks
+    self.callbacks = callbacks
     fit_arguments.update(dict(X=X, y=y, eval_set=eval_set, init_model=init_model))
     return fit_arguments
+
+
+def after_fit_catboost(self, fit_return):
+    for callback in self.callbacks:
+        if isinstance(callback, ReportToOptunaCatboost):
+            self.pruned_trial = callback.pruned_trial
+            if self.log_to_mlflow_if_running:
+                log_metrics = {'pruned': int(callback.pruned_trial)}
+                mlflow.log_metrics(log_metrics, run_id=self.run_id)
+            break
+    return fit_return
 
 # catboost loosely follow the sklearn pattern, it does not inherit from BaseEstimator or the Mixin classes
 TabBenchmarkCatBoostRegressor = sklearn_factory(
@@ -174,6 +195,7 @@ TabBenchmarkCatBoostRegressor = sklearn_factory(
         'multi_regression': {'loss_function': 'MultiRMSE', 'eval_metric': 'rmse'},
     },
     before_fit_method=before_fit_catboost,
+    after_fit_method=after_fit_catboost,
     extra_dct={
         'n_jobs': n_jobs_property,
         'output_dir': output_dir_property,
@@ -195,6 +217,7 @@ TabBenchmarkCatBoostClassifier = sklearn_factory(
         'binary_classification': {'loss_function': 'Logloss', 'eval_metric': 'logloss'},
     },
     before_fit_method=before_fit_catboost,
+    after_fit_method=after_fit_catboost,
     extra_dct={
         'n_jobs': n_jobs_property,
         'output_dir': output_dir_property,
