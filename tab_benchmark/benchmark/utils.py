@@ -1,18 +1,8 @@
-import os
 from copy import deepcopy
-from pathlib import Path
 import mlflow
 import numpy as np
 import openml
 import pandas as pd
-from ray.air import FailureConfig
-from ray.tune import TuneConfig
-from ray.tune.schedulers import HyperBandForBOHB, ASHAScheduler, MedianStoppingRule
-from ray.tune.search import BasicVariantGenerator, ConcurrencyLimiter
-from ray.tune.search.bohb import TuneBOHB
-from ray.train import RunConfig, SyncConfig
-from ray.tune.search.hebo import HEBOSearch
-from ray.tune.search.optuna import OptunaSearch
 from sklearn.model_selection import StratifiedKFold, KFold
 from tab_benchmark.benchmark.benchmarked_models import models_dict as benchmarked_models_dict
 from tab_benchmark.datasets import get_dataset
@@ -129,13 +119,13 @@ def fit_model(model, X, y, cat_ind, att_names, cat_dims, n_classes, task_name, t
     return model, X_train, y_train, X_test, y_test, X_validation, y_validation
 
 
-def evaluate_model(model, eval_set, eval_name, metrics, default_metric=None, n_classes=None, error_score='raise',
+def evaluate_model(model, eval_set, eval_name, metrics, report_metric=None, n_classes=None, error_score='raise',
                    log_to_mlflow=False, run_id=None):
     results = evaluate_set(model, eval_set, metrics, n_classes, error_score)
-    if default_metric is not None:
-        results['default'] = results[default_metric]
+    if report_metric is not None:
+        results['reported'] = results[report_metric]
         if log_to_mlflow:
-            log_params = {'default_metric': default_metric}
+            log_params = {f'{eval_name}_report_metric': report_metric}
             mlflow.log_params(log_params, run_id=run_id)
     results_dict = {f'{eval_name}_{metric}': value for metric, value in results.items()}
     if log_to_mlflow:
@@ -243,39 +233,3 @@ def load_openml_task(task_id, task_repeat, task_sample, task_fold, create_valida
         mlflow.log_params(params_to_log, run_id=run_id)
     return (X, y, cat_ind, att_names, cat_features_names, cat_dims, task_name, n_classes, train_indices, test_indices,
             validation_indices)
-
-
-def get_search_algorithm_tune_config_run_config(default_param_space, search_algorithm_str, trial_scheduler_str,
-                                                max_t,
-                                                n_trials,
-                                                timeout_experiment, timeout_trial, storage_path, metric, mode,
-                                                seed, max_concurrent, callbacks):
-    if isinstance(storage_path, Path):
-        storage_path = str(storage_path.resolve())
-    scheduler = None
-    if search_algorithm_str == 'random_search':
-        search_algorithm = BasicVariantGenerator(points_to_evaluate=[default_param_space], random_state=seed,
-                                                 max_concurrent=max_concurrent)
-    elif search_algorithm_str == 'bohb':
-        search_algorithm = TuneBOHB(metric=metric, mode=mode, seed=seed, max_concurrent=max_concurrent,
-                                    points_to_evaluate=[flatten_dict(default_param_space)])
-        scheduler = HyperBandForBOHB(metric=metric, mode=mode)
-    elif search_algorithm_str == 'tpe':
-        search_algorithm = OptunaSearch(points_to_evaluate=[flatten_dict(default_param_space)], seed=seed)
-        search_algorithm = ConcurrencyLimiter(search_algorithm, max_concurrent=max_concurrent)
-    elif search_algorithm_str == 'hebo':
-        search_algorithm = HEBOSearch(points_to_evaluate=[flatten_dict(default_param_space)], random_state_seed=seed,
-                                      max_concurrent=max_concurrent)
-    else:
-        raise NotImplementedError(f"Search algorithm {search_algorithm_str} not implemented.")
-    if trial_scheduler_str is not None:
-        if trial_scheduler_str == 'asha':
-            scheduler = ASHAScheduler(stop_last_trials=False, max_t=max_t)
-        elif trial_scheduler_str == 'median_stop':
-            scheduler = MedianStoppingRule()
-    sync_config = SyncConfig(sync_artifacts=True)
-    tune_config = TuneConfig(mode=mode, metric=metric, search_alg=search_algorithm,
-                             scheduler=scheduler, num_samples=n_trials, time_budget_s=timeout_experiment)
-    run_config = RunConfig(stop={'time_total_s': timeout_trial}, storage_path=storage_path, log_to_file=True,
-                           sync_config=sync_config, callbacks=callbacks)
-    return search_algorithm, tune_config, run_config
