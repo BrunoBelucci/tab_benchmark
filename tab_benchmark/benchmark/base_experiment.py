@@ -571,9 +571,6 @@ class BaseExperiment:
         params_to_log = flatten_dict(run_unique_params).copy()
         params_to_log.update(dict(
             git_hash=get_git_revision_hash(),
-            # slurm parameters
-            SLURM_JOB_ID=os.getenv('SLURM_JOB_ID', None),
-            SLURMD_NODENAME=os.getenv('SLURMD_NODENAME', None),
             # dask parameters
             dask_cluster_type=self.dask_cluster_type,
             n_workers=self.n_workers,
@@ -584,7 +581,15 @@ class BaseExperiment:
             dask_address=self.dask_address,
             n_gpus=self.n_gpus,
         ))
+        tags_to_log = dict(
+            # slurm parameters
+            SLURM_JOB_ID=os.getenv('SLURM_JOB_ID', None),
+            SLURMD_NODENAME=os.getenv('SLURMD_NODENAME', None),
+        )
         mlflow.log_params(params_to_log, run_id=run_id)
+        mlflow_client = mlflow.client.MlflowClient(tracking_uri=self.mlflow_tracking_uri)
+        for tag, value in tags_to_log.items():
+            mlflow_client.set_tag(run_id, tag, value)
 
     def run_mlflow_and_train_model(self,
                                    n_jobs=1, create_validation_set=False,
