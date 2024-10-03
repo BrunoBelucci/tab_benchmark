@@ -1,4 +1,6 @@
+import datetime
 import re
+import time
 from collections import defaultdict, OrderedDict
 from pathlib import Path
 from typing import Optional, Dict, Any
@@ -57,17 +59,18 @@ class EarlyStoppingLGBM(_EarlyStoppingCallback):
 
                 # CHANGE HERE
                 env.model.best_iteration = env.iteration + 1  # same as lgbm does internally after training
+                env.model.best_score_list = env.evaluation_result_list
                 if not getattr(env.model, 'best_score', None):
                     env.model.best_score = defaultdict(OrderedDict)
-                eval_name = env.evaluation_result_list[i][0]
-                metric_name = env.evaluation_result_list[i][1]
-                metric_name = metric_name.split(" ")[-1]
-                env.model.best_score[eval_name][metric_name] = score
+                for dataset_name, eval_name, score, _ in env.evaluation_result_list:
+                    env.model.best_score[dataset_name][eval_name] = score
+                # END CHANGE
 
                 if first_time_updating_best_score_list:
                     self.best_score_list.append(env.evaluation_result_list)
                 else:
                     self.best_score_list[i] = env.evaluation_result_list
+
             # split is needed for "<dataset type> <metric>" case (e.g. "train l1")
             eval_name_splitted = env.evaluation_result_list[i][1].split(" ")
             if self.first_metric_only and self.first_metric != eval_name_splitted[-1]:
@@ -173,7 +176,7 @@ class ReportToOptunaLGBM:
                     self.pruned_trial = True
                     message = f'Trial was pruned at epoch {env.iteration}.'
                     print(message)
-                    raise EarlyStopException(env.iteration, result_list)
+                    raise EarlyStopException(env.model.best_iteration, env.model.best_score_list)
                 break
 
 
@@ -216,6 +219,23 @@ class TrainingCheckPointLGBM:
         remove_old_models(self.directory, self.name, '.txt', self.save_top_k)
         # None = save only best iterations
         env.model.save_model(f'{self.directory}/{self.name}_{env.model.best_iteration}.txt', num_iteration=None)
+
+
+class TimerLGBM:
+    def __init__(self, duration):
+        if isinstance(duration, str):
+            duration = datetime.timedelta(seconds=int(duration))
+        elif isinstance(duration, dict):
+            duration = datetime.timedelta(**duration)
+        else:
+            raise ValueError(f"duration must be int or dict, got {type(duration)}")
+        self.duration = duration
+        self.start_time = time.perf_counter()
+
+    def __call__(self, env: CallbackEnv) -> None:
+        elapsed_time = time.perf_counter() - self.start_time
+        if elapsed_time > self.duration.total_seconds():
+            raise EarlyStopException(env.model.best_iteration, env.model.best_score_list)
 
 
 map_our_metric_to_lgbm_metric = {
@@ -265,6 +285,9 @@ def before_fit_lgbm(self, X, y, task=None, cat_features=None, cat_dims=None, n_c
         callbacks.append(LogToMLFlowLGBM(run_id=self.run_id, reported_metric=reported_metric,
                                          reported_eval_name=reported_eval_name,
                                          log_every_n_steps=self.log_interval))
+
+    if self.max_time:
+        callbacks.append(TimerLGBM(duration=self.max_time))
 
     # we will rename the columns to avoid problems with the lightgbm
     X = X.rename(columns=lambda x: re.sub('[^A-Za-z0-9_]+', '', x))

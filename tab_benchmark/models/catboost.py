@@ -1,3 +1,6 @@
+import datetime
+import time
+
 import mlflow
 from catboost import CatBoostRegressor, CatBoostClassifier
 from tab_benchmark.models.xgboost import n_estimators_gbdt, early_stopping_patience_gbdt
@@ -122,6 +125,24 @@ class LogToMLFlowCatboost:
         return True
 
 
+class TimerCatboost:
+    def __init__(self, duration):
+        if isinstance(duration, int):
+            duration = datetime.timedelta(seconds=duration)
+        elif isinstance(duration, dict):
+            duration = datetime.timedelta(**duration)
+        else:
+            raise ValueError(f"duration must be int or dict, got {type(duration)}")
+        self.duration = duration
+        self.start_time = time.perf_counter()
+
+    def after_iteration(self, info):
+        if (time.perf_counter() - self.start_time) > self.duration.total_seconds():
+            return False
+        else:
+            return True
+
+
 map_our_metric_to_catboost_metric = {
     ('logloss', 'binary_classification'): 'Logloss',
     ('logloss', 'classification'): 'MultiClass',
@@ -174,6 +195,9 @@ def before_fit_catboost(self, X, y, task=None, cat_features=None, cat_dims=None,
                                              reported_metric=reported_metric,
                                              reported_eval_name=reported_eval_name,
                                              log_every_n_steps=self.log_interval))
+
+    if self.max_time:
+        callbacks.append(TimerCatboost(duration=self.max_time))
 
     fit_arguments['callbacks'] = callbacks
     self.callbacks = callbacks

@@ -1,6 +1,9 @@
 from __future__ import annotations
+
+import datetime
 import os
 import pickle
+import time
 from copy import deepcopy
 from typing import Optional, cast, Dict, Any
 import mlflow
@@ -286,6 +289,26 @@ class TrainingCheckPoint(TrainingCallback):
         self.epoch_counter += 1
 
 
+class TimerXGBoost(TrainingCallback):
+    def __init__(self, duration: int):
+        super().__init__()
+        if isinstance(duration, int):
+            duration = datetime.timedelta(seconds=duration)
+        elif isinstance(duration, dict):
+            duration = datetime.timedelta(**duration)
+        else:
+            raise ValueError(f"duration must be int or dict, got {type(duration)}")
+        self.duration = duration
+        self.start_time = None
+
+    def before_training(self, model: _Model):
+        self.start_time = time.perf_counter()
+
+    def after_iteration(self, model: _Model, epoch: int, evals_log):
+        if (time.perf_counter() - self.start_time) > self.duration.total_seconds():
+            return True
+
+
 map_our_metric_to_xgboost_metric = {
     ('logloss', 'binary_classification'): 'logloss',
     ('logloss', 'classification'): 'mlogloss',
@@ -351,6 +374,9 @@ def before_fit_xgboost(self, X, y, task=None, cat_features=None, cat_dims=None, 
                                                  reported_metric=reported_metric,
                                                  reported_eval_name=reported_eval_name,
                                                  log_every_n_steps=self.log_interval))
+
+    if self.max_time:
+        self.callbacks.append(TimerXGBoost(duration=self.max_time))
 
     fit_arguments.update(dict(
         X=X,

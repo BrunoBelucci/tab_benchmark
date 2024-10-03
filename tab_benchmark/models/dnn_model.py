@@ -10,7 +10,7 @@ import pandas as pd
 import torch
 import lightning as L
 from lightning import Callback
-from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
+from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint, Timer
 from scipy.special import softmax
 from sklearn.base import BaseEstimator, ClassifierMixin, RegressorMixin, clone
 from torch import nn
@@ -60,6 +60,12 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
     early_stopping_patience:
         Number of epochs to wait before stopping the training if the validation loss does not improve. Default is 40.
         It adds EarlyStopping callback. If 0, it will not be added.
+    max_time:
+        Maximum time to train the model. It adds Timer callback. If None, it will not be added. The interruption will
+        be done at the end of the epoch, and this will be the parameter duration of the Timer callback. Besides the
+        format accepted by the Timer callback ("A string in the format DD:HH:MM:SS (days, hours, minutes seconds),
+        or a datetime.timedelta, or a dict containing key-value compatible with timedelta"), it can also be an integer
+        representing the number of seconds.
     use_best_model:
         If True, it will load the best model. Default is True.
     output_dir:
@@ -112,6 +118,7 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
             n_jobs: int = 0,  # will add num_workers to lit_datamodule_kwargs
             early_stopping_patience: int = 40,  # will add EarlyStopping callback, 0 to disable
             use_best_model: bool = True,  # will load the best model if True, False to load the last model
+            max_time: Optional[str | int] = None,  # will add Timer callback, None to disable
             output_dir: Optional[Path | str] = None,
             dnn_architecture_class: type[nn.Module] = None,
             loss_fn: Optional[Callable] = torch.nn.functional.mse_loss,
@@ -137,6 +144,7 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
         self.n_jobs = n_jobs
         self.early_stopping_patience = early_stopping_patience
         self.use_best_model = use_best_model
+        self.max_time = max_time
         self.output_dir = output_dir if output_dir else Path.cwd() / 'dnn_model_output'
         self.dnn_architecture_class = dnn_architecture_class
         self.loss_fn = loss_fn
@@ -330,6 +338,13 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
 
         callbacks_tuples.extend(get_early_stopping_callback(eval_name[-1], eval_metric[-1] if eval_metric else 'loss',
                                                             self.early_stopping_patience))
+
+        if self.max_time:
+            if isinstance(self.max_time, int):
+                max_time = dict(seconds=self.max_time)
+            else:
+                max_time = self.max_time
+            callbacks_tuples.append((Timer, dict(duration=max_time, interval='epoch')))
 
         callbacks_tuples.extend(self.lit_callbacks_tuples)
         self.lit_callbacks_ = [fn(**kwargs) for fn, kwargs in callbacks_tuples]
