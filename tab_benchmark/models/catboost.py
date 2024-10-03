@@ -97,14 +97,18 @@ class ReportToOptunaCatboost:
 
 
 class LogToMLFlowCatboost:
-    def __init__(self, eval_name, log_every_n_steps=50, default_metric=None):
+    def __init__(self, run_id, eval_name, log_every_n_steps=50, reported_metric=None, reported_eval_name=None):
+        self.run_id = run_id
         if len(eval_name) > 1:
             self.map_default_name_to_eval_name = {f'validation_{i}': name for i, name in enumerate(eval_name)}
         else:
             self.map_default_name_to_eval_name = {'validation': eval_name[0]}
         self.map_default_name_to_eval_name['learn'] = 'train'
         self.log_every_n_steps = log_every_n_steps
-        self.default_metric = default_metric
+        if reported_metric:
+            mlflow.log_params({f'{reported_eval_name}_report_metric': reported_metric}, run_id=self.run_id)
+        self.reported_metric = reported_metric
+        self.reported_eval_name = reported_eval_name
 
     def after_iteration(self, info):
         if info.iteration % self.log_every_n_steps != 0:
@@ -113,10 +117,8 @@ class LogToMLFlowCatboost:
         for default_name, metrics in info.metrics.items():
             our_name = self.map_default_name_to_eval_name[default_name]
             dict_to_log.update({f'{our_name}_{metric}': value[-1] for metric, value in metrics.items()})
-            if self.default_metric:
-                dict_to_log[f'{our_name}_default'] = metrics[self.default_metric][-1]
         dict_to_log['iteration'] = info.iteration
-        mlflow.log_metrics(dict_to_log, step=info.iteration)
+        mlflow.log_metrics(dict_to_log, step=info.iteration, run_id=self.run_id)
         return True
 
 
@@ -157,13 +159,22 @@ def before_fit_catboost(self, X, y, task=None, cat_features=None, cat_dims=None,
         fit_arguments['snapshot_file'] = snapshot_file
         fit_arguments['snapshot_interval'] = snapshot_interval
 
+    if report_to_optuna:
+        reported_metric = self.get_param('eval_metric')
+        reported_eval_name = eval_name[-1]
+        callbacks.append(ReportToOptunaCatboost(eval_name, eval_name_to_report=reported_eval_name,
+                                                eval_metric_to_report=reported_metric,
+                                                optuna_trial=optuna_trial))
+    else:
+        reported_metric = None
+        reported_eval_name = None
+
     if self.log_to_mlflow_if_running:
         if mlflow.active_run():
-            callbacks.append(LogToMLFlowCatboost(eval_name, default_metric=self.get_param('eval_metric')))
-
-    if report_to_optuna:
-        callbacks.append(ReportToOptunaCatboost(eval_name, eval_name_to_report=eval_name[-1],
-                                                eval_metric_to_report=eval_metric[-1], optuna_trial=optuna_trial))
+            callbacks.append(LogToMLFlowCatboost(run_id=self.run_id, eval_name=eval_name,
+                                                 reported_metric=reported_metric,
+                                                 reported_eval_name=reported_eval_name,
+                                                 log_every_n_steps=self.log_interval))
 
     fit_arguments['callbacks'] = callbacks
     self.callbacks = callbacks
@@ -180,6 +191,7 @@ def after_fit_catboost(self, fit_return):
                 mlflow.log_metrics(log_metrics, run_id=self.run_id)
             break
     return fit_return
+
 
 # catboost loosely follow the sklearn pattern, it does not inherit from BaseEstimator or the Mixin classes
 TabBenchmarkCatBoostRegressor = sklearn_factory(

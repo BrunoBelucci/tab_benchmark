@@ -178,9 +178,14 @@ class ReportToOptunaLGBM:
 
 
 class LogToMLFlowLGBM:
-    def __init__(self, log_every_n_steps=50, default_metric=None):
+    def __init__(self, run_id, log_every_n_steps=50, reported_metric=None, reported_eval_name=None):
         super().__init__()
+        self.run_id = run_id
         self.log_every_n_steps = log_every_n_steps
+        if reported_metric:
+            mlflow.log_params({f'{reported_eval_name}_report_metric': reported_metric}, run_id=self.run_id)
+        self.reported_metric = reported_metric
+        self.reported_eval_name = reported_eval_name
 
     def __call__(self, env: CallbackEnv) -> None:
         if env.iteration % self.log_every_n_steps != 0:
@@ -248,12 +253,19 @@ def before_fit_lgbm(self, X, y, task=None, cat_features=None, cat_dims=None, n_c
     else:
         eval_metric = self.get_params().get('metric', None)
 
+    if report_to_optuna:
+        reported_metric = eval_metric
+        reported_eval_name = eval_name[-1]
+        callbacks.append(ReportToOptunaLGBM(reported_metric, reported_eval_name, optuna_trial))
+    else:
+        reported_metric = None
+        reported_eval_name = None
+
     if self.log_to_mlflow_if_running:
         if mlflow.active_run():
-            callbacks.append(LogToMLFlowLGBM(default_metric=eval_metric))
-
-    if report_to_optuna:
-        callbacks.append(ReportToOptunaLGBM(eval_metric, eval_name[-1], optuna_trial))
+            callbacks.append(LogToMLFlowLGBM(run_id=self.run_id, reported_metric=reported_metric,
+                                             reported_eval_name=reported_eval_name,
+                                             log_every_n_steps=self.log_interval))
 
     # we will rename the columns to avoid problems with the lightgbm
     X = X.rename(columns=lambda x: re.sub('[^A-Za-z0-9_]+', '', x))

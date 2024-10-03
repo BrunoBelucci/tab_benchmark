@@ -9,7 +9,7 @@ import numpy as np
 import optuna
 from sklearn.base import BaseEstimator
 from xgboost import XGBClassifier, XGBRegressor, XGBModel, collective
-from xgboost.callback import (TrainingCallback, _Model, TrainingCheckPoint as OriginalTrainingCheckPoint,
+from xgboost.callback import (TrainingCallback, _Model,
                               EarlyStopping as OriginalEarlyStopping, _Score, _ScoreList)
 from tab_benchmark.models.factories import sklearn_factory
 from tab_benchmark.utils import extends, get_metric_fn
@@ -64,7 +64,6 @@ def get_recommended_params_xgboost():
 class ReportToOptunaXGBoost(TrainingCallback):
     def __init__(self, optuna_trial, default_eval_name, metric_name=None):
         super().__init__()
-        # self.map_default_name_to_eval_name = {f'validation_{i}': name for i, name in enumerate(eval_name)}
         self.default_eval_name = default_eval_name
         self.metric_name = metric_name
         self.optuna_trial = optuna_trial
@@ -85,11 +84,14 @@ class ReportToOptunaXGBoost(TrainingCallback):
 
 
 class LogToMLFlowXGBoost(TrainingCallback):
-    def __init__(self, eval_name, log_every_n_steps=50, default_metric=None, run_id=None):
+    def __init__(self, run_id, eval_name, log_every_n_steps=50, reported_metric=None, reported_eval_name=None):
         super().__init__()
         self.map_default_name_to_eval_name = {f'validation_{i}': name for i, name in enumerate(eval_name)}
         self.log_every_n_steps = log_every_n_steps
-        self.default_metric = default_metric
+        if reported_metric:
+            mlflow.log_params({f'{reported_eval_name}_report_metric': reported_metric}, run_id=run_id)
+        self.reported_metric = reported_metric
+        self.reported_eval_name = reported_eval_name
         self.run_id = run_id
 
     def after_iteration(self, model: _Model, epoch: int, evals_log):
@@ -99,8 +101,6 @@ class LogToMLFlowXGBoost(TrainingCallback):
         for default_name, metrics in evals_log.items():
             our_name = self.map_default_name_to_eval_name[default_name]
             dict_to_log.update({f'{our_name}_{metric}': value[-1] for metric, value in metrics.items()})
-            if self.default_metric:
-                dict_to_log[f'{our_name}_default'] = metrics[self.default_metric][-1]
         mlflow.log_metrics(dict_to_log, step=epoch, run_id=self.run_id)
 
 
@@ -336,15 +336,22 @@ def before_fit_xgboost(self, X, y, task=None, cat_features=None, cat_dims=None, 
                                                  interval=self.checkpoint_interval)
         self.callbacks.append(checkpoint_callback)
 
-    if self.log_to_mlflow_if_running:
-        if self.run_id is not None:
-            self.callbacks.append(LogToMLFlowXGBoost(eval_name, default_metric=eval_metric,
-                                                     log_every_n_steps=self.log_interval, run_id=self.run_id))
-
     if report_to_optuna:
         default_eval_name = f'validation_{len(eval_name) - 1}'
+        reported_eval_name = eval_name[-1]
+        reported_metric = eval_metric
         self.callbacks.append(ReportToOptunaXGBoost(optuna_trial=optuna_trial, default_eval_name=default_eval_name,
-                                                    metric_name=eval_metric))
+                                                    metric_name=reported_metric))
+    else:
+        reported_metric = None
+        reported_eval_name = None
+
+    if self.log_to_mlflow_if_running:
+        if self.run_id is not None:
+            self.callbacks.append(LogToMLFlowXGBoost(run_id=self.run_id, eval_name=eval_name,
+                                                     reported_metric=reported_metric,
+                                                     reported_eval_name=reported_eval_name,
+                                                     log_every_n_steps=self.log_interval))
 
     fit_arguments.update(dict(
         X=X,

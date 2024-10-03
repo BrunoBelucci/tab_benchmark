@@ -398,15 +398,15 @@ class BaseExperiment:
         task_name = data_return['task_name']
         if task_name in ('classification', 'binary_classification'):
             metrics = ['logloss', 'auc']
-            default_metric = 'logloss'
+            report_metric = 'logloss'
         elif task_name == 'regression':
             metrics = ['rmse', 'r2_score']
-            default_metric = 'rmse'
+            report_metric = 'rmse'
         else:
             raise NotImplementedError
-        return metrics, default_metric
+        return metrics, report_metric
 
-    def fit_model(self, model, fit_params, data_return, metrics, default_metric, **kwargs):
+    def fit_model(self, model, fit_params, data_return, metrics, report_metric, **kwargs):
         cat_features_names = data_return['cat_features_names']
         X = data_return['X']
         y = data_return['y']
@@ -447,7 +447,7 @@ class BaseExperiment:
                           X_validation=X_validation, y_validation=y_validation)
         return fit_return
 
-    def evaluate_model(self, metrics, default_metric, fit_return, data_return, create_validation_set=False,
+    def evaluate_model(self, metrics, report_metric, fit_return, data_return, create_validation_set=False,
                        log_to_mlflow=False, run_id=None, **kwargs):
         model = fit_return['model']
         X_test = fit_return['X_test']
@@ -456,12 +456,12 @@ class BaseExperiment:
         X_validation = fit_return['X_validation']
         y_validation = fit_return['y_validation']
         evaluate_results = evaluate_model(model=model, eval_set=(X_test, y_test), eval_name='final_test',
-                                          metrics=metrics, default_metric=default_metric, n_classes=n_classes,
+                                          metrics=metrics, n_classes=n_classes,
                                           error_score=self.error_score, log_to_mlflow=log_to_mlflow, run_id=run_id)
         if create_validation_set:
             validation_results = evaluate_model(model=model, eval_set=(X_validation, y_validation),
                                                 eval_name='final_validation', metrics=metrics,
-                                                default_metric=default_metric, n_classes=n_classes,
+                                                report_metric=report_metric, n_classes=n_classes,
                                                 error_score=self.error_score, log_to_mlflow=log_to_mlflow,
                                                 run_id=run_id)
             evaluate_results.update(validation_results)
@@ -498,17 +498,17 @@ class BaseExperiment:
             results['model'] = model
 
             # get metrics
-            metrics, default_metric = self.get_metrics(data_return, **kwargs)
+            metrics, report_metric = self.get_metrics(data_return, **kwargs)
             results['metrics'] = metrics
-            results['default_metric'] = default_metric
+            results['report_metric'] = report_metric
 
             # fit model
             fit_return = self.fit_model(model=model, fit_params=fit_params, data_return=data_return, metrics=metrics,
-                                        default_metric=default_metric, **kwargs)
+                                        report_metric=report_metric, **kwargs)
             results['fit_return'] = fit_return
 
             # evaluate model
-            evaluate_return = self.evaluate_model(metrics=metrics, default_metric=default_metric, fit_return=fit_return,
+            evaluate_return = self.evaluate_model(metrics=metrics, report_metric=report_metric, fit_return=fit_return,
                                                   data_return=data_return, create_validation_set=create_validation_set,
                                                   log_to_mlflow=log_to_mlflow, run_id=run_id, **kwargs)
             results['evaluate_return'] = evaluate_return

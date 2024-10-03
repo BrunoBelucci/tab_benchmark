@@ -176,9 +176,9 @@ class HPOExperiment(BaseExperiment):
                                 seed_model = model_params.pop('seed_model')
                                 child_run_id = child_runs_ids[n_trial]
                                 config_trial = config.copy()
-                                config_trial.update(dict(model_params=model_params, seed_model=seed_model))
+                                config_trial.update(dict(model_params=model_params, seed_model=seed_model,
+                                                         run_id=child_run_id))
                                 config_trial['fit_params']['optuna_trial'] = trial
-                                config_trial['run_id'] = child_run_id
                                 resources = {'cores': n_jobs, 'gpus': self.n_gpus / (self.n_cores / n_jobs)}
                                 key = '_'.join([str(value) for value in kwargs.values()])  # shared prefix
                                 key = key + f'-{child_run_id}'  # unique key
@@ -197,7 +197,7 @@ class HPOExperiment(BaseExperiment):
                             storage.set_trial_user_attr(trial_id, 'was_evaluated', True)
                             for metric, value in result.items():
                                 storage.set_trial_user_attr(trial_id, metric, value)
-                            study.tell(trial_number, result['final_validation_default'])
+                            study.tell(trial_number, result['final_validation_reported'])
                         elapsed_time = time.perf_counter() - start_time
                         if elapsed_time > timeout_experiment:
                             break
@@ -205,14 +205,15 @@ class HPOExperiment(BaseExperiment):
                         trial = study.ask(search_space)
                         model_params = trial.params
                         seed_model = model_params.pop('seed_model')
+                        child_run_id = child_runs_ids[n_trial]
                         config_trial = config.copy()
-                        config_trial.update(dict(model_params=model_params, seed_model=seed_model))
+                        config_trial.update(dict(model_params=model_params, seed_model=seed_model, run_id=child_run_id))
                         config_trial['fit_params']['optuna_trial'] = trial
                         results = self.training_fn(config_trial)
                         trial.set_user_attr('was_evaluated', True)
                         for metric, value in results.items():
                             trial.set_user_attr(metric, value)
-                        study.tell(trial, results['final_validation_default'])
+                        study.tell(trial, results['final_validation_reported'])
                         n_trial += 1
                         elapsed_time = time.perf_counter() - start_time
                         if elapsed_time > timeout_experiment:
