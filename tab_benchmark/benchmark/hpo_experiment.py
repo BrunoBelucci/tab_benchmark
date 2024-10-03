@@ -164,6 +164,7 @@ class HPOExperiment(BaseExperiment):
 
                 # run
                 n_trial = 0
+                first_trial = True
                 while n_trial < n_trials:
                     if self.dask_cluster_type is not None:
                         with worker_client() as client:
@@ -185,8 +186,10 @@ class HPOExperiment(BaseExperiment):
                                 futures.append(client.submit(self.training_fn, resources=resources, key=key, pure=False,
                                                              **dict(config=config_trial)))
                                 n_trial += 1
-                                if n_trial >= n_trials:
-                                    # we have already enqueued all the trials
+                                if n_trial >= n_trials or first_trial:
+                                    # we have already enqueued all the trials, or it is the first trial,
+                                    # and we want to run it before the others
+                                    first_trial = False
                                     break
                             results = client.gather(futures)
                             for future in futures:
