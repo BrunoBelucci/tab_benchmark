@@ -59,6 +59,19 @@ class HPOExperiment(BaseExperiment):
         self.sampler = args.sampler
         self.pruner = args.pruner
 
+    def get_model(self, model_params=None, n_jobs=1,
+                  log_to_mlflow=False, run_id=None, create_validation_set=False, output_dir=None, data_return=None,
+                  timeout_trial=None,
+                  **kwargs):
+        model = super().get_model(model_params=model_params, n_jobs=n_jobs, log_to_mlflow=log_to_mlflow, run_id=run_id,
+                                  create_validation_set=create_validation_set, output_dir=output_dir,
+                                  data_return=data_return,
+                                  **kwargs)
+        if timeout_trial:
+            if hasattr(model, 'max_time'):
+                setattr(model, 'max_time', timeout_trial)
+        return model
+
     def training_fn(self, config):
         log_to_mlflow = config.pop('log_to_mlflow', False)
         if log_to_mlflow:
