@@ -381,6 +381,7 @@ class BaseExperiment:
         if is_openml_task:
             (X, y, cat_ind, att_names, cat_features_names, cat_dims, task_name, n_classes, train_indices,
              test_indices, validation_indices) = load_openml_task(create_validation_set=create_validation_set,
+                                                                  log_to_mlflow=log_to_mlflow, run_id=run_id,
                                                                   **data_params)
         else:
             (X, y, cat_ind, att_names, cat_features_names, cat_dims, task_name, n_classes, train_indices,
@@ -872,7 +873,9 @@ class BaseExperiment:
         else:
             progress_bar = tqdm(combinations, desc='Combinations completed')
             for combination in progress_bar:
-                combination_success = self.run_combination(*combination, **extra_params)
+                run_id = self.create_mlflow_run(*combination, **extra_params)
+                combination_with_run_id = list(combination) + [run_id]
+                combination_success = self.run_combination(*combination_with_run_id, **extra_params)
                 if combination_success is True:
                     n_combinations_successfully_completed += 1
                 elif combination_success is False:
