@@ -34,9 +34,9 @@ def get_early_stopping_callback(eval_name, eval_metric, early_stopping_patience)
         else:
             mode = 'min'
         return [
-            (EarlyStopping, dict(monitor=f'{eval_name}_default', patience=early_stopping_patience,
+            (EarlyStopping, dict(monitor=f'{eval_name}_{eval_metric}', patience=early_stopping_patience,
                                  min_delta=0, mode=mode)),
-            (ModelCheckpoint, dict(monitor=f'{eval_name}_default', every_n_epochs=1, save_last=True, mode=mode)),
+            (ModelCheckpoint, dict(monitor=f'{eval_name}_{eval_metric}', every_n_epochs=1, save_last=True, mode=mode)),
         ]
     else:
         return []
@@ -328,7 +328,7 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
                                                           reported_metric=self.reported_metric,
                                                           reported_eval_name=self.reported_eval_name)))
 
-        callbacks_tuples.extend(get_early_stopping_callback(eval_name[-1], eval_metric[-1],
+        callbacks_tuples.extend(get_early_stopping_callback(eval_name[-1], eval_metric[-1] if eval_metric else 'loss',
                                                             self.early_stopping_patience))
 
         callbacks_tuples.extend(self.lit_callbacks_tuples)
