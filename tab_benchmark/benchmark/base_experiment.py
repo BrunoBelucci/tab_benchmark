@@ -70,6 +70,7 @@ class BaseExperiment:
             task_repeats=None, task_folds=None, task_samples=None,
             # parameters of experiment
             experiment_name='base_experiment',
+            create_validation_set=False,
             models_dict=None,
             log_dir=Path.cwd() / 'logs',
             output_dir=Path.cwd() / 'output',
@@ -126,6 +127,7 @@ class BaseExperiment:
         self.n_gpus = n_gpus
 
         self.experiment_name = experiment_name
+        self.create_validation_set = create_validation_set
         self.log_dir = log_dir
         self.output_dir = output_dir
         self.clean_output_dir = clean_output_dir
@@ -152,6 +154,7 @@ class BaseExperiment:
 
     def add_arguments_to_parser(self):
         self.parser.add_argument('--experiment_name', type=str, default=self.experiment_name)
+        self.parser.add_argument('--create_validation_set', action='store_true')
         self.parser.add_argument('--models_nickname', type=str, choices=self.models_dict.keys(),
                                  nargs='*', default=self.models_nickname)
         self.parser.add_argument('--seeds_model', nargs='*', type=int, default=self.seeds_model)
@@ -226,6 +229,7 @@ class BaseExperiment:
     def unpack_parser(self):
         args = self.parser.parse_args()
         self.experiment_name = args.experiment_name
+        self.create_validation_set = args.create_validation_set
         self.models_nickname = args.models_nickname
         self.n_jobs = args.n_jobs
         models_params = args.models_params
@@ -771,7 +775,7 @@ class BaseExperiment:
             extra_params = dict(is_openml_task=True)
         extra_params.update(dict(n_jobs=self.n_jobs, log_to_mlflow=self.log_to_mlflow,
                                  return_results=False, clean_output_dir=self.clean_output_dir,
-                                 create_validation_set=False, experiment_name=self.experiment_name,
+                                 create_validation_set=self.create_validation_set, experiment_name=self.experiment_name,
                                  mlflow_tracking_uri=self.mlflow_tracking_uri, check_if_exists=self.check_if_exists))
         return combinations, extra_params
 

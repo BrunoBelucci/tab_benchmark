@@ -340,7 +340,10 @@ class HPOExperiment(BaseExperiment):
         extra_params.update(dict(hpo_framework=self.hpo_framework, n_trials=self.n_trials,
                                  timeout_experiment=self.timeout_experiment, timeout_trial=self.timeout_trial,
                                  max_concurrent_trials=self.max_concurrent_trials, sampler=self.sampler,
-                                 pruner=self.pruner, create_validation_set=True))
+                                 pruner=self.pruner, create_validation_set=self.create_validation_set))
+        if not self.create_validation_set:
+            raise NotImplementedError('HPOExperiment requires a validation set, please set create_validation_set=True'
+                                      'or pass --create_validation_set')
         return combinations, extra_params
 
     def create_mlflow_run(self, *args,
