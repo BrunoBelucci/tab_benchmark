@@ -346,12 +346,11 @@ def before_fit_xgboost(self, X, y, task=None, cat_features=None, cat_dims=None, 
         reported_metric = None
         reported_eval_name = None
 
-    if self.log_to_mlflow_if_running:
-        if self.run_id is not None:
-            self.callbacks.append(LogToMLFlowXGBoost(run_id=self.run_id, eval_name=eval_name,
-                                                     reported_metric=reported_metric,
-                                                     reported_eval_name=reported_eval_name,
-                                                     log_every_n_steps=self.log_interval))
+    if self.log_to_mlflow_if_running and self.run_id is not None:
+        self.callbacks.append(LogToMLFlowXGBoost(run_id=self.run_id, eval_name=eval_name,
+                                                 reported_metric=reported_metric,
+                                                 reported_eval_name=reported_eval_name,
+                                                 log_every_n_steps=self.log_interval))
 
     fit_arguments.update(dict(
         X=X,
@@ -366,7 +365,7 @@ def after_fit_xgboost(self, fit_return):
     for callback in self.callbacks:
         if isinstance(callback, ReportToOptunaXGBoost):
             self.pruned_trial = callback.pruned_trial
-            if self.log_to_mlflow_if_running:
+            if self.log_to_mlflow_if_running and self.run_id is not None:
                 log_metrics = {'pruned': int(callback.pruned_trial)}
                 mlflow.log_metrics(log_metrics, run_id=self.run_id)
             break

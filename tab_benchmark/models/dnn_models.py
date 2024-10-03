@@ -22,7 +22,7 @@ max_epochs_dnn = 300
 def before_fit_dnn(self, X, y, task=None, cat_features=None, cat_dims=None, n_classes=None, eval_set=None,
                    eval_name=None, report_to_optuna=False, optuna_trial=None, init_model=None, **args_and_kwargs):
     fit_arguments = args_and_kwargs.copy() if args_and_kwargs else {}
-    if self.log_to_mlflow_if_running:
+    if self.log_to_mlflow_if_running and self.run_id is not None:
         self.lit_trainer_params['logger'] = MLFlowLogger(run_id=self.run_id,
                                                          tracking_uri=mlflow.get_tracking_uri())
     fit_arguments.update(dict(X=X, y=y, task=task, cat_features=cat_features, cat_dims=cat_dims, n_classes=n_classes,
@@ -36,7 +36,7 @@ def after_fit_dnn(self, fit_return):
         for callback in self.lit_callbacks_:
             if isinstance(callback, ReportToOptuna):
                 self.pruned_trial = callback.pruned_trial
-                if self.log_to_mlflow_if_running:
+                if self.log_to_mlflow_if_running and self.run_id is not None:
                     log_metrics = {'pruned': int(callback.pruned_trial)}
                     mlflow.log_metrics(log_metrics, run_id=self.run_id)
                     log_params = {f'{self.reported_eval_name}_report_metric': self.reported_metric}

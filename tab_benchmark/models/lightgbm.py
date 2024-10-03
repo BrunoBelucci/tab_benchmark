@@ -173,7 +173,7 @@ class ReportToOptunaLGBM:
                     self.pruned_trial = True
                     message = f'Trial was pruned at epoch {env.iteration}.'
                     print(message)
-                    raise EarlyStopException(env.iteration, result)
+                    raise EarlyStopException(env.iteration, result_list)
                 break
 
 
@@ -200,7 +200,7 @@ class LogToMLFlowLGBM:
             metric_name = metric_name.split(" ")[-1]
             log_dict[f'{eval_name}_{metric_name}'] = eval_result
         log_dict['epoch'] = env.iteration
-        mlflow.log_metrics(log_dict, step=env.iteration)
+        mlflow.log_metrics(log_dict, step=env.iteration, run_id=self.run_id)
 
 
 class TrainingCheckPointLGBM:
@@ -261,11 +261,10 @@ def before_fit_lgbm(self, X, y, task=None, cat_features=None, cat_dims=None, n_c
         reported_metric = None
         reported_eval_name = None
 
-    if self.log_to_mlflow_if_running:
-        if mlflow.active_run():
-            callbacks.append(LogToMLFlowLGBM(run_id=self.run_id, reported_metric=reported_metric,
-                                             reported_eval_name=reported_eval_name,
-                                             log_every_n_steps=self.log_interval))
+    if self.log_to_mlflow_if_running and self.run_id is not None:
+        callbacks.append(LogToMLFlowLGBM(run_id=self.run_id, reported_metric=reported_metric,
+                                         reported_eval_name=reported_eval_name,
+                                         log_every_n_steps=self.log_interval))
 
     # we will rename the columns to avoid problems with the lightgbm
     X = X.rename(columns=lambda x: re.sub('[^A-Za-z0-9_]+', '', x))
@@ -290,7 +289,7 @@ def after_fit_lgbm(self, fit_return):
     for callback in self.callbacks:
         if isinstance(callback, ReportToOptunaLGBM):
             self.pruned_trial = callback.pruned_trial
-            if self.log_to_mlflow_if_running:
+            if self.log_to_mlflow_if_running and self.run_id is not None:
                 log_metrics = {'pruned': int(callback.pruned_trial)}
                 mlflow.log_metrics(log_metrics, run_id=self.run_id)
             break
