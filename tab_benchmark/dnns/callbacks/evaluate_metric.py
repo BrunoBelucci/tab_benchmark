@@ -1,22 +1,15 @@
 from __future__ import annotations
-from typing import Optional
 import torch
 from lightning.pytorch.callbacks import Callback
 from tab_benchmark.utils import evaluate_metric, get_metric_fn
 
 
 class EvaluateMetric(Callback):
-    def __init__(self, eval_metric, report_to_optuna: bool = False, optuna_trial=None, report_eval_metric=None,
-                 report_eval_name=None):
+    def __init__(self, eval_metric):
         if isinstance(eval_metric, str):
             eval_metric = [eval_metric]
         self.eval_metric = eval_metric
         self.validation_predictions = {}
-        self.report_to_optuna = report_to_optuna
-        self.optuna_trial = optuna_trial
-        self.report_eval_metric = report_eval_metric
-        self.report_eval_name = report_eval_name
-        self.pruned_trial = False
 
     def on_validation_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0):
         if not trainer.sanity_checking:
@@ -55,22 +48,3 @@ class EvaluateMetric(Callback):
             predictions.clear()
 
         pl_module.log_dict(dict_to_log, on_epoch=True, on_step=False, prog_bar=True, logger=True)
-        if self.report_to_optuna:
-            # convert to numpy to avoid serialization issues
-            if self.report_eval_metric:
-                report_eval_metric = self.report_eval_metric
-            else:
-                report_eval_metric = self.eval_metric[-1]
-            if self.report_eval_name:
-                report_eval_name = self.report_eval_name
-            else:
-                report_eval_name = list(self.validation_predictions.keys())[-1]
-            self.optuna_trial.report(dict_to_log[f'{report_eval_name}_{report_eval_metric}'].detach().cpu().numpy(),
-                                     step=trainer.current_epoch)
-            if self.optuna_trial.should_prune():
-                self.pruned_trial = True
-                message = f'Trial was pruned at epoch {trainer.current_epoch}.'
-                print(message)
-                # https://github.com/Lightning-AI/pytorch-lightning/issues/1406
-                trainer.should_stop = True
-                trainer.limit_val_batches = 0

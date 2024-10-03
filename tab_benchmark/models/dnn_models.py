@@ -8,8 +8,7 @@ from tab_benchmark.dnns.architectures import Node, Saint, TabTransformer, TabNet
 from tab_benchmark.dnns.architectures.mlp import MLP
 from tab_benchmark.dnns.architectures.resnet import ResNet
 from tab_benchmark.dnns.architectures.transformer import Transformer
-from tab_benchmark.dnns.callbacks import DefaultLogs
-from tab_benchmark.dnns.callbacks.evaluate_metric import EvaluateMetric
+from tab_benchmark.dnns.callbacks.report_to_optuna import ReportToOptuna
 from tab_benchmark.dnns.modules import TabNetModule
 from tab_benchmark.dnns.utils.external.node.lib.facebook_optimizer.optimizer import QHAdam
 from tab_benchmark.models.dnn_model import DNNModel
@@ -34,22 +33,15 @@ def before_fit_dnn(self, X, y, task=None, cat_features=None, cat_dims=None, n_cl
 
 def after_fit_dnn(self, fit_return):
     if self.report_to_optuna:
-        if self.report_loss_to_optuna:
-            for callback in self.lit_callbacks_:
-                if isinstance(callback, DefaultLogs):
-                    self.pruned_trial = callback.pruned_trial
-                    if self.log_to_mlflow_if_running:
-                        log_metrics = {'pruned': int(callback.pruned_trial)}
-                        mlflow.log_metrics(log_metrics, run_id=self.run_id)
-                    break
-        else:
-            for callback in self.lit_callbacks_:
-                if isinstance(callback, EvaluateMetric):
-                    self.pruned_trial = callback.pruned_trial
-                    if self.log_to_mlflow_if_running:
-                        log_metrics = {'pruned': int(callback.pruned_trial)}
-                        mlflow.log_metrics(log_metrics, run_id=self.run_id)
-                    break
+        for callback in self.lit_callbacks_:
+            if isinstance(callback, ReportToOptuna):
+                self.pruned_trial = callback.pruned_trial
+                if self.log_to_mlflow_if_running:
+                    log_metrics = {'pruned': int(callback.pruned_trial)}
+                    mlflow.log_metrics(log_metrics, run_id=self.run_id)
+                    log_params = {f'{self.reported_eval_name}_report_metric': self.reported_metric}
+                    mlflow.log_params(log_params, run_id=self.run_id)
+                break
     return fit_return
 
 

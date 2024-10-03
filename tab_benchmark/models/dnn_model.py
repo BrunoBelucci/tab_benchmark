@@ -17,6 +17,7 @@ from torch import nn
 from torch.utils.data import DataLoader
 from tab_benchmark.dnns.callbacks import DefaultLogs
 from tab_benchmark.dnns.callbacks.evaluate_metric import EvaluateMetric
+from tab_benchmark.dnns.callbacks.report_to_optuna import ReportToOptuna
 from tab_benchmark.dnns.datasets import TabularDataModule, TabularDataset
 from tab_benchmark.dnns.modules import TabularModule
 from tab_benchmark.utils import sequence_to_list, get_metric_fn
@@ -276,7 +277,6 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
             else:
                 n_classes = y.shape[1]
 
-
         # initialize model
 
         # initialize datamodule
@@ -316,19 +316,17 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
 
         callbacks_tuples = []
         if eval_metric:
-            callbacks_tuples.append((EvaluateMetric, dict(eval_metric=eval_metric,
-                                                          report_to_optuna=report_to_optuna, optuna_trial=optuna_trial,
-                                                          report_eval_metric=eval_metric[-1],
-                                                          report_eval_name=eval_name[-1])))
+            callbacks_tuples.append((EvaluateMetric, dict(eval_metric=eval_metric)))
 
-        report_loss_to_optuna = False
         if self.log_losses:
-            if not eval_metric:
-                report_loss_to_optuna = True
-                eval_metric = ['loss']
-            callbacks_tuples.append((DefaultLogs, dict(report_to_optuna=report_loss_to_optuna,
-                                                       optuna_trial=optuna_trial,
-                                                       report_eval_name=eval_name[-1])))
+            callbacks_tuples.append((DefaultLogs, dict()))
+
+        if report_to_optuna:
+            self.reported_metric = eval_metric[-1] if eval_metric else 'loss'
+            self.reported_eval_name = eval_name[-1]
+            callbacks_tuples.append((ReportToOptuna, dict(optuna_trial=optuna_trial,
+                                                          reported_metric=self.reported_metric,
+                                                          reported_eval_name=self.reported_eval_name)))
 
         callbacks_tuples.extend(get_early_stopping_callback(eval_name[-1], eval_metric[-1],
                                                             self.early_stopping_patience))
@@ -353,16 +351,10 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
         self.lit_trainer_.fit(self.lit_module_, self.lit_datamodule_, ckpt_path=ckpt_path)
 
         if report_to_optuna:
-            if report_loss_to_optuna:
-                for callback in self.lit_callbacks_:
-                    if isinstance(callback, DefaultLogs):
-                        self.pruned_trial = callback.pruned_trial
-                        break
-            else:
-                for callback in self.lit_callbacks_:
-                    if isinstance(callback, EvaluateMetric):
-                        self.pruned_trial = callback.pruned_trial
-                        break
+            for callback in self.lit_callbacks_:
+                if isinstance(callback, ReportToOptuna):
+                    self.pruned_trial = callback.pruned_trial
+                    break
 
         # load best model
         if self.use_best_model:
@@ -393,7 +385,6 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
         self.cat_dims_ = cat_dims
         self.n_classes_ = n_classes
         self.report_to_optuna = report_to_optuna
-        self.report_loss_to_optuna = report_loss_to_optuna
         return self
 
     def predict(self, X: pd.DataFrame, logits: bool = False):
