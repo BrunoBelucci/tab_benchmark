@@ -371,6 +371,12 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
                     self.pruned_trial = callback.pruned_trial
                     break
 
+        if self.max_time:
+            for callback in self.lit_callbacks_:
+                if isinstance(callback, Timer):
+                    self.reached_timeout = callback.time_remaining() <= 0
+                    break
+
         # load best model
         if self.use_best_model:
             if len(self.lit_trainer_.checkpoint_callbacks) > 1:

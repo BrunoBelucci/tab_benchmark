@@ -229,10 +229,12 @@ class TimerLGBM:
             raise ValueError(f"duration must be int or dict, got {type(duration)}")
         self.duration = duration
         self.start_time = time.perf_counter()
+        self.reached_timeout = False
 
     def __call__(self, env: CallbackEnv) -> None:
         elapsed_time = time.perf_counter() - self.start_time
         if elapsed_time > self.duration.total_seconds():
+            self.reached_timeout = True
             raise EarlyStopException(env.model.best_iteration, env.model.best_score_list)
 
 
@@ -313,7 +315,11 @@ def after_fit_lgbm(self, fit_return):
             if self.log_to_mlflow_if_running and self.run_id is not None:
                 log_metrics = {'pruned': int(callback.pruned_trial)}
                 mlflow.log_metrics(log_metrics, run_id=self.run_id)
-            break
+        elif isinstance(callback, TimerLGBM):
+            self.reached_timeout = callback.reached_timeout
+            if self.log_to_mlflow_if_running and self.run_id is not None:
+                log_metrics = {'reached_timeout': int(callback.reached_timeout)}
+                mlflow.log_metrics(log_metrics, run_id=self.run_id)
     return fit_return
 
 

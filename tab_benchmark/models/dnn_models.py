@@ -3,6 +3,7 @@ from functools import partial
 import mlflow
 import torch
 import optuna
+from lightning.pytorch.callbacks import Timer
 from lightning.pytorch.loggers import MLFlowLogger
 from tab_benchmark.dnns.architectures import Node, Saint, TabTransformer, TabNet
 from tab_benchmark.dnns.architectures.mlp import MLP
@@ -41,7 +42,11 @@ def after_fit_dnn(self, fit_return):
                     mlflow.log_metrics(log_metrics, run_id=self.run_id)
                     log_params = {f'{self.reported_eval_name}_report_metric': self.reported_metric}
                     mlflow.log_params(log_params, run_id=self.run_id)
-                break
+            elif isinstance(callback, Timer):
+                self.reached_timeout = callback.time_remaining() <= 0
+                if self.log_to_mlflow_if_running and self.run_id is not None:
+                    log_metrics = {'reached_timeout': int(self.reached_timeout)}
+                    mlflow.log_metrics(log_metrics, run_id=self.run_id)
     return fit_return
 
 

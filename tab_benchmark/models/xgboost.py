@@ -300,12 +300,14 @@ class TimerXGBoost(TrainingCallback):
             raise ValueError(f"duration must be int or dict, got {type(duration)}")
         self.duration = duration
         self.start_time = None
+        self.reached_timeout = False
 
     def before_training(self, model: _Model):
         self.start_time = time.perf_counter()
 
     def after_iteration(self, model: _Model, epoch: int, evals_log):
         if (time.perf_counter() - self.start_time) > self.duration.total_seconds():
+            self.reached_timeout = True
             return True
 
 
@@ -394,7 +396,11 @@ def after_fit_xgboost(self, fit_return):
             if self.log_to_mlflow_if_running and self.run_id is not None:
                 log_metrics = {'pruned': int(callback.pruned_trial)}
                 mlflow.log_metrics(log_metrics, run_id=self.run_id)
-            break
+        elif isinstance(callback, TimerXGBoost):
+            self.reached_timeout = callback.reached_timeout
+            if self.log_to_mlflow_if_running and self.run_id is not None:
+                log_metrics = {'timeout': int(callback.reached_timeout)}
+                mlflow.log_metrics(log_metrics, run_id=self.run_id)
     return fit_return
 
 
