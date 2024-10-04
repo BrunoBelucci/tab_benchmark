@@ -76,6 +76,26 @@ class HPOExperiment(BaseExperiment):
         metrics_results['was_evaluated'] = True
         return metrics_results
 
+    def get_optuna_config_trial(self, search_space, study, model_params, config, child_run_id):
+        optuna_distributions_search_space = {}
+        conditional_distributions_search_space = {}
+        for name, value in search_space.items():
+            if isinstance(value, optuna.distributions.BaseDistribution):
+                optuna_distributions_search_space[name] = value
+            else:
+                conditional_distributions_search_space[name] = value
+        trial = study.ask(optuna_distributions_search_space)
+        conditional_params = {name: fn(trial) for name, fn
+                              in conditional_distributions_search_space.items()}
+        trial_model_params = trial.params
+        trial_model_params.update(model_params.copy())
+        seed_model = trial_model_params.pop('seed_model')
+        config_trial = config.copy()
+        config_trial.update(dict(model_params=trial_model_params, seed_model=seed_model,
+                                 run_id=child_run_id))
+        config_trial['fit_params']['optuna_trial'] = trial
+        return trial, config_trial
+
     def train_model(self,
                     n_jobs=1, create_validation_set=True,
                     model_params=None,
@@ -172,19 +192,13 @@ class HPOExperiment(BaseExperiment):
                             futures = []
                             trial_numbers = []
                             for _ in range(max_concurrent_trials):
-                                trial = study.ask(search_space)
+                                trial, config_trial = self.get_optuna_config_trial(search_space, study, model_params,
+                                                                                   config,
+                                                                                   child_run_id=child_runs_ids[n_trial])
                                 trial_numbers.append(trial.number)
-                                trial_model_params = trial.params
-                                trial_model_params.update(model_params.copy())
-                                seed_model = trial_model_params.pop('seed_model')
-                                child_run_id = child_runs_ids[n_trial]
-                                config_trial = config.copy()
-                                config_trial.update(dict(model_params=trial_model_params, seed_model=seed_model,
-                                                         run_id=child_run_id))
-                                config_trial['fit_params']['optuna_trial'] = trial
                                 resources = {'cores': n_jobs, 'gpus': self.n_gpus / (self.n_cores / n_jobs)}
                                 key = '_'.join([str(value) for value in kwargs.values()])  # shared prefix
-                                key = key + f'-{child_run_id}'  # unique key
+                                key = key + f'-{config_trial["run_id"]}'  # unique key (child_run_id)
                                 futures.append(client.submit(self.training_fn, resources=resources, key=key, pure=False,
                                                              **dict(config=config_trial)))
                                 n_trial += 1
@@ -207,13 +221,9 @@ class HPOExperiment(BaseExperiment):
                         if elapsed_time > timeout_experiment:
                             break
                     else:
-                        trial = study.ask(search_space)
-                        model_params = trial.params
-                        seed_model = model_params.pop('seed_model')
-                        child_run_id = child_runs_ids[n_trial]
-                        config_trial = config.copy()
-                        config_trial.update(dict(model_params=model_params, seed_model=seed_model, run_id=child_run_id))
-                        config_trial['fit_params']['optuna_trial'] = trial
+                        trial, config_trial = self.get_optuna_config_trial(search_space, study, model_params,
+                                                                           config,
+                                                                           child_run_id=child_runs_ids[n_trial])
                         results = self.training_fn(config_trial)
                         trial.set_user_attr('was_evaluated', True)
                         for metric, value in results.items():

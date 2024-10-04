@@ -96,14 +96,12 @@ class EarlyStoppingLGBM(_EarlyStoppingCallback):
 lightgbm.callback._EarlyStoppingCallback = EarlyStoppingLGBM
 
 
-def conditional_num_leaves(config):
-    model_params = config.get('model_params', None)
-    if model_params is None:
-        return 31
-    max_depth = model_params.get('max_depth', None)
-    if max_depth is None:
-        return 31
-    return np.random.randint(1, 2 ** max_depth)
+def conditional_num_leaves(trial):
+    trial_params = trial.params
+    max_depth = trial_params.get('max_depth', 6)
+    min_leaves = 2
+    max_leaves = min(2 ** max_depth, 131072)
+    return trial.suggest_int('num_leaves', min_leaves, max_leaves)
 
 
 def create_search_space_lgbm():
@@ -123,7 +121,7 @@ def create_search_space_lgbm():
         subsample=optuna.distributions.FloatDistribution(0.01, 1),
         subsample_freq=optuna.distributions.IntDistribution(1, 11),
         # num_leaves=optuna.distributions.IntDistribution(1, 4096),  # should be < 2^(max_depth)
-        # num_leaves=tune.sample_from(conditional_num_leaves),
+        num_leaves=conditional_num_leaves,
         min_child_samples=optuna.distributions.IntDistribution(1, 1000000)
     )
     default_values = dict(
@@ -223,7 +221,7 @@ class TrainingCheckPointLGBM:
 
 class TimerLGBM:
     def __init__(self, duration):
-        if isinstance(duration, str):
+        if isinstance(duration, int):
             duration = datetime.timedelta(seconds=int(duration))
         elif isinstance(duration, dict):
             duration = datetime.timedelta(**duration)
