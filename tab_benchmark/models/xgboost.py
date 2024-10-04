@@ -299,11 +299,8 @@ class TimerXGBoost(TrainingCallback):
         else:
             raise ValueError(f"duration must be int or dict, got {type(duration)}")
         self.duration = duration
-        self.start_time = None
-        self.reached_timeout = False
-
-    def before_training(self, model: _Model):
         self.start_time = time.perf_counter()
+        self.reached_timeout = False
 
     def after_iteration(self, model: _Model, epoch: int, evals_log):
         if (time.perf_counter() - self.start_time) > self.duration.total_seconds():
