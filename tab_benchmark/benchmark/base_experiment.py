@@ -849,8 +849,7 @@ class BaseExperiment:
                                                batch_size=self.n_workers, resources=resources_per_task, **extra_params)
                     futures.extend(other_futures)
                 run_ids = client.gather(futures)
-                first_args.append(run_ids[0])  # add the run_id to the first args
-                list_of_args.append(run_ids[1:])  # add the run_ids to the list of args
+                combinations = [list(combination) + [run_id] for combination, run_id in zip(combinations, run_ids)]
             if hasattr(self, 'n_trials'):
                 # the resources are actually used when training the models, here we will launch the hpo framework
                 resources_per_task = {'cores': 0, 'gpus': 0, 'processes': 1}
@@ -863,17 +862,57 @@ class BaseExperiment:
                               f'You can check the dask dashboard to get more information about the progress and '
                               f'the workers.')
 
-            first_key = '_'.join([str(arg) for arg in combinations[0]])
-            first_future = client.submit(self.run_combination, *first_args, pure=False, key=first_key,
-                                         resources=resources_per_task, **extra_params)
-            futures = [first_future]
-            if total_combinations > 1:
-                # wait a little bit for the first submission to create folders, experiments, etc
-                time.sleep(5)
-                other_keys = ['_'.join(str(arg) for arg in combination) for combination in combinations[1:]]
-                other_futures = client.map(self.run_combination, *list_of_args, pure=False, key=other_keys,
-                                           batch_size=self.n_workers, resources=resources_per_task, **extra_params)
-                futures.extend(other_futures)
+            workers = {worker_name: value['resources'] for worker_name, value
+                       in client.scheduler_info()['workers'].items()}
+            free_workers = list(workers.keys())
+            futures = []
+            submitted_combinations = 0
+            with tqdm(total=len(combinations), desc='Combinations completed') as progress_bar:
+                while submitted_combinations < total_combinations:
+                    # submit tasks to free workers
+                    while free_workers and submitted_combinations < total_combinations:
+                        worker_name = free_workers.pop()
+                        worker = workers[worker_name]
+                        combination = list(combinations[submitted_combinations])
+                        key = '_'.join(str(arg) for arg in combination)
+                        future = client.submit(self.run_combination, *combination, pure=False, key=key,
+                                               resources=resources_per_task, worker=[worker_name], **extra_params)
+                        future.worker = worker_name
+                        futures.append(future)
+                        worker_can_still_work = True
+                        for resource in resources_per_task:
+                            worker[resource] -= resources_per_task[resource]
+                            if worker[resource] < resources_per_task[resource]:
+                                worker_can_still_work = False
+                        if worker_can_still_work:
+                            free_workers.append(worker_name)
+                        submitted_combinations += 1
+
+                    # wait for at least one task to finish
+                    completed_future = next(as_completed(futures))
+                    combination_success = completed_future.result()
+                    if combination_success is True:
+                        n_combinations_successfully_completed += 1
+                    elif combination_success is False:
+                        n_combinations_failed += 1
+                    else:
+                        n_combinations_none += 1
+                    progress_bar.update(1)
+                    log_and_print_msg(str(progress_bar), succesfully_completed=n_combinations_successfully_completed,
+                                      failed=n_combinations_failed, none=n_combinations_none)
+                    completed_worker_name = completed_future.worker
+                    worker = workers[completed_worker_name]
+                    worker_can_work = True
+                    for resource in resources_per_task:
+                        worker[resource] += resources_per_task[resource]
+                        if worker[resource] < resources_per_task[resource]:
+                            worker_can_work = False
+                    if worker_can_work:
+                        free_workers.append(completed_worker_name)
+                    futures.remove(completed_future)
+                    completed_future.release()  # release the memory of the future
+
+            client.close()
         else:
             progress_bar = tqdm(combinations, desc='Combinations completed')
             for combination in progress_bar:
@@ -888,40 +927,6 @@ class BaseExperiment:
                     n_combinations_none += 1
                 log_and_print_msg(str(progress_bar), succesfully_completed=n_combinations_successfully_completed,
                                   failed=n_combinations_failed, none=n_combinations_none)
-
-        if client is not None:
-            progress_bar = tqdm(as_completed(futures), total=len(futures), desc='Combinations completed')
-            for i, future in enumerate(progress_bar):
-                log_and_print_msg(str(progress_bar), succesfully_completed=n_combinations_successfully_completed,
-                                  failed=n_combinations_failed, none=n_combinations_none)
-                combination_success = future.result()
-                if combination_success is True:
-                    n_combinations_successfully_completed += 1
-                elif combination_success is False:
-                    n_combinations_failed += 1
-                else:
-                    n_combinations_none += 1
-                future.release()  # release the memory of the future
-                # scale down the cluster if there is fewer tasks than workers
-                # unfortunately this causes task recalculation (at least in the SLURMCluster), so we will not do it
-                # if hasattr(self, 'n_trials'):
-                #     n_remaining_tasks = total_combinations * self.n_trials - (i + 1) * self.n_trials
-                # else:
-                #     n_remaining_tasks = total_combinations - (i + 1)
-                # if n_remaining_tasks < self.n_workers:
-                #     n_workers_to_retire = self.n_workers - n_remaining_tasks
-                #     workers = client.scheduler_info()['workers']
-                #     for worker_name, worker_dict in workers.items():
-                #         if not worker_dict['metrics']['task_counts']:
-                #             client.retire_workers([worker_name])
-                #             n_workers_to_retire -= 1
-                #         if n_workers_to_retire == 0:
-                #             # maybe we will not break, but we will retire at least some of the workers
-                #             break
-            # print last time with completed task bar
-            log_and_print_msg(str(progress_bar), succesfully_completed=n_combinations_successfully_completed,
-                              failed=n_combinations_failed, none=n_combinations_none)
-            client.close()
 
         return total_combinations, n_combinations_successfully_completed, n_combinations_failed, n_combinations_none
 
