@@ -2,6 +2,7 @@ from __future__ import annotations
 import argparse
 import shlex
 import time
+from multiprocessing import cpu_count
 from pathlib import Path
 from shutil import rmtree
 import mlflow
@@ -224,7 +225,9 @@ class BaseExperiment:
                                       'Note that this will not allocate the GPU in the cluster, we must still pass '
                                       'the required resource allocation parameter to the cluster (we can do this via'
                                       'the dask_job_extra_directives argument, for example with '
-                                      '--dask_job_extra_directives "-G 1").')
+                                      '--dask_job_extra_directives "-G 1"). For the case of a local cluster, it will'
+                                      'be the total number of GPUs that will be used, each worker will have access'
+                                      'to n_gpus / n_workers GPUs.')
 
     def unpack_parser(self):
         args = self.parser.parse_args()
@@ -649,20 +652,23 @@ class BaseExperiment:
             client = Client(address)
         else:
             if cluster_type == 'local':
-                threads_per_worker = self.n_jobs
-                processes = self.n_processes
-                cores = self.n_cores
-                if cores < threads_per_worker * n_workers:
-                    warnings.warn(f"n_workers * threads_per_worker (n_jobs) is greater than the number of cores "
-                                  f"available ({cores}). This may lead to performance issues.")
-                resources = {'cores': cores, 'gpus': self.n_gpus, 'processes': processes}
+                threads_per_worker = self.n_cores
+                processes_per_worker = self.n_processes
+                gpus_per_worker = self.n_gpus / n_workers
+                if n_workers * threads_per_worker > cpu_count():
+                    warnings.warn(f"n_workers * threads_per_worker is greater than the number of cores "
+                                  f"available ({cpu_count()}). This may lead to performance issues.")
+                resources_per_worker = {'cores': threads_per_worker, 'gpus': gpus_per_worker,
+                                        'processes': processes_per_worker}
                 cluster = LocalCluster(n_workers=0, memory_limit=self.dask_memory, processes=True,
-                                       threads_per_worker=threads_per_worker, resources=resources)
+                                       threads_per_worker=threads_per_worker, resources=resources_per_worker)
                 cluster.scale(n_workers)
             elif cluster_type == 'slurm':
-                cores = self.n_cores
-                processes = self.n_processes
-                resources_per_work = {'cores': cores, 'gpus': self.n_gpus, 'processes': processes}
+                cores_per_worker = self.n_cores
+                processes_per_worker = self.n_processes
+                gpus_per_worker = self.n_gpus
+                resources_per_work = {'cores': cores_per_worker, 'gpus': gpus_per_worker,
+                                      'processes': processes_per_worker}
                 job_extra_directives = dask.config.get(
                     "jobqueue.slurm.job-extra-directives", []
                 )
@@ -679,7 +685,7 @@ class BaseExperiment:
                 worker_extra_args = worker_extra_args + [f'--resources "{resources_per_work_string}"']
                 walltime = '364-23:59:59'
                 job_name = f'dask-worker-{self.experiment_name}'
-                cluster = SLURMCluster(cores=cores, memory=self.dask_memory, processes=processes,
+                cluster = SLURMCluster(cores=cores_per_worker, memory=self.dask_memory, processes=processes_per_worker,
                                        job_extra_directives=job_extra_directives,
                                        job_script_prologue=job_script_prologue, walltime=walltime,
                                        job_name=job_name, worker_extra_args=worker_extra_args)
@@ -849,6 +855,8 @@ class BaseExperiment:
                                                batch_size=self.n_workers, resources=resources_per_task, **extra_params)
                     futures.extend(other_futures)
                 run_ids = client.gather(futures)
+                for future in futures:
+                    future.release()  # release the memory of the future
                 combinations = [list(combination) + [run_id] for combination, run_id in zip(combinations, run_ids)]
             if hasattr(self, 'n_trials'):
                 # the resources are actually used when training the models, here we will launch the hpo framework
