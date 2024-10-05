@@ -884,7 +884,7 @@ class BaseExperiment:
                         combination = list(combinations[submitted_combinations])
                         key = '_'.join(str(arg) for arg in combination)
                         future = client.submit(self.run_combination, *combination, pure=False, key=key,
-                                               resources=resources_per_task, worker=[worker_name], **extra_params)
+                                               resources=resources_per_task, workers=[worker_name], **extra_params)
                         future.worker = worker_name
                         futures.append(future)
                         worker_can_still_work = True
