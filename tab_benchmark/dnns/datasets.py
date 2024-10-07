@@ -184,7 +184,7 @@ class TabularDataModule(L.LightningDataModule):
                  eval_names: Optional[list[str]] = None,
                  num_workers: int = 0, batch_size: int = 1, store_as_tensor: bool = False,
                  continuous_type: Optional[np.dtype] = None, categorical_type: Optional[np.dtype] = None,
-                 n_classes: Optional[int] = None):
+                 n_classes: Optional[int] = None, new_batch_size: bool = False):
         """Initializes the TabularDataModule.
 
         Args:
@@ -213,7 +213,10 @@ class TabularDataModule(L.LightningDataModule):
                 Type of categorical features. Can be any numpy dtype.
         """
         super().__init__()
-        self.save_hyperparameters(ignore=['x_train', 'y_train', 'eval_sets'])
+        ignore = ['x_train', 'y_train', 'eval_sets']
+        if new_batch_size:
+            ignore.append('batch_size')
+        self.save_hyperparameters(ignore=ignore)
         assert isinstance(x_train, pd.DataFrame)
         assert isinstance(y_train, pd.DataFrame) or isinstance(y_train, pd.Series)
         self.x_train = x_train

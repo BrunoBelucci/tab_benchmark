@@ -194,7 +194,8 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
     def torch_scheduler_tuple(self):
         return self._torch_scheduler_tuple
 
-    def initialize_datamodule(self, X, y, task, cat_features_idx, cat_dims, n_classes, eval_set, eval_name):
+    def initialize_datamodule(self, X, y, task, cat_features_idx, cat_dims, n_classes, eval_set, eval_name,
+                              batch_size, new_batch_size=False):
         self.lit_datamodule_ = self.lit_datamodule_class(
             x_train=X,
             y_train=y,
@@ -205,7 +206,8 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
             eval_sets=eval_set,
             eval_names=eval_name,
             num_workers=self.n_jobs,
-            batch_size=self.batch_size,
+            batch_size=batch_size,
+            new_batch_size=new_batch_size,
             store_as_tensor=True,
             continuous_type=self.continuous_type,
             categorical_type=self.categorical_type
@@ -289,7 +291,8 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
         # initialize model
 
         # initialize datamodule
-        self.initialize_datamodule(X, y, task, cat_features_idx, cat_dims, n_classes, eval_set, eval_name)
+        self.initialize_datamodule(X, y, task, cat_features_idx, cat_dims, n_classes, eval_set, eval_name,
+                                   self.batch_size)
 
         # initialize module
         if self.architecture_params_not_from_dataset is not None:
@@ -376,7 +379,7 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
                         clear_memory()
                         # change batch size in datamodule in the next fit
                         self.initialize_datamodule(X, y, task, cat_features_idx, cat_dims, n_classes, eval_set,
-                                                   eval_name)
+                                                   eval_name, self.batch_size, new_batch_size=True)
                         refit = True
                     else:
                         raise exception
