@@ -33,20 +33,19 @@ def before_fit_dnn(self, X, y, task=None, cat_features=None, cat_dims=None, n_cl
 
 
 def after_fit_dnn(self, fit_return):
-    if self.report_to_optuna:
-        for callback in self.lit_callbacks_:
-            if isinstance(callback, ReportToOptuna):
-                self.pruned_trial = callback.pruned_trial
-                if self.log_to_mlflow_if_running and self.run_id is not None:
-                    log_metrics = {'pruned': int(callback.pruned_trial)}
-                    mlflow.log_metrics(log_metrics, run_id=self.run_id)
-                    log_params = {f'{self.reported_eval_name}_report_metric': self.reported_metric}
-                    mlflow.log_params(log_params, run_id=self.run_id)
-            elif isinstance(callback, Timer):
-                self.reached_timeout = callback.time_remaining() <= 0
-                if self.log_to_mlflow_if_running and self.run_id is not None:
-                    log_metrics = {'reached_timeout': int(self.reached_timeout)}
-                    mlflow.log_metrics(log_metrics, run_id=self.run_id)
+    for callback in self.lit_callbacks_:
+        if isinstance(callback, ReportToOptuna):
+            self.pruned_trial = callback.pruned_trial
+            if self.log_to_mlflow_if_running and self.run_id is not None:
+                log_metrics = {'pruned': int(callback.pruned_trial)}
+                mlflow.log_metrics(log_metrics, run_id=self.run_id)
+                log_params = {f'{self.reported_eval_name}_report_metric': self.reported_metric}
+                mlflow.log_params(log_params, run_id=self.run_id)
+        elif isinstance(callback, Timer):
+            self.reached_timeout = callback.time_remaining() <= 0
+            if self.log_to_mlflow_if_running and self.run_id is not None:
+                log_metrics = {'reached_timeout': int(self.reached_timeout)}
+                mlflow.log_metrics(log_metrics, run_id=self.run_id)
     return fit_return
 
 
