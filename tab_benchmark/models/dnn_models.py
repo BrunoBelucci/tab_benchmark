@@ -46,6 +46,10 @@ def after_fit_dnn(self, fit_return):
             if self.log_to_mlflow_if_running and self.run_id is not None:
                 log_metrics = {'reached_timeout': int(self.reached_timeout)}
                 mlflow.log_metrics(log_metrics, run_id=self.run_id)
+    if self.auto_reduce_batch_size:
+        if self.log_to_mlflow_if_running and self.run_id is not None:
+            log_param = {'final_batch_size': self.final_batch_size}
+            mlflow.log_params(log_param, run_id=self.run_id)
     return fit_return
 
 
@@ -355,7 +359,7 @@ class TabNetModel(DNNModel):
 
     @extends(DNNModel.__init__)
     def __init__(self, *args, gamma_sched=None, step_sched=None, **kwargs):
-        super().__init__(*args, **kwargs)
+        super().__init__(**kwargs)
         self.gamma_sched = gamma_sched
         self.step_sched = step_sched
 

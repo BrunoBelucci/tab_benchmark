@@ -11,6 +11,7 @@ import torch
 import lightning as L
 from lightning import Callback
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint, Timer
+from lightning.pytorch.utilities.memory import is_out_of_cpu_memory
 from scipy.special import softmax
 from sklearn.base import BaseEstimator, ClassifierMixin, RegressorMixin, clone
 from torch import nn
@@ -20,7 +21,7 @@ from tab_benchmark.dnns.callbacks.evaluate_metric import EvaluateMetric
 from tab_benchmark.dnns.callbacks.report_to_optuna import ReportToOptuna
 from tab_benchmark.dnns.datasets import TabularDataModule, TabularDataset
 from tab_benchmark.dnns.modules import TabularModule
-from tab_benchmark.utils import sequence_to_list, get_metric_fn
+from tab_benchmark.utils import sequence_to_list, get_metric_fn, is_oom_error, clear_memory
 
 
 def get_early_stopping_callback(eval_name, eval_metric, early_stopping_patience) -> list[tuple[type[Callback], dict]]:
@@ -119,6 +120,7 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
             early_stopping_patience: int = 40,  # will add EarlyStopping callback, 0 to disable
             use_best_model: bool = True,  # will load the best model if True, False to load the last model
             max_time: Optional[str | int] = None,  # will add Timer callback, None to disable
+            auto_reduce_batch_size: bool = False,
             output_dir: Optional[Path | str] = None,
             dnn_architecture_class: type[nn.Module] = None,
             loss_fn: Optional[Callable] = torch.nn.functional.mse_loss,
@@ -145,6 +147,7 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
         self.early_stopping_patience = early_stopping_patience
         self.use_best_model = use_best_model
         self.max_time = max_time
+        self.auto_reduce_batch_size = auto_reduce_batch_size
         self.output_dir = output_dir if output_dir else Path.cwd() / 'dnn_model_output'
         self.dnn_architecture_class = dnn_architecture_class
         self.loss_fn = loss_fn
@@ -362,8 +365,29 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
         else:
             ckpt_path = None
 
-        # fit
-        self.lit_trainer_.fit(self.lit_module_, self.lit_datamodule_, ckpt_path=ckpt_path)
+        refit = True
+        while refit:
+            # fit
+            try:
+                self.lit_trainer_.fit(self.lit_module_, self.lit_datamodule_, ckpt_path=ckpt_path)
+            except RuntimeError as exception:
+                if is_oom_error(exception):
+                    if self.auto_reduce_batch_size:
+                        warn('OOM error detected, reducing batch size by half.')
+                        self.batch_size = self.batch_size // 2
+                        if self.batch_size <= 2 or is_out_of_cpu_memory(exception):
+                            msg = (f"Batch size of {self.batch_size} is too small (<2) or cpu oom, "
+                                   f"reducing the batch size will not solve the problem.")
+                            raise RuntimeError(msg)
+                        clear_memory()
+                        # change batch size in datamodule in the next fit
+                        self.initialize_datamodule(X, y, task, cat_features_idx, cat_dims, n_classes, eval_set,
+                                                   eval_name)
+                        refit = True
+                    else:
+                        raise exception
+                else:
+                    raise exception
 
         if report_to_optuna:
             for callback in self.lit_callbacks_:

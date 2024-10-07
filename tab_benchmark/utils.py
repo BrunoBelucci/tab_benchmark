@@ -1,4 +1,6 @@
 from __future__ import annotations
+
+import gc
 import subprocess
 import warnings
 from copy import copy
@@ -9,8 +11,21 @@ import numpy as np
 import random
 import pandas as pd
 import torch
+from lightning.pytorch.utilities.memory import is_cuda_out_of_memory, is_cudnn_snafu, is_out_of_cpu_memory
 from sklearn.metrics import mean_squared_error, root_mean_squared_error, log_loss, roc_auc_score, r2_score
 from sklearn.model_selection import train_test_split
+
+
+def clear_memory():
+    """Clear cpu and cuda memory."""
+    torch.cuda.empty_cache()
+    gc.collect()
+
+
+# from Pytorch Lightning ---
+def is_oom_error(exception: BaseException) -> bool:
+    """Returns true if out of memory error occurs and False otherwise."""
+    return is_cuda_out_of_memory(exception) or is_cudnn_snafu(exception) or is_out_of_cpu_memory(exception)
 
 
 def flatten_dict(dct, parent_key='', sep='/'):
