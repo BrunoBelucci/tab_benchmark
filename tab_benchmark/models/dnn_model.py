@@ -385,6 +385,8 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
                         raise exception
                 else:
                     raise exception
+            else:
+                refit = False
 
         if report_to_optuna:
             for callback in self.lit_callbacks_:
