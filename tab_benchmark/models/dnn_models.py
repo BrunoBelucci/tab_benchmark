@@ -48,7 +48,7 @@ def after_fit_dnn(self, fit_return):
                 mlflow.log_metrics(log_metrics, run_id=self.run_id)
     if self.auto_reduce_batch_size:
         if self.log_to_mlflow_if_running and self.run_id is not None:
-            log_param = {'final_batch_size': self.final_batch_size}
+            log_param = {'final_batch_size': self.batch_size}
             mlflow.log_params(log_param, run_id=self.run_id)
     return fit_return
 
