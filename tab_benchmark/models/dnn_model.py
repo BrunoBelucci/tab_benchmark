@@ -4,13 +4,12 @@ import copy
 from shutil import rmtree
 from typing import Optional, Callable, Sequence
 from warnings import warn
-
 import optuna
 import pandas as pd
 import torch
 import lightning as L
 from lightning import Callback
-from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint, Timer
+from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 from lightning.pytorch.utilities.memory import is_out_of_cpu_memory
 from scipy.special import softmax
 from sklearn.base import BaseEstimator, ClassifierMixin, RegressorMixin, clone
@@ -19,6 +18,7 @@ from torch.utils.data import DataLoader
 from tab_benchmark.dnns.callbacks import DefaultLogs
 from tab_benchmark.dnns.callbacks.evaluate_metric import EvaluateMetric
 from tab_benchmark.dnns.callbacks.report_to_optuna import ReportToOptuna
+from tab_benchmark.dnns.callbacks.timer import TimerDNN
 from tab_benchmark.dnns.datasets import TabularDataModule, TabularDataset
 from tab_benchmark.dnns.modules import TabularModule
 from tab_benchmark.utils import sequence_to_list, get_metric_fn, is_oom_error, clear_memory
@@ -62,11 +62,9 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
         Number of epochs to wait before stopping the training if the validation loss does not improve. Default is 40.
         It adds EarlyStopping callback. If 0, it will not be added.
     max_time:
-        Maximum time to train the model. It adds Timer callback. If None, it will not be added. The interruption will
-        be done at the end of the epoch, and this will be the parameter duration of the Timer callback. Besides the
-        format accepted by the Timer callback ("A string in the format DD:HH:MM:SS (days, hours, minutes seconds),
-        or a datetime.timedelta, or a dict containing key-value compatible with timedelta"), it can also be an integer
-        representing the number of seconds.
+        Maximum time to train the model. It adds TimerDNN callback. If None, it will not be added. The interruption will
+        be done at the end of the epoch, and this will be the parameter duration of the TimerDNN callback. It accepts
+        an integer representing the number of seconds or a dict containing key-value compatible with timedelta.
     use_best_model:
         If True, it will load the best model. Default is True.
     output_dir:
@@ -343,11 +341,7 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
                                                             self.early_stopping_patience))
 
         if self.max_time:
-            if isinstance(self.max_time, int):
-                max_time = dict(seconds=self.max_time)
-            else:
-                max_time = self.max_time
-            callbacks_tuples.append((Timer, dict(duration=max_time, interval='epoch')))
+            callbacks_tuples.append((TimerDNN, dict(duration=self.max_time)))
 
         callbacks_tuples.extend(self.lit_callbacks_tuples)
         self.lit_callbacks_ = [fn(**kwargs) for fn, kwargs in callbacks_tuples]
@@ -397,8 +391,8 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
 
         if self.max_time:
             for callback in self.lit_callbacks_:
-                if isinstance(callback, Timer):
-                    self.reached_timeout = callback.time_remaining() <= 0
+                if isinstance(callback, TimerDNN):
+                    self.reached_timeout = callback.reached_timeout
                     break
 
         # load best model
