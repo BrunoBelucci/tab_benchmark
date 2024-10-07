@@ -213,7 +213,7 @@ class TabularDataModule(L.LightningDataModule):
                 Type of categorical features. Can be any numpy dtype.
         """
         super().__init__()
-        ignore = ['x_train', 'y_train', 'eval_sets']
+        ignore = ['x_train', 'y_train', 'eval_sets', 'new_batch_size']
         if new_batch_size:
             ignore.append('batch_size')
         self.save_hyperparameters(ignore=ignore)
