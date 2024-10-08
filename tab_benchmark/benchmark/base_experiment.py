@@ -522,27 +522,19 @@ class BaseExperiment:
                                                   log_to_mlflow=log_to_mlflow, run_id=run_id, **kwargs)
             results['evaluate_return'] = evaluate_return
 
-            if log_to_mlflow:
-                log_params = {'was_evaluated': True}
-                mlflow.log_params(log_params, run_id=run_id)
-                # in MB (in linux getrusage seems to returns in KB)
-                log_metrics = {'max_memory_used': getrusage(RUSAGE_SELF).ru_maxrss / 1000}
-                if self.n_gpus > 0:
-                    log_metrics['max_cuda_memory_reserved'] = max_memory_reserved() / (1024 ** 2)  # in MB
-                    log_metrics['max_cuda_memory_allocated'] = max_memory_allocated() / (1024 ** 2)  # in MB
-                mlflow.log_metrics(log_metrics, run_id=run_id)
-
         except Exception as exception:
             if log_to_mlflow:
-                log_params = {'was_evaluated': False, 'EXCEPTION': str(exception)}
-                mlflow.log_params(log_params, run_id=run_id)
+                log_tags = {'was_evaluated': False, 'EXCEPTION': str(exception)}
+                mlflow_client = mlflow.client.MlflowClient(tracking_uri=self.mlflow_tracking_uri)
+                for tag, value in log_tags.items():
+                    mlflow_client.set_tag(run_id, tag, value)
                 mlflow_client = mlflow.client.MlflowClient(tracking_uri=self.mlflow_tracking_uri)
                 mlflow_client.set_terminated(run_id, status='FAILED')
             try:
                 total_time = time.perf_counter() - start_time
                 if log_to_mlflow:
-                    log_params = {'elapsed_time': total_time}
-                    mlflow.log_params(log_params, run_id=run_id)
+                    log_metrics = {'elapsed_time': total_time}
+                    mlflow.log_metrics(log_metrics, run_id=run_id)
             except UnboundLocalError:
                 total_time = 'unknown'
             try:
@@ -562,9 +554,16 @@ class BaseExperiment:
         else:
             total_time = time.perf_counter() - start_time
             if log_to_mlflow:
-                log_params = {'elapsed_time': total_time}
-                mlflow.log_params(log_params, run_id=run_id)
+                log_tags = {'was_evaluated': True}
                 mlflow_client = mlflow.client.MlflowClient(tracking_uri=self.mlflow_tracking_uri)
+                for tag, value in log_tags.items():
+                    mlflow_client.set_tag(run_id, tag, value)
+                # in MB (in linux getrusage seems to returns in KB)
+                log_metrics = {'elapsed_time': total_time, 'max_memory_used': getrusage(RUSAGE_SELF).ru_maxrss / 1000}
+                if self.n_gpus > 0:
+                    log_metrics['max_cuda_memory_reserved'] = max_memory_reserved() / (1024 ** 2)  # in MB
+                    log_metrics['max_cuda_memory_allocated'] = max_memory_allocated() / (1024 ** 2)  # in MB
+                mlflow.log_metrics(log_metrics, run_id=run_id)
                 mlflow_client.set_terminated(run_id, status='FINISHED')
             log_and_print_msg('Finished!', elapsed_time=total_time, **kwargs)
             if clean_output_dir:

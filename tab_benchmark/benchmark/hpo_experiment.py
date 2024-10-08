@@ -248,9 +248,12 @@ class HPOExperiment(BaseExperiment):
         except Exception as exception:
             total_time = time.perf_counter() - start_time
             if log_to_mlflow:
-                log_params = {'was_evaluated': False, 'EXCEPTION': str(exception), 'elapsed_time': total_time}
-                mlflow.log_params(log_params, run_id=run_id)  # run_id should be the same as parent_run_id
+                log_tags = {'was_evaluated': False, 'EXCEPTION': str(exception)}
                 mlflow_client = mlflow.client.MlflowClient(tracking_uri=self.mlflow_tracking_uri)
+                for tag, value in log_tags.items():
+                    mlflow_client.set_tag(run_id, tag, value)
+                log_metrics = {'elapsed_time': total_time}
+                mlflow.log_metrics(log_metrics, run_id=run_id)  # run_id should be the same as parent_run_id
                 mlflow_client.set_terminated(run_id, status='FAILED')
             if self.raise_on_fit_error:
                 raise exception
@@ -261,9 +264,12 @@ class HPOExperiment(BaseExperiment):
         else:
             total_time = time.perf_counter() - start_time
             if log_to_mlflow:
-                log_params = {'was_evaluated': True, 'elapsed_time': total_time}
-                mlflow.log_params(log_params, run_id=parent_run_id)
+                log_tags = {'was_evaluated': True}
                 mlflow_client = mlflow.client.MlflowClient(tracking_uri=self.mlflow_tracking_uri)
+                for tag, value in log_tags.items():
+                    mlflow_client.set_tag(run_id, tag, value)
+                log_metrics = {'elapsed_time': total_time}
+                mlflow.log_metrics(log_metrics, run_id=run_id)
                 mlflow_client.set_terminated(parent_run_id, status='FINISHED')
             if return_results:
                 return study
