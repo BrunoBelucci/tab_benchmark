@@ -12,7 +12,8 @@ import random
 import pandas as pd
 import torch
 from lightning.pytorch.utilities.memory import is_cuda_out_of_memory, is_cudnn_snafu, is_out_of_cpu_memory
-from sklearn.metrics import mean_squared_error, root_mean_squared_error, log_loss, roc_auc_score, r2_score
+from sklearn.metrics import mean_squared_error, root_mean_squared_error, log_loss, roc_auc_score, r2_score, \
+    mean_absolute_error, mean_absolute_percentage_error, accuracy_score, balanced_accuracy_score, f1_score
 from sklearn.model_selection import train_test_split
 
 
@@ -127,14 +128,36 @@ def get_metric_fn(metric, n_classes=None):
     # map_metric_to_func[metric] = (function, need_proba, higher_is_better)
     auc_fn = partial(roc_auc_score, multi_class='ovr', labels=labels)
     auc_fn.__name__ = 'auc'
+    auc_micro_fn = partial(roc_auc_score, average='micro', multi_class='ovr', labels=labels)
+    auc_micro_fn.__name__ = 'auc_micro'
+    auc_weighted_fn = partial(roc_auc_score, average='weighted', multi_class='ovr', labels=labels)
+    auc_weighted_fn.__name__ = 'auc_weighted'
     log_loss_fn = partial(log_loss, labels=labels)
     log_loss_fn.__name__ = 'logloss'
+    balanced_accuracy_adjusted_fn = partial(balanced_accuracy_score, adjusted=True)
+    balanced_accuracy_adjusted_fn.__name__ = 'balanced_accuracy_adjusted'
+    f1_micro_fn = partial(f1_score, average='micro')
+    f1_micro_fn.__name__ = 'f1_micro'
+    f1_macro_fn = partial(f1_score, average='macro')
+    f1_macro_fn.__name__ = 'f1_macro'
+    f1_weighted_fn = partial(f1_score, average='weighted')
+    f1_weighted_fn.__name__ = 'f1_weighted'
     map_metric_to_func = {
         'mse': (mean_squared_error, False, False),
         'rmse': (root_mean_squared_error, False, False),
-        'logloss': (log_loss_fn, True, False),
         'r2_score': (r2_score, False, True),
-        'auc': (auc_fn, True, True)
+        'mae': (mean_absolute_error, False, False),
+        'mape': (mean_absolute_percentage_error, False, False),
+        'logloss': (log_loss_fn, True, False),
+        'accuracy': (accuracy_score, False, True),
+        'balanced_accuracy': (balanced_accuracy_score, False, True),
+        'balanced_accuracy_adjusted': (balanced_accuracy_adjusted_fn, False, True),
+        'f1_micro': (f1_micro_fn, False, True),
+        'f1_macro': (f1_macro_fn, False, True),
+        'f1_weighted': (f1_weighted_fn, False, True),
+        'auc': (auc_fn, True, True),
+        'auc_micro': (auc_micro_fn, True, True),
+        'auc_weighted': (auc_weighted_fn, True, True),
     }
     metric_fn, need_proba, higher_is_better = map_metric_to_func[metric]
     return metric_fn, need_proba, higher_is_better

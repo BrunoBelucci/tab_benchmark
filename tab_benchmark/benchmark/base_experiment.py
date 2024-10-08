@@ -405,10 +405,11 @@ class BaseExperiment:
     def get_metrics(self, data_return, **kwargs):
         task_name = data_return['task_name']
         if task_name in ('classification', 'binary_classification'):
-            metrics = ['logloss', 'auc']
+            metrics = ['logloss', 'auc', 'auc_micro', 'auc_weighted', 'accuracy', 'balanced_accuracy',
+                       'balanced_accuracy_adjusted', 'f1_micro', 'f1_macro', 'f1_weighted']
             report_metric = 'logloss'
         elif task_name == 'regression':
-            metrics = ['rmse', 'r2_score']
+            metrics = ['rmse', 'r2_score', 'mae', 'mape']
             report_metric = 'rmse'
         else:
             raise NotImplementedError
