@@ -220,7 +220,7 @@ def evaluate_set(model, eval_set: Sequence[pd.DataFrame], metrics: str | list[st
             if y_pred is None:
                 y_pred = model.predict(X)
             y_pred_ = y_pred.copy()
-        if metric == 'auc':
+        if metric in ('auc', 'auc_micro', 'auc_weighted'):
             y_true = y.copy()
             if y.shape[1] == 1:
                 y_true = y_true.to_numpy().reshape(-1)
