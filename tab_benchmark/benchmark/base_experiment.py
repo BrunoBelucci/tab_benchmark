@@ -14,7 +14,7 @@ from distributed import WorkerPlugin, Worker, Client
 import dask
 from tab_benchmark.benchmark.utils import set_mlflow_tracking_uri_check_if_exists, get_model, load_openml_task, \
     fit_model, evaluate_model, \
-    load_own_task
+    load_own_task, load_pandas_task
 from tab_benchmark.benchmark.benchmarked_models import models_dict as benchmarked_models_dict
 from tab_benchmark.utils import get_git_revision_hash, flatten_dict
 from dask.distributed import LocalCluster, get_worker, as_completed
@@ -382,8 +382,12 @@ class BaseExperiment:
         if is_openml_task:
             keys = ['task_id', 'task_repeat', 'task_fold', 'task_sample']
         else:
-            keys = ['dataset_name_or_id', 'seed_dataset', 'resample_strategy', 'n_folds', 'fold', 'pct_test',
-                    'validation_resample_strategy', 'pct_validation']
+            if 'dataset_name_or_id' in kwargs:
+                keys = ['dataset_name_or_id', 'seed_dataset', 'resample_strategy', 'n_folds', 'fold', 'pct_test',
+                        'validation_resample_strategy', 'pct_validation']
+            else:
+                keys = ['dataframe', 'dataset_name', 'seed_dataset', 'resample_strategy', 'n_folds', 'fold', 'pct_test',
+                        'validation_resample_strategy', 'pct_validation']
         data_params = {key: kwargs.get(key) for key in keys}
         if is_openml_task:
             (X, y, cat_ind, att_names, cat_features_names, cat_dims, task_name, n_classes, train_indices,
@@ -391,11 +395,20 @@ class BaseExperiment:
                                                                   log_to_mlflow=log_to_mlflow, run_id=run_id,
                                                                   **data_params)
         else:
-            (X, y, cat_ind, att_names, cat_features_names, cat_dims, task_name, n_classes, train_indices,
-             test_indices, validation_indices) = (
-                load_own_task(**data_params,
-                              create_validation_set=create_validation_set, log_to_mlflow=log_to_mlflow, run_id=run_id)
-            )
+            if 'dataset_name_or_id' in kwargs:
+                (X, y, cat_ind, att_names, cat_features_names, cat_dims, task_name, n_classes, train_indices,
+                 test_indices, validation_indices) = (
+                    load_own_task(**data_params,
+                                  create_validation_set=create_validation_set, log_to_mlflow=log_to_mlflow,
+                                  run_id=run_id)
+                )
+            else:
+                (X, y, cat_ind, att_names, cat_features_names, cat_dims, task_name, n_classes, train_indices,
+                 test_indices, validation_indices) = (
+                    load_pandas_task(**data_params,
+                                     create_validation_set=create_validation_set, log_to_mlflow=log_to_mlflow,
+                                     run_id=run_id)
+                )
         data_return = dict(X=X, y=y, cat_ind=cat_ind, att_names=att_names, cat_features_names=cat_features_names,
                            cat_dims=cat_dims, task_name=task_name, n_classes=n_classes, train_indices=train_indices,
                            test_indices=test_indices, validation_indices=validation_indices,
@@ -615,8 +628,14 @@ class BaseExperiment:
         fit_params = fit_params if fit_params else self.fits_params.get(model_nickname, {}).copy()
         run_unique_params = dict(model_params=model_params, fit_params=fit_params,
                                  create_validation_set=create_validation_set, **kwargs)
+        if 'dataframe' in run_unique_params:
+            # we will not log the dataframe
+            dataframe = run_unique_params.pop('dataframe', None)
+        else:
+            dataframe = None
         possible_existent_run = set_mlflow_tracking_uri_check_if_exists(experiment_name, mlflow_tracking_uri,
                                                                         check_if_exists, **run_unique_params)
+
         if possible_existent_run is not None:
             log_and_print_msg('Run already exists on MLflow. Skipping...')
             if return_results:
@@ -637,6 +656,11 @@ class BaseExperiment:
 
         mlflow_client.update_run(run_id, status='RUNNING')
         self.log_run_start_params(run_id, **run_unique_params)
+
+        if dataframe != None:
+            # we reinsert the dataframe
+            run_unique_params['dataframe'] = dataframe
+
         return fn_to_train_model(n_jobs=n_jobs,
                                  create_validation_set=run_unique_params.pop('create_validation_set'),
                                  model_params=run_unique_params.pop('model_params'),
@@ -739,6 +763,36 @@ class BaseExperiment:
                                        **kwargs):
         dataset_combination = dict(model_nickname=model_nickname, seed_model=seed_model,
                                    dataset_name_or_id=dataset_name_or_id,
+                                   seed_dataset=seed_dataset, fold=fold, resample_strategy=resample_strategy,
+                                   n_folds=n_folds,
+                                   pct_test=pct_test, validation_resample_strategy=validation_resample_strategy,
+                                   pct_validation=pct_validation, is_openml_task=False)
+        dataset_combination.update(kwargs)
+        if log_to_mlflow:
+            return self.run_mlflow_and_train_model(n_jobs=n_jobs, create_validation_set=create_validation_set,
+                                                   model_params=model_params, fit_params=fit_params,
+                                                   return_results=return_results, clean_output_dir=clean_output_dir,
+                                                   run_id=run_id, experiment_name=experiment_name,
+                                                   mlflow_tracking_uri=mlflow_tracking_uri,
+                                                   check_if_exists=check_if_exists,
+                                                   **dataset_combination)
+        return self.train_model(n_jobs=n_jobs, create_validation_set=create_validation_set,
+                                model_params=model_params, logging_to_mlflow=False,
+                                fit_params=fit_params, return_results=return_results, clean_output_dir=clean_output_dir,
+                                **dataset_combination)
+
+    def run_pandas_combination(self, model_nickname, seed_model, seed_dataset, dataframe, dataset_name, target, task,
+                               fold=0, run_id=None,
+                               resample_strategy='k-fold_cv', n_folds=10, pct_test=0.2,
+                               validation_resample_strategy='next_fold', pct_validation=0.1,
+                               n_jobs=1, create_validation_set=False,
+                               model_params=None,
+                               fit_params=None, return_results=False, clean_output_dir=True,
+                               log_to_mlflow=False,
+                               experiment_name=None, mlflow_tracking_uri=None, check_if_exists=None,
+                               **kwargs):
+        dataset_combination = dict(model_nickname=model_nickname, seed_model=seed_model,
+                                   dataframe=dataframe, dataset_name=dataset_name, target=target, task=task,
                                    seed_dataset=seed_dataset, fold=fold, resample_strategy=resample_strategy,
                                    n_folds=n_folds,
                                    pct_test=pct_test, validation_resample_strategy=validation_resample_strategy,
