@@ -62,38 +62,99 @@ class BaseExperiment:
     def __init__(
             self,
             # model specific
-            models_nickname=None, seeds_models=None, n_jobs=1,
-            models_params=None, fits_params=None,
+            models_nickname: Optional[list[str]] = None, seeds_models: Optional[list[int]] = None, n_jobs: int = 1,
+            models_params: Optional[dict] = None, fits_params: Optional[dict] = None,
             # when performing our own resampling
-            datasets_names_or_ids=None, seeds_datasets=None,
-            resample_strategy='k-fold_cv', k_folds=10, folds=None, pct_test=0.2,
-            validation_resample_strategy='next_fold', pct_validation=0.1,
+            datasets_names_or_ids: Optional[list[int]] = None, seeds_datasets: Optional[list[int]] = None,
+            resample_strategy: str = 'k-fold_cv', k_folds: int = 10, folds: Optional[list[int]] = None,
+            pct_test: float = 0.2,
+            validation_resample_strategy: str = 'next_fold', pct_validation: float = 0.1,
             # when using openml tasks
-            tasks_ids=None,
-            task_repeats=None, task_folds=None, task_samples=None,
+            tasks_ids: Optional[list[int]] = None,
+            task_repeats: Optional[list[int]] = None, task_folds: Optional[list[int]] = None,
+            task_samples: Optional[list[int]] = None,
             # parameters of experiment
-            experiment_name='base_experiment',
-            create_validation_set=False,
-            models_dict=None,
-            log_dir=Path.cwd() / 'logs',
-            output_dir=Path.cwd() / 'output',
-            clean_output_dir=True,
-            raise_on_fit_error=False, parser=None,
-            error_score='raise',
+            experiment_name: str = 'base_experiment',
+            create_validation_set: bool = False,
+            models_dict: Optional[dict] = None,
+            log_dir: str | Path = Path.cwd() / 'logs',
+            output_dir: str | Path = Path.cwd() / 'output',
+            clean_output_dir: bool = True,
+            raise_on_fit_error: bool = False, parser: Optional = None,
+            error_score: str = 'raise',
             # mlflow specific
-            log_to_mlflow=True,
-            mlflow_tracking_uri='sqlite:///' + str(Path.cwd().resolve()) + '/tab_benchmark.db', check_if_exists=True,
+            log_to_mlflow: bool = True,
+            mlflow_tracking_uri: str = 'sqlite:///' + str(Path.cwd().resolve()) + '/tab_benchmark.db',
+            check_if_exists: bool = True,
             # parallelization
-            dask_cluster_type=None,
-            n_workers=1,
-            n_processes=1,
-            n_cores=1,
-            dask_memory=None,
-            dask_job_extra_directives=None,
-            dask_address=None,
+            dask_cluster_type: Optional[str] = None,
+            n_workers: int = 1,
+            n_processes: int = 1,
+            n_cores: int = 1,
+            dask_memory: Optional[str] = None,
+            dask_job_extra_directives: Optional[str] = None,
+            dask_address: Optional[str] = None,
             # gpu specific
-            n_gpus=0,
+            n_gpus: int = 0,
     ):
+        """Base experiment.
+
+        This class allows to perform experiments with tabular data. It is a base class that can be inherited to
+        perform more specific experiments. It allows to perform experiments with different models, datasets and
+        resampling strategies. It also allows to log the results to mlflow and to parallelize the experiments with
+        dask. We can also run a single experiment with the run_* meth
+
+        Parameters
+        ----------
+        models_nickname :
+            The nickname of the models to be used in the experiment. The nickname must be one of the keys of the
+            models_dict.
+        seeds_models :
+            The seeds to be used in the models.
+        n_jobs :
+            Number of threads/cores to be used by the model if it supports it. Defaults to 1.
+        models_params :
+            Dictionary with the parameters of the models. The keys must be the nickname of the model and the values
+            must be a dictionary with the parameters of the model. In case only one dictionary is passed, it will be
+            used for all models. Defaults to None.
+        fits_params :
+            Dictionary with the parameters of the fits. The keys must be the nickname of the model and the values
+            must be a dictionary with the parameters of the fit. In case only one dictionary is passed, it will be
+            used for all models. Defaults to None.
+        datasets_names_or_ids :
+            The names or ids of the datasets to be used in the experiment. Defaults to None.
+        seeds_datasets :
+            The seeds to be used in the datasets. Defaults to None.
+        resample_strategy :
+            The resampling strategy to be used. Defaults to 'k-fold_cv'.
+        k_folds :
+            The number of folds to be used in the k-fold cross-validation. Defaults to 10.
+        folds :
+            The folds to be used in the resampling. Defaults to None.
+        pct_test :
+            The percentage of the test set. Defaults to 0.2.
+        validation_resample_strategy :
+            The resampling strategy to be used to create the validation set. Defaults to 'next_fold'.
+        pct_validation :
+            The percentage of the validation set. Defaults to 0.1.
+        tasks_ids :
+            The ids of the tasks to be used in the experiment. Defaults to None.
+        task_repeats :
+            The repeats to be used in the tasks. Defaults to None.
+        task_folds :
+            The folds to be used in the tasks. Defaults to None.
+        task_samples :
+            The samples to be used in the tasks. Defaults to None.
+        experiment_name :
+            The name of the experiment. Defaults to 'base_experiment'.
+        create_validation_set :
+            If True, create a validation set. Defaults to False.
+        models_dict :
+            The dictionary with the models to be used in the experiment, it must be a dictionary with the keys being
+            the nickname of the model and the values being another dictionary with the class of the model and the
+            parameters of the model.
+
+        """
         self.models_nickname = models_nickname if models_nickname else []
         self.seeds_model = seeds_models if seeds_models else [0]
         self.n_jobs = n_jobs
