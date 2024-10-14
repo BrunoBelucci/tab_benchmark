@@ -78,8 +78,9 @@ class BaseExperiment:
             create_validation_set: bool = False,
             models_dict: Optional[dict] = None,
             log_dir: str | Path = Path.cwd() / 'logs',
-            output_dir: str | Path = Path.cwd() / 'output',
-            clean_output_dir: bool = True,
+            work_dir: str | Path = Path.cwd() / 'work',
+            save_dir: Optional[str | Path] = None,
+            clean_work_dir: bool = True,
             raise_on_fit_error: bool = False, parser: Optional = None,
             error_score: str = 'raise',
             # mlflow specific
@@ -192,9 +193,16 @@ class BaseExperiment:
 
         self.experiment_name = experiment_name
         self.create_validation_set = create_validation_set
+        if isinstance(log_dir, str):
+            log_dir = Path(log_dir)
         self.log_dir = log_dir
-        self.output_dir = output_dir
-        self.clean_output_dir = clean_output_dir
+        if isinstance(work_dir, str):
+            work_dir = Path(work_dir)
+        self.work_dir = work_dir
+        if isinstance(save_dir, str):
+            save_dir = Path(save_dir)
+        self.save_dir = save_dir
+        self.clean_work_dir = clean_work_dir
         self.log_to_mlflow = log_to_mlflow
         self.mlflow_tracking_uri = mlflow_tracking_uri
         self.check_if_exists = check_if_exists
@@ -267,8 +275,9 @@ class BaseExperiment:
         self.parser.add_argument('--task_folds', nargs='*', type=int, default=self.task_folds)
 
         self.parser.add_argument('--log_dir', type=Path, default=self.log_dir)
-        self.parser.add_argument('--output_dir', type=Path, default=self.output_dir)
-        self.parser.add_argument('--do_not_clean_output_dir', action='store_true')
+        self.parser.add_argument('--work_dir', type=Path, default=self.work_dir)
+        self.parser.add_argument('--save_dir', type=Path, default=self.save_dir)
+        self.parser.add_argument('--do_not_clean_work_dir', action='store_true')
         self.parser.add_argument('--do_not_log_to_mlflow', action='store_true')
         self.parser.add_argument('--mlflow_tracking_uri', type=str, default=self.mlflow_tracking_uri)
         self.parser.add_argument('--do_not_check_if_exists', action='store_true')
@@ -327,11 +336,9 @@ class BaseExperiment:
         self.task_samples = args.task_samples
 
         self.log_dir = args.log_dir
-        output_dir = args.output_dir
-        if isinstance(output_dir, str):
-            output_dir = Path(output_dir)
-        self.output_dir = output_dir
-        self.clean_output_dir = not args.do_not_clean_output_dir
+        self.work_dir = args.work_dir
+        self.save_dir = args.save_dir
+        self.clean_work_dir = not args.do_not_clean_work_dir
         self.log_to_mlflow = not args.do_not_log_to_mlflow
         self.mlflow_tracking_uri = args.mlflow_tracking_uri
         self.check_if_exists = not args.do_not_check_if_exists
@@ -390,9 +397,9 @@ class BaseExperiment:
                             level=logging.INFO, filemode=filemode)
 
     def _get_model(self, model_params: Optional[dict] = None, n_jobs: int = 1,
-                  log_to_mlflow: bool = False, run_id: Optional[str] = None, create_validation_set: bool = False,
-                  output_dir: Optional[str | Path] = None, data_return: Optional[dict] = None,
-                  **kwargs):
+                   log_to_mlflow: bool = False, run_id: Optional[str] = None, create_validation_set: bool = False,
+                   work_dir: Optional[str | Path] = None, data_return: Optional[dict] = None,
+                   **kwargs):
         """Get the model to be used in the experiment.
 
         Parameters
@@ -408,7 +415,7 @@ class BaseExperiment:
             The run_id of the mlflow run.
         create_validation_set :
             If True, create a validation set.
-        output_dir :
+        work_dir :
             The output directory where the model will save outputs.
         data_return :
             The data returned by the load_data method.
@@ -429,32 +436,34 @@ class BaseExperiment:
         else:
             data_params = None
         models_dict = self.models_dict.copy()
-        if output_dir is None:
-            # if logging to mlflow we use the mlflow artifact directory
-            if log_to_mlflow:
-                # this is already unique
-                run = mlflow.get_run(run_id)
-                artifact_uri = run.info.artifact_uri
-                output_dir = Path(artifact_uri)
-                unique_name = output_dir.parts[-2]
-            else:
-                # if we only save the model in the output_dir we will have some problems when running in parallel
-                # because the workers will try to save the model in the same directory, so we must create a unique
-                # directory for each combination model/dataset
-                if data_params is not None:
-                    unique_name = '_'.join([f'{k}={v}' for k, v in data_params.items()])
-                else:
-                    # not sure, but I think it will generate a true random number and even be thread safe
-                    unique_name = f'{SystemRandom().randint(0, 1000000):06d}'
-                output_dir = self.output_dir / f'{model_nickname}_{unique_name}'
-            # if running on a worker, we use the worker's local directory
+
+        if work_dir is None:
+            # if running on a dask worker, we use the worker's local directory as work_dir, irrespective of
+            # self.work_dir
             try:
                 worker = get_worker()
-                output_dir = Path(worker.local_directory) / unique_name
+                work_dir = Path(worker.local_directory)
             except ValueError:
-                # if running on the main process, we use the output_dir
-                output_dir = output_dir
-            os.makedirs(output_dir, exist_ok=True)
+                # if running on the main process, we use the work_dir defined in the class
+                work_dir = self.work_dir
+
+        # if logging to mlflow we use the run_id as the name of the output_dir in the work_dir
+        if log_to_mlflow:
+            # this is already unique
+            unique_name = run_id
+        else:
+            # if we only save the model in the output_dir we will have some problems when running in parallel
+            # because the workers will try to save the model in the same directory, so we must create a unique
+            # directory for each combination model/dataset
+            if data_params is not None:
+                unique_name = '_'.join([f'{k}={v}' for k, v in data_params.items()])
+            else:
+                # not sure, but I think it will generate a true random number and even be thread safe
+                unique_name = f'{SystemRandom().randint(0, 1000000):06d}'
+            unique_name = f'{model_nickname}_{unique_name}'
+
+        output_dir = work_dir / unique_name
+        os.makedirs(output_dir, exist_ok=True)
         model = get_model(model_nickname, seed_model, model_params, models_dict, n_jobs, output_dir=output_dir)
         if log_to_mlflow:
             if hasattr(model, 'run_id'):
@@ -662,7 +671,7 @@ class BaseExperiment:
         return fit_return
 
     def _evaluate_model(self, metrics, report_metric, fit_return, data_return, create_validation_set=False,
-                       log_to_mlflow=False, run_id=None, **kwargs):
+                        log_to_mlflow=False, run_id=None, **kwargs):
         """Evaluate the model.
 
         Parameters
@@ -712,10 +721,10 @@ class BaseExperiment:
         return evaluate_results
 
     def _train_model(self,
-                    n_jobs=1, create_validation_set=False,
-                    model_params=None,
-                    fit_params=None, return_results=False, clean_output_dir=True, log_to_mlflow=False, run_id=None,
-                    **kwargs):
+                     n_jobs=1, create_validation_set=False,
+                     model_params=None,
+                     fit_params=None, return_results=False, clean_work_dir=True, log_to_mlflow=False, run_id=None,
+                     **kwargs):
         """Train the model.
 
         It executes the main steps of the experiment: load_data, get_model, get_metrics, fit_model and evaluate_model.
@@ -734,8 +743,8 @@ class BaseExperiment:
             class if None.
         return_results :
             If True, return the results of the experiment.
-        clean_output_dir :
-            If True, clean the output directory after the experiment.
+        clean_work_dir :
+            If True, clean the work directory after the experiment.
         log_to_mlflow :
             If True, log the results to mlflow.
         run_id :
@@ -848,7 +857,7 @@ class BaseExperiment:
                 mlflow.log_metrics(log_metrics, run_id=run_id)
                 mlflow_client.set_terminated(run_id, status='FINISHED')
             log_and_print_msg('Finished!', elapsed_time=total_time, **kwargs)
-            if clean_output_dir:
+            if clean_work_dir:
                 output_dir = model.output_dir
                 if output_dir.exists():
                     rmtree(output_dir)
@@ -883,13 +892,13 @@ class BaseExperiment:
             mlflow_client.set_tag(run_id, tag, value)
 
     def _run_mlflow_and_train_model(self,
-                                   n_jobs=1, create_validation_set=False,
-                                   model_params=None,
-                                   fit_params=None, return_results=False, clean_output_dir=True,
-                                   run_id=None,
-                                   experiment_name=None, mlflow_tracking_uri=None, check_if_exists=None,
-                                   fn_to_train_model=None,
-                                   **kwargs):
+                                    n_jobs=1, create_validation_set=False,
+                                    model_params=None,
+                                    fit_params=None, return_results=False, clean_work_dir=True,
+                                    run_id=None,
+                                    experiment_name=None, mlflow_tracking_uri=None, check_if_exists=None,
+                                    fn_to_train_model=None,
+                                    **kwargs):
         """Run the experiment using mlflow and train the model."""
         if fn_to_train_model is None:
             fn_to_train_model = self._train_model
@@ -916,7 +925,11 @@ class BaseExperiment:
 
         experiment = mlflow.get_experiment_by_name(experiment_name)
         if experiment is None:
-            experiment_id = mlflow.create_experiment(experiment_name, artifact_location=str(self.output_dir))
+            if self.save_dir:
+                artifact_location = str(self.save_dir / experiment_name)
+            else:
+                artifact_location = None
+            experiment_id = mlflow.create_experiment(experiment_name, artifact_location=artifact_location)
         else:
             experiment_id = experiment.experiment_id
         mlflow.set_experiment(experiment_name)
@@ -936,7 +949,7 @@ class BaseExperiment:
                                  create_validation_set=run_unique_params.pop('create_validation_set'),
                                  model_params=run_unique_params.pop('model_params'),
                                  fit_params=run_unique_params.pop('fit_params'), return_results=return_results,
-                                 clean_output_dir=clean_output_dir,
+                                 clean_work_dir=clean_work_dir,
                                  log_to_mlflow=True, run_id=run_id,
                                  experiment_name=experiment_name,
                                  mlflow_tracking_uri=mlflow_tracking_uri, check_if_exists=check_if_exists,
@@ -1004,7 +1017,7 @@ class BaseExperiment:
                                     n_jobs: int = 1, create_validation_set: bool = False,
                                     model_params: Optional[dict] = None,
                                     fit_params: Optional[dict] = None, return_results: bool = False,
-                                    clean_output_dir: bool = True,
+                                    clean_work_dir: bool = True,
                                     log_to_mlflow: bool = False,
                                     experiment_name: Optional[str] = None, mlflow_tracking_uri: Optional[str] = None,
                                     check_if_exists: Optional[bool] = None,
@@ -1042,8 +1055,8 @@ class BaseExperiment:
             class if None.
         return_results :
             If True, return the results of the experiment.
-        clean_output_dir :
-            If True, clean the output directory after the experiment.
+        clean_work_dir :
+            If True, clean the work directory after the experiment.
         log_to_mlflow :
             If True, log the results to mlflow.
         experiment_name :
@@ -1082,15 +1095,15 @@ class BaseExperiment:
         if log_to_mlflow:
             return self._run_mlflow_and_train_model(n_jobs=n_jobs, create_validation_set=create_validation_set,
                                                     model_params=model_params, fit_params=fit_params,
-                                                    return_results=return_results, clean_output_dir=clean_output_dir,
+                                                    return_results=return_results, clean_work_dir=clean_work_dir,
                                                     run_id=run_id, experiment_name=experiment_name,
                                                     mlflow_tracking_uri=mlflow_tracking_uri,
                                                     check_if_exists=check_if_exists, **task_combination)
         return self._train_model(n_jobs=n_jobs, create_validation_set=create_validation_set, model_params=model_params,
                                  fit_params=fit_params, return_results=return_results,
-                                 clean_output_dir=clean_output_dir, logging_to_mlflow=False, **task_combination)
+                                 clean_work_dir=clean_work_dir, logging_to_mlflow=False, **task_combination)
 
-    def run_openml_dataset_combination(self, model_nickname: str, seed_model: int, dataset_name_or_id: str|int,
+    def run_openml_dataset_combination(self, model_nickname: str, seed_model: int, dataset_name_or_id: str | int,
                                        seed_dataset: int,
                                        fold: int = 0, run_id: Optional[str] = None,
                                        resample_strategy: str = 'k-fold_cv', n_folds: int = 10, pct_test: float = 0.2,
@@ -1098,7 +1111,7 @@ class BaseExperiment:
                                        n_jobs: int = 1, create_validation_set: bool = False,
                                        model_params: Optional[dict] = None,
                                        fit_params: Optional[dict] = None, return_results: bool = False,
-                                       clean_output_dir: bool = True,
+                                       clean_work_dir: bool = True,
                                        log_to_mlflow: bool = False,
                                        experiment_name: Optional[str] = None, mlflow_tracking_uri: Optional[str] = None,
                                        check_if_exists: Optional[bool] = None,
@@ -1144,8 +1157,8 @@ class BaseExperiment:
             class if None.
         return_results :
             If True, return the results of the experiment.
-        clean_output_dir :
-            If True, clean the output directory after the experiment.
+        clean_work_dir :
+            If True, clean the work directory after the experiment.
         log_to_mlflow :
             If True, log the results to mlflow.
         experiment_name :
@@ -1187,13 +1200,13 @@ class BaseExperiment:
         if log_to_mlflow:
             return self._run_mlflow_and_train_model(n_jobs=n_jobs, create_validation_set=create_validation_set,
                                                     model_params=model_params, fit_params=fit_params,
-                                                    return_results=return_results, clean_output_dir=clean_output_dir,
+                                                    return_results=return_results, clean_work_dir=clean_work_dir,
                                                     run_id=run_id, experiment_name=experiment_name,
                                                     mlflow_tracking_uri=mlflow_tracking_uri,
                                                     check_if_exists=check_if_exists, **dataset_combination)
         return self._train_model(n_jobs=n_jobs, create_validation_set=create_validation_set, model_params=model_params,
                                  fit_params=fit_params, return_results=return_results,
-                                 clean_output_dir=clean_output_dir, logging_to_mlflow=False, **dataset_combination)
+                                 clean_work_dir=clean_work_dir, logging_to_mlflow=False, **dataset_combination)
 
     def run_pandas_combination(self, model_nickname: str, seed_model: int, seed_dataset: int, dataframe: pd.DataFrame,
                                dataset_name: str, target: str, task: str,
@@ -1203,7 +1216,7 @@ class BaseExperiment:
                                n_jobs: int = 1, create_validation_set: bool = False,
                                model_params: Optional[dict] = None,
                                fit_params: Optional[dict] = None, return_results: bool = False,
-                               clean_output_dir: bool = True,
+                               clean_work_dir: bool = True,
                                log_to_mlflow: bool = False,
                                experiment_name: Optional[str] = None, mlflow_tracking_uri: Optional[str] = None,
                                check_if_exists: Optional[bool] = None,
@@ -1255,8 +1268,8 @@ class BaseExperiment:
             class if None.
         return_results :
             If True, return the results of the experiment.
-        clean_output_dir :
-            If True, clean the output directory after the experiment.
+        clean_work_dir :
+            If True, clean the work directory after the experiment.
         log_to_mlflow :
             If True, log the results to mlflow.
         experiment_name :
@@ -1298,13 +1311,13 @@ class BaseExperiment:
         if log_to_mlflow:
             return self._run_mlflow_and_train_model(n_jobs=n_jobs, create_validation_set=create_validation_set,
                                                     model_params=model_params, fit_params=fit_params,
-                                                    return_results=return_results, clean_output_dir=clean_output_dir,
+                                                    return_results=return_results, clean_work_dir=clean_work_dir,
                                                     run_id=run_id, experiment_name=experiment_name,
                                                     mlflow_tracking_uri=mlflow_tracking_uri,
                                                     check_if_exists=check_if_exists, **dataset_combination)
         return self._train_model(n_jobs=n_jobs, create_validation_set=create_validation_set, model_params=model_params,
                                  fit_params=fit_params, return_results=return_results,
-                                 clean_output_dir=clean_output_dir, logging_to_mlflow=False, **dataset_combination)
+                                 clean_work_dir=clean_work_dir, logging_to_mlflow=False, **dataset_combination)
 
     def _run_combination(self, *args, **kwargs):
         """Run the experiment using an OpenML task or an OpenML dataset."""
@@ -1331,17 +1344,17 @@ class BaseExperiment:
                                         self.task_repeats, self.task_samples))
             extra_params = dict(is_openml_task=True)
         extra_params.update(dict(n_jobs=self.n_jobs, log_to_mlflow=self.log_to_mlflow,
-                                 return_results=False, clean_output_dir=self.clean_output_dir,
+                                 return_results=False, clean_work_dir=self.clean_work_dir,
                                  create_validation_set=self.create_validation_set, experiment_name=self.experiment_name,
                                  mlflow_tracking_uri=self.mlflow_tracking_uri, check_if_exists=self.check_if_exists))
         return combinations, extra_params
 
     def _create_mlflow_run(self, *args,
-                          create_validation_set=False,
-                          model_params=None,
-                          fit_params=None,
-                          experiment_name=None, mlflow_tracking_uri=None, check_if_exists=None,
-                          **kwargs):
+                           create_validation_set=False,
+                           model_params=None,
+                           fit_params=None,
+                           experiment_name=None, mlflow_tracking_uri=None, check_if_exists=None,
+                           **kwargs):
         """Create a mlflow run."""
         is_openml_task = kwargs.get('is_openml_task', False)
         if is_openml_task:
@@ -1373,7 +1386,11 @@ class BaseExperiment:
         else:
             experiment = mlflow.get_experiment_by_name(experiment_name)
             if experiment is None:
-                experiment_id = mlflow.create_experiment(experiment_name, artifact_location=str(self.output_dir))
+                if self.save_dir:
+                    artifact_location = str(self.save_dir / experiment_name)
+                else:
+                    artifact_location = None
+                experiment_id = mlflow.create_experiment(experiment_name, artifact_location=artifact_location)
             else:
                 experiment_id = experiment.experiment_id
             mlflow.set_experiment(experiment_name)
@@ -1514,8 +1531,9 @@ class BaseExperiment:
             self.using_own_resampling = False
         else:
             raise ValueError("You must provide either datasets_names_or_ids or tasks_ids, but not both.")
-        self.output_dir = self.output_dir / self.experiment_name
-        os.makedirs(self.output_dir, exist_ok=True)
+        os.makedirs(self.work_dir, exist_ok=True)
+        if self.save_dir:
+            os.makedirs(self.save_dir, exist_ok=True)
         self._setup_logger()
         kwargs_to_log = self._get_kwargs_to_log_experiment()
         start_time = time.perf_counter()
