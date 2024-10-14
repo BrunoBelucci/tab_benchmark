@@ -5,11 +5,13 @@ import time
 from multiprocessing import cpu_count
 from pathlib import Path
 from shutil import rmtree
+from typing import Optional
 import mlflow
 import os
 import logging
 import warnings
 import numpy as np
+import pandas as pd
 from distributed import WorkerPlugin, Worker, Client
 import dask
 from tab_benchmark.benchmark.utils import set_mlflow_tracking_uri_check_if_exists, get_model, load_openml_task, \
@@ -96,8 +98,8 @@ class BaseExperiment:
         self.seeds_model = seeds_models if seeds_models else [0]
         self.n_jobs = n_jobs
 
-        self.models_params = self.validate_dict_of_models_params(models_params, self.models_nickname)
-        self.fits_params = self.validate_dict_of_models_params(fits_params, self.models_nickname)
+        self.models_params = self._validate_dict_of_models_params(models_params, self.models_nickname)
+        self.fits_params = self._validate_dict_of_models_params(fits_params, self.models_nickname)
 
         # when performing our own resampling0
         self.datasets_names_or_ids = datasets_names_or_ids
@@ -142,7 +144,9 @@ class BaseExperiment:
         self.client = None
         self.logger_filename = None
 
-    def validate_dict_of_models_params(self, dict_to_validate, models_nickname):
+    def _validate_dict_of_models_params(self, dict_to_validate, models_nickname):
+        """Validate the dictionary of models parameters or fit parameters, broadcasting it to the number of models
+        if a single dictionary is passed instead of a dictionary of dictionaries."""
         dict_to_validate = dict_to_validate or {model_nickname: {} for model_nickname in models_nickname}
         models_missing = [model_nickname for model_nickname in models_nickname
                           if model_nickname not in dict_to_validate]
@@ -153,7 +157,8 @@ class BaseExperiment:
                 dict_to_validate[model_missing] = {}
         return dict_to_validate
 
-    def add_arguments_to_parser(self):
+    def _add_arguments_to_parser(self):
+        """Add the arguments to the parser."""
         self.parser.add_argument('--experiment_name', type=str, default=self.experiment_name)
         self.parser.add_argument('--create_validation_set', action='store_true')
         self.parser.add_argument('--models_nickname', type=str, choices=self.models_dict.keys(),
@@ -229,16 +234,17 @@ class BaseExperiment:
                                       'be the total number of GPUs that will be used, each worker will have access'
                                       'to n_gpus / n_workers GPUs.')
 
-    def unpack_parser(self):
+    def _unpack_parser(self):
+        """Unpack the parser."""
         args = self.parser.parse_args()
         self.experiment_name = args.experiment_name
         self.create_validation_set = args.create_validation_set
         self.models_nickname = args.models_nickname
         self.n_jobs = args.n_jobs
         models_params = args.models_params
-        self.models_params = self.validate_dict_of_models_params(models_params, self.models_nickname)
+        self.models_params = self._validate_dict_of_models_params(models_params, self.models_nickname)
         fits_params = args.fits_params
-        self.fits_params = self.validate_dict_of_models_params(fits_params, self.models_nickname)
+        self.fits_params = self._validate_dict_of_models_params(fits_params, self.models_nickname)
         error_score = args.error_score
         if error_score == 'nan':
             error_score = np.nan
@@ -293,12 +299,14 @@ class BaseExperiment:
         self.n_gpus = args.n_gpus
         return args
 
-    def treat_parser(self):
+    def _treat_parser(self):
+        """Treat the parser."""
         if self.parser is not None:
-            self.add_arguments_to_parser()
-            self.unpack_parser()
+            self._add_arguments_to_parser()
+            self._unpack_parser()
 
-    def setup_logger(self, log_dir=None, filemode='w'):
+    def _setup_logger(self, log_dir=None, filemode='w'):
+        """Setup the logger."""
         if log_dir is None:
             log_dir = self.log_dir
         os.makedirs(log_dir, exist_ok=True)
@@ -320,9 +328,38 @@ class BaseExperiment:
                             format='%(asctime)s - %(levelname)s\n%(message)s\n',
                             level=logging.INFO, filemode=filemode)
 
-    def get_model(self, model_params=None, n_jobs=1,
-                  log_to_mlflow=False, run_id=None, create_validation_set=False, output_dir=None, data_return=None,
+    def _get_model(self, model_params: Optional[dict] = None, n_jobs: int = 1,
+                  log_to_mlflow: bool = False, run_id: Optional[str] = None, create_validation_set: bool = False,
+                  output_dir: Optional[str | Path] = None, data_return: Optional[dict] = None,
                   **kwargs):
+        """Get the model to be used in the experiment.
+
+        Parameters
+        ----------
+        model_params :
+            Dictionary with the parameters of the model. Defaults models_params defined at the initialization of the
+            class if None.
+        n_jobs :
+            Number of threads/cores to be used by the model if it supports it.
+        log_to_mlflow :
+            If True, log the model to mlflow.
+        run_id :
+            The run_id of the mlflow run.
+        create_validation_set :
+            If True, create a validation set.
+        output_dir :
+            The output directory where the model will save outputs.
+        data_return :
+            The data returned by the load_data method.
+        kwargs :
+            Additional arguments from the experiment, it must contain the model_nickname and seed_model.
+
+        Returns
+        -------
+        model :
+            The instantiated model to be used in the experiment.
+        """
+        # if we reuse the package to other experiments, we don't necessarily need model_nickname and seed_model
         model_nickname = kwargs.get('model_nickname')
         seed_model = kwargs.get('seed_model')
         model_params = model_params if model_params else self.models_params.get(model_nickname, {}).copy()
@@ -377,7 +414,49 @@ class BaseExperiment:
                 mlflow.log_params(log_params, run_id=run_id)
         return model
 
-    def load_data(self, create_validation_set=False, log_to_mlflow=False, run_id=None, **kwargs):
+    def _load_data(self, create_validation_set=False, log_to_mlflow=False, run_id=None, **kwargs):
+        """Load the data to be used in the experiment.
+
+        Parameters
+        ----------
+        create_validation_set :
+            If True, create a validation set.
+        log_to_mlflow :
+            If True, log the data to mlflow.
+        run_id :
+            The run_id of the mlflow run.
+        kwargs :
+            Additional arguments from the experiment, it must contain the data parameters.
+
+        Returns
+        -------
+        data_return :
+            A dictionary with the data to be used in the experiment. It contains the following keys:
+            X :
+                The features of the dataset.
+            y :
+                The target of the dataset.
+            cat_ind :
+                The indices of the categorical features.
+            att_names :
+                The names of the features.
+            cat_features_names :
+                The names of the categorical features.
+            cat_dims :
+                The dimensions of the categorical features.
+            task_name :
+                The name of the task.
+            n_classes :
+                The number of classes.
+            train_indices :
+                The indices of the training set.
+            test_indices :
+                The indices of the test set.
+            validation_indices :
+                The indices of the validation set.
+            data_params :
+                The parameters of the data.
+        """
         is_openml_task = kwargs.get('is_openml_task', False)
         if is_openml_task:
             keys = ['task_id', 'task_repeat', 'task_fold', 'task_sample']
@@ -415,7 +494,23 @@ class BaseExperiment:
                            data_params=data_params)
         return data_return
 
-    def get_metrics(self, data_return, **kwargs):
+    def _get_metrics(self, data_return, **kwargs):
+        """Get the metrics to be used in the experiment.
+
+        Parameters
+        ----------
+        data_return :
+            The data returned by the load_data method.
+        kwargs :
+            Additional arguments from the experiment.
+
+        Returns
+        -------
+        metrics :
+            The metrics to be used in the experiment.
+        report_metric :
+            The metric to be used to report the results, used for example when performing hyperparameter optimization.
+        """
         task_name = data_return['task_name']
         if task_name in ('classification', 'binary_classification'):
             metrics = ['logloss', 'auc', 'auc_micro', 'auc_weighted', 'accuracy', 'balanced_accuracy',
@@ -428,7 +523,43 @@ class BaseExperiment:
             raise NotImplementedError
         return metrics, report_metric
 
-    def fit_model(self, model, fit_params, data_return, metrics, report_metric, **kwargs):
+    def _fit_model(self, model, fit_params, data_return, metrics, report_metric, **kwargs):
+        """Fit the model to the data.
+
+        Parameters
+        ----------
+        model :
+            The model to be fitted, returned by the get_model method.
+        fit_params :
+            The parameters of the fit. Defaults fits_params defined at the initialization of the class if None.
+        data_return :
+            The data returned by the load_data method.
+        metrics :
+            The metrics to be used in the experiment, returned by the get_metrics method.
+        report_metric :
+            The metric to be used to report the results, returned by the get_metrics method.
+        kwargs :
+            Additional arguments from the experiment.
+
+        Returns
+        -------
+        fit_return :
+            A dictionary with the results of the fit. It contains the following keys:
+            model :
+                The fitted model.
+            X_train :
+                The features of the training set, already preprocessed.
+            y_train :
+                The target of the training set, already preprocessed.
+            X_test :
+                The features of the test set, already preprocessed.
+            y_test :
+                The target of the test set, already preprocessed.
+            X_validation :
+                The features of the validation set, already preprocessed.
+            y_validation :
+                The target of the validation set, already preprocessed.
+        """
         cat_features_names = data_return['cat_features_names']
         X = data_return['X']
         y = data_return['y']
@@ -469,8 +600,38 @@ class BaseExperiment:
                           X_validation=X_validation, y_validation=y_validation)
         return fit_return
 
-    def evaluate_model(self, metrics, report_metric, fit_return, data_return, create_validation_set=False,
+    def _evaluate_model(self, metrics, report_metric, fit_return, data_return, create_validation_set=False,
                        log_to_mlflow=False, run_id=None, **kwargs):
+        """Evaluate the model.
+
+        Parameters
+        ----------
+        metrics :
+            The metrics to be used in the experiment, returned by the get_metrics method.
+        report_metric :
+            The metric to be used to report the results, returned by the get_metrics method.
+        fit_return :
+            The data returned by the fit_model method.
+        data_return :
+            The data returned by the load_data method.
+        create_validation_set :
+            If True, create a validation set.
+        log_to_mlflow :
+            If True, log the results to mlflow.
+        run_id :
+            The run_id of the mlflow run.
+        kwargs :
+            Additional arguments from the experiment.
+
+        Returns
+        -------
+        evaluate_results :
+            A dictionary with the results of the evaluation. It contains the following keys:
+            final_test :
+                The results of the evaluation on the test set.
+            final_validation :
+                The results of the evaluation on the validation set, if create_validation_set is True.
+        """
         model = fit_return['model']
         X_test = fit_return['X_test']
         y_test = fit_return['y_test']
@@ -489,11 +650,58 @@ class BaseExperiment:
             evaluate_results.update(validation_results)
         return evaluate_results
 
-    def train_model(self,
+    def _train_model(self,
                     n_jobs=1, create_validation_set=False,
                     model_params=None,
                     fit_params=None, return_results=False, clean_output_dir=True, log_to_mlflow=False, run_id=None,
                     **kwargs):
+        """Train the model.
+
+        It executes the main steps of the experiment: load_data, get_model, get_metrics, fit_model and evaluate_model.
+
+        Parameters
+        ----------
+        n_jobs :
+            Number of threads/cores to be used by the model if it supports it.
+        create_validation_set :
+            If True, create a validation set.
+        model_params :
+            Dictionary with the parameters of the model. Defaults models_params defined at the initialization of the
+            class if None.
+        fit_params :
+            Dictionary with the parameters of the fit. Defaults fits_params defined at the initialization of the
+            class if None.
+        return_results :
+            If True, return the results of the experiment.
+        clean_output_dir :
+            If True, clean the output directory after the experiment.
+        log_to_mlflow :
+            If True, log the results to mlflow.
+        run_id :
+            The run_id of the mlflow run.
+        kwargs :
+            Additional arguments from the experiment.
+
+        Returns
+        -------
+        results :
+            If return_results is True, return a dictionary with the results of the experiment, otherwise return True
+            if the experiment was successful and False otherwise. It still tries to return the results when
+            return_results is true and an exception is raised. The dictionary contains the following
+            keys:
+            data_return :
+                The data returned by the load_data method.
+            model :
+                The model returned by the get_model method.
+            metrics :
+                The metrics returned by the get_metrics method.
+            report_metric :
+                The report_metric returned by the get_metrics method.
+            fit_return :
+                The data returned by the fit_model method.
+            evaluate_return :
+                The data returned by the evaluate_model method.
+        """
         try:
             results = {}
             start_time = time.perf_counter()
@@ -509,30 +717,30 @@ class BaseExperiment:
             fit_params = fit_params if fit_params else self.fits_params.get(kwargs.get('model_nickname'), {}).copy()
 
             # load data
-            data_return = self.load_data(create_validation_set=create_validation_set, log_to_mlflow=log_to_mlflow,
-                                         run_id=run_id,
-                                         **kwargs)
+            data_return = self._load_data(create_validation_set=create_validation_set, log_to_mlflow=log_to_mlflow,
+                                          run_id=run_id, **kwargs)
             results['data_return'] = data_return
 
             # load model
-            model = self.get_model(model_params=model_params, n_jobs=n_jobs, log_to_mlflow=log_to_mlflow, run_id=run_id,
-                                   create_validation_set=create_validation_set, data_return=data_return, **kwargs)
+            model = self._get_model(model_params=model_params, n_jobs=n_jobs, log_to_mlflow=log_to_mlflow,
+                                    run_id=run_id, create_validation_set=create_validation_set, data_return=data_return,
+                                    **kwargs)
             results['model'] = model
 
             # get metrics
-            metrics, report_metric = self.get_metrics(data_return, **kwargs)
+            metrics, report_metric = self._get_metrics(data_return, **kwargs)
             results['metrics'] = metrics
             results['report_metric'] = report_metric
 
             # fit model
-            fit_return = self.fit_model(model=model, fit_params=fit_params, data_return=data_return, metrics=metrics,
-                                        report_metric=report_metric, **kwargs)
+            fit_return = self._fit_model(model=model, fit_params=fit_params, data_return=data_return, metrics=metrics,
+                                         report_metric=report_metric, **kwargs)
             results['fit_return'] = fit_return
 
             # evaluate model
-            evaluate_return = self.evaluate_model(metrics=metrics, report_metric=report_metric, fit_return=fit_return,
-                                                  data_return=data_return, create_validation_set=create_validation_set,
-                                                  log_to_mlflow=log_to_mlflow, run_id=run_id, **kwargs)
+            evaluate_return = self._evaluate_model(metrics=metrics, report_metric=report_metric, fit_return=fit_return,
+                                                   data_return=data_return, create_validation_set=create_validation_set,
+                                                   log_to_mlflow=log_to_mlflow, run_id=run_id, **kwargs)
             results['evaluate_return'] = evaluate_return
 
         except Exception as exception:
@@ -588,7 +796,8 @@ class BaseExperiment:
             else:
                 return True
 
-    def log_run_start_params(self, run_id, **run_unique_params):
+    def _log_run_start_params(self, run_id, **run_unique_params):
+        """Log the parameters of the run to mlflow."""
         params_to_log = flatten_dict(run_unique_params).copy()
         params_to_log.update(dict(
             git_hash=get_git_revision_hash(),
@@ -612,7 +821,7 @@ class BaseExperiment:
         for tag, value in tags_to_log.items():
             mlflow_client.set_tag(run_id, tag, value)
 
-    def run_mlflow_and_train_model(self,
+    def _run_mlflow_and_train_model(self,
                                    n_jobs=1, create_validation_set=False,
                                    model_params=None,
                                    fit_params=None, return_results=False, clean_output_dir=True,
@@ -620,8 +829,9 @@ class BaseExperiment:
                                    experiment_name=None, mlflow_tracking_uri=None, check_if_exists=None,
                                    fn_to_train_model=None,
                                    **kwargs):
+        """Run the experiment using mlflow and train the model."""
         if fn_to_train_model is None:
-            fn_to_train_model = self.train_model
+            fn_to_train_model = self._train_model
         # get unique parameters for mlflow and check if the run already exists
         model_nickname = kwargs.get('model_nickname')
         model_params = model_params if model_params else self.models_params.get(model_nickname, {}).copy()
@@ -655,7 +865,7 @@ class BaseExperiment:
             run_id = run.info.run_id
 
         mlflow_client.update_run(run_id, status='RUNNING')
-        self.log_run_start_params(run_id, **run_unique_params)
+        self._log_run_start_params(run_id, **run_unique_params)
 
         if dataframe != None:
             # we reinsert the dataframe
@@ -671,7 +881,8 @@ class BaseExperiment:
                                  mlflow_tracking_uri=mlflow_tracking_uri, check_if_exists=check_if_exists,
                                  **run_unique_params)
 
-    def setup_dask(self, n_workers, cluster_type='local', address=None):
+    def _setup_dask(self, n_workers, cluster_type='local', address=None):
+        """Setup the dask cluster."""
         if address is not None:
             client = Client(address)
         else:
@@ -726,41 +937,185 @@ class BaseExperiment:
         client.forward_logging()
         return client
 
-    def run_openml_task_combination(self, model_nickname, seed_model, task_id,
-                                    task_fold=0, task_repeat=0, task_sample=0, run_id=None,
-                                    n_jobs=1, create_validation_set=False,
-                                    model_params=None,
-                                    fit_params=None, return_results=False, clean_output_dir=True,
-                                    log_to_mlflow=False,
-                                    experiment_name=None, mlflow_tracking_uri=None, check_if_exists=None,
+    def run_openml_task_combination(self, model_nickname: str, seed_model: int, task_id: int,
+                                    task_fold: int = 0, task_repeat: int = 0, task_sample: int = 0,
+                                    run_id: Optional[str] = None,
+                                    n_jobs: int = 1, create_validation_set: bool = False,
+                                    model_params: Optional[dict] = None,
+                                    fit_params: Optional[dict] = None, return_results: bool = False,
+                                    clean_output_dir: bool = True,
+                                    log_to_mlflow: bool = False,
+                                    experiment_name: Optional[str] = None, mlflow_tracking_uri: Optional[str] = None,
+                                    check_if_exists: Optional[bool] = None,
                                     **kwargs):
+        """Run the experiment using an OpenML task.
+
+        This function can be used to run the experiment using an OpenML task in an interactive way, without the need to
+        run the experiment.
+
+        Parameters
+        ----------
+        model_nickname :
+            The nickname of the model to be used in the experiment. It must be a key of the models_dict attribute.
+        seed_model :
+            The seed of the model to be used in the experiment.
+        task_id :
+            The id of the OpenML task.
+        task_fold :
+            The fold of the OpenML task.
+        task_repeat :
+            The repeat of the OpenML task.
+        task_sample :
+            The sample of the OpenML task.
+        run_id :
+            The run_id of the mlflow run.
+        n_jobs :
+            Number of threads/cores to be used by the model if it supports it.
+        create_validation_set :
+            If True, create a validation set.
+        model_params :
+            Dictionary with the parameters of the model. Defaults models_params defined at the initialization of the
+            class if None.
+        fit_params :
+            Dictionary with the parameters of the fit. Defaults fits_params defined at the initialization of the
+            class if None.
+        return_results :
+            If True, return the results of the experiment.
+        clean_output_dir :
+            If True, clean the output directory after the experiment.
+        log_to_mlflow :
+            If True, log the results to mlflow.
+        experiment_name :
+            The name of the experiment.
+        mlflow_tracking_uri :
+            The uri of the mlflow tracking server.
+        check_if_exists :
+            If True, check if the run already exists on mlflow.
+        kwargs :
+            Additional arguments from the experiment.
+
+        Returns
+        -------
+        results :
+            If return_results is True, return a dictionary with the results of the experiment, otherwise return True
+            if the experiment was successful and False otherwise. It still tries to return the results when
+            return_results is true and an exception is raised. The dictionary contains the following
+            keys:
+            data_return :
+                The data returned by the load_data method.
+            model :
+                The model returned by the get_model method.
+            metrics :
+                The metrics returned by the get_metrics method.
+            report_metric :
+                The report_metric returned by the get_metrics method.
+            fit_return :
+                The data returned by the fit_model method.
+            evaluate_return :
+                The data returned by the evaluate_model method.
+        """
         task_combination = dict(model_nickname=model_nickname, seed_model=seed_model, task_id=task_id,
                                 task_fold=task_fold, task_repeat=task_repeat, task_sample=task_sample,
                                 is_openml_task=True)
         task_combination.update(kwargs)
         if log_to_mlflow:
-            return self.run_mlflow_and_train_model(n_jobs=n_jobs, create_validation_set=create_validation_set,
-                                                   model_params=model_params, fit_params=fit_params,
-                                                   return_results=return_results, clean_output_dir=clean_output_dir,
-                                                   run_id=run_id, experiment_name=experiment_name,
-                                                   mlflow_tracking_uri=mlflow_tracking_uri,
-                                                   check_if_exists=check_if_exists,
-                                                   **task_combination)
-        return self.train_model(n_jobs=n_jobs, create_validation_set=create_validation_set,
-                                model_params=model_params, logging_to_mlflow=False,
-                                fit_params=fit_params, return_results=return_results, clean_output_dir=clean_output_dir,
-                                **task_combination)
+            return self._run_mlflow_and_train_model(n_jobs=n_jobs, create_validation_set=create_validation_set,
+                                                    model_params=model_params, fit_params=fit_params,
+                                                    return_results=return_results, clean_output_dir=clean_output_dir,
+                                                    run_id=run_id, experiment_name=experiment_name,
+                                                    mlflow_tracking_uri=mlflow_tracking_uri,
+                                                    check_if_exists=check_if_exists, **task_combination)
+        return self._train_model(n_jobs=n_jobs, create_validation_set=create_validation_set, model_params=model_params,
+                                 fit_params=fit_params, return_results=return_results,
+                                 clean_output_dir=clean_output_dir, logging_to_mlflow=False, **task_combination)
 
-    def run_openml_dataset_combination(self, model_nickname, seed_model, dataset_name_or_id, seed_dataset,
-                                       fold=0, run_id=None,
-                                       resample_strategy='k-fold_cv', n_folds=10, pct_test=0.2,
-                                       validation_resample_strategy='next_fold', pct_validation=0.1,
-                                       n_jobs=1, create_validation_set=False,
-                                       model_params=None,
-                                       fit_params=None, return_results=False, clean_output_dir=True,
-                                       log_to_mlflow=False,
-                                       experiment_name=None, mlflow_tracking_uri=None, check_if_exists=None,
+    def run_openml_dataset_combination(self, model_nickname: str, seed_model: int, dataset_name_or_id: str|int,
+                                       seed_dataset: int,
+                                       fold: int = 0, run_id: Optional[str] = None,
+                                       resample_strategy: str = 'k-fold_cv', n_folds: int = 10, pct_test: float = 0.2,
+                                       validation_resample_strategy: str = 'next_fold', pct_validation: float = 0.1,
+                                       n_jobs: int = 1, create_validation_set: bool = False,
+                                       model_params: Optional[dict] = None,
+                                       fit_params: Optional[dict] = None, return_results: bool = False,
+                                       clean_output_dir: bool = True,
+                                       log_to_mlflow: bool = False,
+                                       experiment_name: Optional[str] = None, mlflow_tracking_uri: Optional[str] = None,
+                                       check_if_exists: Optional[bool] = None,
                                        **kwargs):
+        """Run the experiment using an OpenML dataset.
+
+        This function can be used to run the experiment using an OpenML dataset in an interactive way, without the need
+        to run the experiment.
+
+        Parameters
+        ----------
+        model_nickname :
+            The nickname of the model to be used in the experiment. It must be a key of the models_dict attribute.
+        seed_model :
+            The seed of the model to be used in the experiment.
+        dataset_name_or_id :
+            The name or id of the OpenML dataset. If it is the name, it must be defined in our openml_tasks.csv file.
+        seed_dataset :
+            The seed of the dataset to be used in the experiment.
+        fold :
+            The fold of the OpenML dataset.
+        run_id :
+            The run_id of the mlflow run.
+        resample_strategy :
+            The resample strategy to be used in the experiment, it can be 'k-fold_cv' or 'hold_out'.
+        n_folds :
+            The number of folds to be used in the experiment.
+        pct_test :
+            The percentage of the test set.
+        validation_resample_strategy :
+            The resample strategy to be used in the validation set, it can be 'next_fold' or 'hold_out'.
+        pct_validation :
+            The percentage of the validation set.
+        n_jobs :
+            Number of threads/cores to be used by the model if it supports it.
+        create_validation_set :
+            If True, create a validation set.
+        model_params :
+            Dictionary with the parameters of the model. Defaults models_params defined at the initialization of the
+            class if None.
+        fit_params :
+            Dictionary with the parameters of the fit. Defaults fits_params defined at the initialization of the
+            class if None.
+        return_results :
+            If True, return the results of the experiment.
+        clean_output_dir :
+            If True, clean the output directory after the experiment.
+        log_to_mlflow :
+            If True, log the results to mlflow.
+        experiment_name :
+            The name of the experiment.
+        mlflow_tracking_uri :
+            The uri of the mlflow tracking server.
+        check_if_exists :
+            If True, check if the run already exists on mlflow.
+        kwargs :
+            Additional arguments from the experiment.
+
+        Returns
+        -------
+        results :
+            If return_results is True, return a dictionary with the results of the experiment, otherwise return True
+            if the experiment was successful and False otherwise. It still tries to return the results when
+            return_results is true and an exception is raised. The dictionary contains the following
+            keys:
+            data_return :
+                The data returned by the load_data method.
+            model :
+                The model returned by the get_model method.
+            metrics :
+                The metrics returned by the get_metrics method.
+            report_metric :
+                The report_metric returned by the get_metrics method.
+            fit_return :
+                The data returned by the fit_model method.
+            evaluate_return :
+                The data returned by the evaluate_model method.
+        """
         dataset_combination = dict(model_nickname=model_nickname, seed_model=seed_model,
                                    dataset_name_or_id=dataset_name_or_id,
                                    seed_dataset=seed_dataset, fold=fold, resample_strategy=resample_strategy,
@@ -769,28 +1124,109 @@ class BaseExperiment:
                                    pct_validation=pct_validation, is_openml_task=False)
         dataset_combination.update(kwargs)
         if log_to_mlflow:
-            return self.run_mlflow_and_train_model(n_jobs=n_jobs, create_validation_set=create_validation_set,
-                                                   model_params=model_params, fit_params=fit_params,
-                                                   return_results=return_results, clean_output_dir=clean_output_dir,
-                                                   run_id=run_id, experiment_name=experiment_name,
-                                                   mlflow_tracking_uri=mlflow_tracking_uri,
-                                                   check_if_exists=check_if_exists,
-                                                   **dataset_combination)
-        return self.train_model(n_jobs=n_jobs, create_validation_set=create_validation_set,
-                                model_params=model_params, logging_to_mlflow=False,
-                                fit_params=fit_params, return_results=return_results, clean_output_dir=clean_output_dir,
-                                **dataset_combination)
+            return self._run_mlflow_and_train_model(n_jobs=n_jobs, create_validation_set=create_validation_set,
+                                                    model_params=model_params, fit_params=fit_params,
+                                                    return_results=return_results, clean_output_dir=clean_output_dir,
+                                                    run_id=run_id, experiment_name=experiment_name,
+                                                    mlflow_tracking_uri=mlflow_tracking_uri,
+                                                    check_if_exists=check_if_exists, **dataset_combination)
+        return self._train_model(n_jobs=n_jobs, create_validation_set=create_validation_set, model_params=model_params,
+                                 fit_params=fit_params, return_results=return_results,
+                                 clean_output_dir=clean_output_dir, logging_to_mlflow=False, **dataset_combination)
 
-    def run_pandas_combination(self, model_nickname, seed_model, seed_dataset, dataframe, dataset_name, target, task,
-                               fold=0, run_id=None,
-                               resample_strategy='k-fold_cv', n_folds=10, pct_test=0.2,
-                               validation_resample_strategy='next_fold', pct_validation=0.1,
-                               n_jobs=1, create_validation_set=False,
-                               model_params=None,
-                               fit_params=None, return_results=False, clean_output_dir=True,
-                               log_to_mlflow=False,
-                               experiment_name=None, mlflow_tracking_uri=None, check_if_exists=None,
+    def run_pandas_combination(self, model_nickname: str, seed_model: int, seed_dataset: int, dataframe: pd.DataFrame,
+                               dataset_name: str, target: str, task: str,
+                               fold: int = 0, run_id: Optional[str] = None,
+                               resample_strategy: str = 'k-fold_cv', n_folds: int = 10, pct_test: float = 0.2,
+                               validation_resample_strategy: str = 'next_fold', pct_validation: float = 0.1,
+                               n_jobs: int = 1, create_validation_set: bool = False,
+                               model_params: Optional[dict] = None,
+                               fit_params: Optional[dict] = None, return_results: bool = False,
+                               clean_output_dir: bool = True,
+                               log_to_mlflow: bool = False,
+                               experiment_name: Optional[str] = None, mlflow_tracking_uri: Optional[str] = None,
+                               check_if_exists: Optional[bool] = None,
                                **kwargs):
+        """Run the experiment using an OpenML dataset.
+
+        This function can be used to run the experiment using an OpenML dataset in an interactive way, without the need
+        to run the experiment.
+
+        Parameters
+        ----------
+        model_nickname :
+            The nickname of the model to be used in the experiment. It must be a key of the models_dict attribute.
+        seed_model :
+            The seed of the model to be used in the experiment.
+        dataframe :
+            The dataframe to be used in the experiment.
+        dataset_name :
+            The name of the dataset to be used in the experiment.
+        target :
+            The name of the target in the dataframe.
+        task :
+            The task of the dataset, it can be 'classification', 'binary_classification' or 'regression'.
+        seed_dataset :
+            The seed of the dataset to be used in the experiment.
+        fold :
+            The fold of the OpenML dataset.
+        run_id :
+            The run_id of the mlflow run.
+        resample_strategy :
+            The resample strategy to be used in the experiment, it can be 'k-fold_cv' or 'hold_out'.
+        n_folds :
+            The number of folds to be used in the experiment.
+        pct_test :
+            The percentage of the test set.
+        validation_resample_strategy :
+            The resample strategy to be used in the validation set, it can be 'next_fold' or 'hold_out'.
+        pct_validation :
+            The percentage of the validation set.
+        n_jobs :
+            Number of threads/cores to be used by the model if it supports it.
+        create_validation_set :
+            If True, create a validation set.
+        model_params :
+            Dictionary with the parameters of the model. Defaults models_params defined at the initialization of the
+            class if None.
+        fit_params :
+            Dictionary with the parameters of the fit. Defaults fits_params defined at the initialization of the
+            class if None.
+        return_results :
+            If True, return the results of the experiment.
+        clean_output_dir :
+            If True, clean the output directory after the experiment.
+        log_to_mlflow :
+            If True, log the results to mlflow.
+        experiment_name :
+            The name of the experiment.
+        mlflow_tracking_uri :
+            The uri of the mlflow tracking server.
+        check_if_exists :
+            If True, check if the run already exists on mlflow.
+        kwargs :
+            Additional arguments from the experiment.
+
+        Returns
+        -------
+        results :
+            If return_results is True, return a dictionary with the results of the experiment, otherwise return True
+            if the experiment was successful and False otherwise. It still tries to return the results when
+            return_results is true and an exception is raised. The dictionary contains the following
+            keys:
+            data_return :
+                The data returned by the load_data method.
+            model :
+                The model returned by the get_model method.
+            metrics :
+                The metrics returned by the get_metrics method.
+            report_metric :
+                The report_metric returned by the get_metrics method.
+            fit_return :
+                The data returned by the fit_model method.
+            evaluate_return :
+                The data returned by the evaluate_model method.
+        """
         dataset_combination = dict(model_nickname=model_nickname, seed_model=seed_model,
                                    dataframe=dataframe, dataset_name=dataset_name, target=target, task=task,
                                    seed_dataset=seed_dataset, fold=fold, resample_strategy=resample_strategy,
@@ -799,26 +1235,26 @@ class BaseExperiment:
                                    pct_validation=pct_validation, is_openml_task=False)
         dataset_combination.update(kwargs)
         if log_to_mlflow:
-            return self.run_mlflow_and_train_model(n_jobs=n_jobs, create_validation_set=create_validation_set,
-                                                   model_params=model_params, fit_params=fit_params,
-                                                   return_results=return_results, clean_output_dir=clean_output_dir,
-                                                   run_id=run_id, experiment_name=experiment_name,
-                                                   mlflow_tracking_uri=mlflow_tracking_uri,
-                                                   check_if_exists=check_if_exists,
-                                                   **dataset_combination)
-        return self.train_model(n_jobs=n_jobs, create_validation_set=create_validation_set,
-                                model_params=model_params, logging_to_mlflow=False,
-                                fit_params=fit_params, return_results=return_results, clean_output_dir=clean_output_dir,
-                                **dataset_combination)
+            return self._run_mlflow_and_train_model(n_jobs=n_jobs, create_validation_set=create_validation_set,
+                                                    model_params=model_params, fit_params=fit_params,
+                                                    return_results=return_results, clean_output_dir=clean_output_dir,
+                                                    run_id=run_id, experiment_name=experiment_name,
+                                                    mlflow_tracking_uri=mlflow_tracking_uri,
+                                                    check_if_exists=check_if_exists, **dataset_combination)
+        return self._train_model(n_jobs=n_jobs, create_validation_set=create_validation_set, model_params=model_params,
+                                 fit_params=fit_params, return_results=return_results,
+                                 clean_output_dir=clean_output_dir, logging_to_mlflow=False, **dataset_combination)
 
-    def run_combination(self, *args, **kwargs):
+    def _run_combination(self, *args, **kwargs):
+        """Run the experiment using an OpenML task or an OpenML dataset."""
         is_openml_task = kwargs.get('is_openml_task', False)
         if is_openml_task:
             return self.run_openml_task_combination(*args, **kwargs)
         else:
             return self.run_openml_dataset_combination(*args, **kwargs)
 
-    def get_combinations(self):
+    def _get_combinations(self):
+        """Get the combinations of the experiment."""
         if self.using_own_resampling:
             # (model_nickname, seed_model, dataset_name_or_id, seed_dataset, fold)
             combinations = list(product(self.models_nickname, self.seeds_model, self.datasets_names_or_ids,
@@ -839,12 +1275,13 @@ class BaseExperiment:
                                  mlflow_tracking_uri=self.mlflow_tracking_uri, check_if_exists=self.check_if_exists))
         return combinations, extra_params
 
-    def create_mlflow_run(self, *args,
+    def _create_mlflow_run(self, *args,
                           create_validation_set=False,
                           model_params=None,
                           fit_params=None,
                           experiment_name=None, mlflow_tracking_uri=None, check_if_exists=None,
                           **kwargs):
+        """Create a mlflow run."""
         is_openml_task = kwargs.get('is_openml_task', False)
         if is_openml_task:
             model_nickname, seed_model, task_id, task_fold, task_repeat, task_sample = args
@@ -885,9 +1322,10 @@ class BaseExperiment:
             mlflow_client.update_run(run_id, status='SCHEDULED')
             return run_id
 
-    def run_experiment(self, client=None):
+    def _run_experiment(self, client=None):
+        """Run the experiment."""
 
-        combinations, extra_params = self.get_combinations()
+        combinations, extra_params = self._get_combinations()
         n_args = len(combinations[0])
 
         total_combinations = len(combinations)
@@ -900,12 +1338,12 @@ class BaseExperiment:
             # we will first create the mlflow runs to avoid threading problems
             if self.log_to_mlflow:
                 resources_per_task = {'processes': 1}
-                first_future = client.submit(self.create_mlflow_run, *first_args, resources=resources_per_task,
+                first_future = client.submit(self._create_mlflow_run, *first_args, resources=resources_per_task,
                                              pure=False, **extra_params)
                 futures = [first_future]
                 if total_combinations > 1:
                     time.sleep(5)
-                    other_futures = client.map(self.create_mlflow_run, *list_of_args, pure=False,
+                    other_futures = client.map(self._create_mlflow_run, *list_of_args, pure=False,
                                                batch_size=self.n_workers, resources=resources_per_task, **extra_params)
                     futures.extend(other_futures)
                 run_ids = client.gather(futures)
@@ -937,7 +1375,7 @@ class BaseExperiment:
                         worker = workers[worker_name]
                         combination = list(combinations[submitted_combinations])
                         key = '_'.join(str(arg) for arg in combination)
-                        future = client.submit(self.run_combination, *combination, pure=False, key=key,
+                        future = client.submit(self._run_combination, *combination, pure=False, key=key,
                                                resources=resources_per_task, workers=[worker_name], **extra_params)
                         future.worker = worker_name
                         futures.append(future)
@@ -978,9 +1416,9 @@ class BaseExperiment:
         else:
             progress_bar = tqdm(combinations, desc='Combinations completed')
             for combination in progress_bar:
-                run_id = self.create_mlflow_run(*combination, **extra_params)
+                run_id = self._create_mlflow_run(*combination, **extra_params)
                 combination_with_run_id = list(combination) + [run_id]
-                combination_success = self.run_combination(*combination_with_run_id, **extra_params)
+                combination_success = self._run_combination(*combination_with_run_id, **extra_params)
                 if combination_success is True:
                     n_combinations_successfully_completed += 1
                 elif combination_success is False:
@@ -992,7 +1430,8 @@ class BaseExperiment:
 
         return total_combinations, n_combinations_successfully_completed, n_combinations_failed, n_combinations_none
 
-    def get_kwargs_to_log_experiment(self):
+    def _get_kwargs_to_log_experiment(self):
+        """Get the kwargs to log the experiment."""
         kwargs_to_log = dict(experiment_name=self.experiment_name, models_nickname=self.models_nickname,
                              seeds_model=self.seeds_model)
         if self.using_own_resampling:
@@ -1006,7 +1445,8 @@ class BaseExperiment:
         return kwargs_to_log
 
     def run(self):
-        self.treat_parser()
+        """Run the entire pipeline."""
+        self._treat_parser()
         if self.datasets_names_or_ids is not None and self.tasks_ids is None:
             self.using_own_resampling = True
         elif self.datasets_names_or_ids is None and self.tasks_ids is not None:
@@ -1015,16 +1455,16 @@ class BaseExperiment:
             raise ValueError("You must provide either datasets_names_or_ids or tasks_ids, but not both.")
         self.output_dir = self.output_dir / self.experiment_name
         os.makedirs(self.output_dir, exist_ok=True)
-        self.setup_logger()
-        kwargs_to_log = self.get_kwargs_to_log_experiment()
+        self._setup_logger()
+        kwargs_to_log = self._get_kwargs_to_log_experiment()
         start_time = time.perf_counter()
         log_and_print_msg('Starting experiment...', **kwargs_to_log)
         if self.dask_cluster_type is not None:
-            client = self.setup_dask(self.n_workers, self.dask_cluster_type, self.dask_address)
+            client = self._setup_dask(self.n_workers, self.dask_cluster_type, self.dask_address)
         else:
             client = None
         total_combinations, n_combinations_successfully_completed, n_combinations_failed, n_combinations_none = (
-            self.run_experiment(client=client))
+            self._run_experiment(client=client))
         total_time = time.perf_counter() - start_time
         log_and_print_msg('Experiment finished!', total_elapsed_time=total_time,
                           total_combinations=total_combinations,
