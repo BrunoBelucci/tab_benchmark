@@ -456,7 +456,7 @@ class BaseExperiment:
             # because the workers will try to save the model in the same directory, so we must create a unique
             # directory for each combination model/dataset
             if data_params is not None:
-                unique_name = '_'.join([f'{k}={v}' for k, v in data_params.items()])
+                unique_name = '_'.join([f'{k}={v}' for k, v in data_params.items() if k != 'dataframe'])
             else:
                 # not sure, but I think it will generate a true random number and even be thread safe
                 unique_name = f'{SystemRandom().randint(0, 1000000):06d}'
@@ -532,10 +532,12 @@ class BaseExperiment:
             keys = ['task_id', 'task_repeat', 'task_fold', 'task_sample']
         else:
             if 'dataset_name_or_id' in kwargs:
-                keys = ['dataset_name_or_id', 'seed_dataset', 'resample_strategy', 'n_folds', 'fold', 'pct_test',
+                keys = ['dataset_name_or_id',
+                        'seed_dataset', 'resample_strategy', 'n_folds', 'fold', 'pct_test',
                         'validation_resample_strategy', 'pct_validation']
             else:
-                keys = ['dataframe', 'dataset_name', 'seed_dataset', 'resample_strategy', 'n_folds', 'fold', 'pct_test',
+                keys = ['dataframe', 'target', 'task', 'dataset_name',
+                        'seed_dataset', 'resample_strategy', 'n_folds', 'fold', 'pct_test',
                         'validation_resample_strategy', 'pct_validation']
         data_params = {key: kwargs.get(key) for key in keys}
         if is_openml_task:

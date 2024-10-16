@@ -134,17 +134,15 @@ def evaluate_model(model, eval_set, eval_name, metrics, report_metric=None, n_cl
 
 
 # just so we can reuse the same function for loading tasks from OpenML and from pandas
-def load_task_from_given_openml_dataset(dataset, target, n_classes, task_name, seed_dataset, resample_strategy, n_folds,
-                                        pct_test,
-                                        fold,
-                                        create_validation_set=False, validation_resample_strategy='next_fold',
-                                        pct_validation=0.1,
-                                        log_to_mlflow=False, run_id=None):
-    X, y, cat_ind, att_names = dataset.get_data(target=target)
+def load_task_from_X_y_cat_ind_att_names(X, y, cat_ind, att_names, dataset_name, n_classes, task_name, seed_dataset,
+                                         resample_strategy, n_folds, pct_test, fold,
+                                         create_validation_set=False, validation_resample_strategy='next_fold',
+                                         pct_validation=0.1,
+                                         log_to_mlflow=False, run_id=None):
     cat_features_names = [att_names[i] for i, value in enumerate(cat_ind) if value is True]
     cat_dims = [len(X[cat_feature].cat.categories) for cat_feature in cat_features_names]
     if resample_strategy == 'hold_out':
-        test_size = int(pct_test * len(dataset.qualities['NumberOfInstances']))
+        test_size = int(pct_test * len(X))
         if task_name in ('classification', 'binary_classification'):
             stratify = y
         elif task_name in ('regression', 'multi_regression'):
@@ -194,7 +192,7 @@ def load_task_from_given_openml_dataset(dataset, target, n_classes, task_name, s
     else:
         validation_indices = None
     if log_to_mlflow:
-        log_params = {'task_name': task_name, 'dataset_name': dataset.name}
+        log_params = {'task_name': task_name, 'dataset_name': dataset_name}
         mlflow.log_params(log_params, run_id=run_id)
     return (X, y, cat_ind, att_names, cat_features_names, cat_dims, task_name, n_classes, train_indices, test_indices,
             validation_indices)
@@ -204,10 +202,11 @@ def load_own_task(dataset_name_or_id, seed_dataset, resample_strategy, n_folds, 
                   create_validation_set=False, validation_resample_strategy='next_fold', pct_validation=0.1,
                   log_to_mlflow=False, run_id=None):
     dataset, task_name, target, n_classes = get_dataset(dataset_name_or_id)
-    return load_task_from_given_openml_dataset(dataset, target, n_classes, task_name, seed_dataset, resample_strategy,
-                                               n_folds,
-                                               pct_test, fold, create_validation_set, validation_resample_strategy,
-                                               pct_validation, log_to_mlflow, run_id)
+    X, y, cat_ind, att_names = dataset.get_data(target=target)
+    return load_task_from_X_y_cat_ind_att_names(X, y, cat_ind, att_names, dataset.name, n_classes, task_name,
+                                                seed_dataset, resample_strategy, n_folds,
+                                                pct_test, fold, create_validation_set, validation_resample_strategy,
+                                                pct_validation, log_to_mlflow, run_id)
 
 
 def load_openml_task(task_id, task_repeat, task_sample, task_fold, create_validation_set=False,
@@ -252,12 +251,15 @@ def load_pandas_task(dataframe, target, task, seed_dataset, resample_strategy, n
                      dataset_name='pandas_task',
                      create_validation_set=False, validation_resample_strategy='next_fold', pct_validation=0.1,
                      log_to_mlflow=False, run_id=None):
-    dataset = openml.datasets.create_dataset(data=dataframe, name=dataset_name, attributes='auto',
-                                             default_target_attribute=target,
-                                             description=None, creator=None, contributor=None, collection_date=None,
-                                             language=None, licence=None, ignore_attribute=None, citation='')
-    n_classes = dataset.qualities['NumberOfClasses']
-    return load_task_from_given_openml_dataset(dataset, target, n_classes, task, seed_dataset, resample_strategy,
-                                               n_folds,
-                                               pct_test, fold, create_validation_set, validation_resample_strategy,
-                                               pct_validation, log_to_mlflow, run_id)
+    X = dataframe.drop(columns=[target])
+    y = dataframe[target]
+    cat_ind = [True if X[feature].dtype.name == 'category' else False for feature in X.columns]
+    att_names = X.columns
+    if task in ('classification', 'binary_classification'):
+        n_classes = len(dataframe[target].unique())
+    else:
+        n_classes = 1
+    return load_task_from_X_y_cat_ind_att_names(X, y, cat_ind, att_names, dataset_name, n_classes, task, seed_dataset,
+                                                resample_strategy, n_folds,
+                                                pct_test, fold, create_validation_set, validation_resample_strategy,
+                                                pct_validation, log_to_mlflow, run_id)
