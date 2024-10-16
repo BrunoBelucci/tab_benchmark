@@ -462,6 +462,8 @@ class HPOExperiment(BaseExperiment):
             evaluate_return :
                 The data returned by the evaluate_model method.
         """
+        if create_validation_set is False:
+            raise NotImplementedError('HPOExperiment requires a validation set, please set create_validation_set=True')
         return super().run_openml_task_combination(model_nickname, seed_model, task_id,
                                                    task_fold=task_fold, task_repeat=task_repeat,
                                                    task_sample=task_sample, run_id=run_id,
@@ -578,6 +580,8 @@ class HPOExperiment(BaseExperiment):
             evaluate_return :
                 The data returned by the evaluate_model method.
         """
+        if create_validation_set is False:
+            raise NotImplementedError('HPOExperiment requires a validation set, please set create_validation_set=True')
         return super().run_openml_dataset_combination(model_nickname, seed_model, dataset_name_or_id, seed_dataset,
                                                       fold=fold, run_id=run_id, resample_strategy=resample_strategy,
                                                       n_folds=n_folds, pct_test=pct_test,
@@ -705,6 +709,8 @@ class HPOExperiment(BaseExperiment):
             evaluate_return :
                 The data returned by the evaluate_model method.
         """
+        if create_validation_set is False:
+            raise NotImplementedError('HPOExperiment requires a validation set, please set create_validation_set=True')
         return super().run_pandas_combination(model_nickname, seed_model, seed_dataset, dataframe, dataset_name, target,
                                               task, fold=fold, run_id=run_id, resample_strategy=resample_strategy,
                                               n_folds=n_folds, pct_test=pct_test,
