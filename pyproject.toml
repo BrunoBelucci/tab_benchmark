@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "tab_benchmark"
-version = "0.2"
+version = "0.1"
 description = """**tab_benchmark** is a Python package for benchmarking tabular data classification and regression
 models. It is
 designed to be easy to use and to work with a wide variety of classical and deep learning models. It is also designed
@@ -70,7 +70,6 @@ dependencies = [
     "distributed",
     "dask-jobqueue",
     "openml",
-    "ray[tune]",
     "optuna"
 ]
 
