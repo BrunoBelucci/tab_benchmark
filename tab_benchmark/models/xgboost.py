@@ -12,7 +12,7 @@ import numpy as np
 import optuna
 import pandas as pd
 from sklearn.base import BaseEstimator
-from tab_benchmark.models.mixins import TabBenchmarkModel, GBDTMixin, apply_signature, merge_signatures, \
+from tab_benchmark.models.mixins import TabBenchmarkModel, GBDTMixin, merge_and_apply_signature, merge_signatures, \
     n_estimators_gbdt, early_stopping_patience_gbdt
 from xgboost import XGBClassifier, XGBRegressor, XGBModel, collective
 from xgboost.callback import (TrainingCallback, _Model,
@@ -462,7 +462,7 @@ class XGBMixin(GBDTMixin):
 
 
 class TabBenchmarkXGBClassifier(XGBMixin, TabBenchmarkModel, XGBClassifier):
-    @apply_signature(merge_signatures(XGBModel.__init__, XGBMixin.__init__))
+    @merge_and_apply_signature(merge_signatures(XGBModel.__init__, XGBMixin.__init__))
     def __init__(
             self,
             *,
@@ -476,7 +476,7 @@ class TabBenchmarkXGBClassifier(XGBMixin, TabBenchmarkModel, XGBClassifier):
 
 
 class TabBenchmarkXGBRegressor(XGBMixin, TabBenchmarkModel, XGBRegressor):
-    @apply_signature(merge_signatures(XGBModel.__init__, XGBMixin.__init__))
+    @merge_and_apply_signature(merge_signatures(XGBModel.__init__, XGBMixin.__init__))
     def __init__(
             self,
             *,

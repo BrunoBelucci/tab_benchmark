@@ -39,12 +39,27 @@ def merge_signatures(*functions, repeated_parameters='keep_last'):
     return inspect.Signature(orderly_parameters)
 
 
-def apply_signature(signature):
+def change_default_parameter_value_from_signature(function, map_parameter_name_to_new_default):
+    signature = inspect.signature(function)
+    parameters = dict(signature.parameters)
+    for name, new_default in map_parameter_name_to_new_default.items():
+        if name in parameters:
+            parameter = parameters[name]
+            parameters[name] = parameter.replace(default=new_default)
+    return signature.replace(parameters=list(parameters.values()))
+
+
+def merge_and_apply_signature(signature_to_merge):
     def decorator(function):
+        signature = merge_signatures(signature_to_merge, function, repeated_parameters='keep_last')
+
         def wrapper(*args, **kwargs):
             bound_arguments = signature.bind(*args, **kwargs)
-            bound_arguments.apply_defaults()
-            return function(**bound_arguments.arguments)
+            param_names = list(signature.parameters.keys())
+            arguments = bound_arguments.kwargs
+            for i, arg in enumerate(bound_arguments.args):
+                arguments[param_names[i]] = arg
+            return function(**arguments)
 
         wrapper.__signature__ = signature
         return wrapper

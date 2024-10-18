@@ -10,7 +10,7 @@ from lightgbm import LGBMRegressor, LGBMClassifier
 from lightgbm.basic import _is_numpy_1d_array, _to_string, _NUMERIC_TYPES, _is_numeric, _log_info
 from lightgbm.callback import CallbackEnv, _EarlyStoppingCallback, _format_eval_result, EarlyStopException
 from tab_benchmark.models.mixins import n_estimators_gbdt, early_stopping_patience_gbdt, GBDTMixin, TabBenchmarkModel, \
-    merge_signatures, apply_signature
+    merge_signatures, merge_and_apply_signature
 from tab_benchmark.models.xgboost import remove_old_models
 import lightgbm.basic
 import optuna
@@ -358,7 +358,7 @@ class LGBMMixin(GBDTMixin):
 
 
 class TabBenchmarkLGBMClassifier(LGBMMixin, TabBenchmarkModel, LGBMClassifier):
-    @apply_signature(merge_signatures(LGBMClassifier.__init__, LGBMMixin.__init__))
+    @merge_and_apply_signature(merge_signatures(LGBMClassifier.__init__, LGBMMixin.__init__))
     def __init__(
             self,
             *,
@@ -372,7 +372,7 @@ class TabBenchmarkLGBMClassifier(LGBMMixin, TabBenchmarkModel, LGBMClassifier):
 
 
 class TabBenchmarkLGBMRegressor(LGBMMixin, TabBenchmarkModel, LGBMRegressor):
-    @apply_signature(merge_signatures(LGBMRegressor.__init__, LGBMMixin.__init__))
+    @merge_and_apply_signature(merge_signatures(LGBMRegressor.__init__, LGBMMixin.__init__))
     def __init__(
             self,
             *,
