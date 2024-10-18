@@ -1,4 +1,5 @@
 import datetime
+from inspect import signature
 import time
 from pathlib import Path
 from typing import Optional
@@ -254,7 +255,7 @@ class CatBoostMixin(GBDTMixin):
 
 
 class TabBenchmarkCatBoostRegressor(CatBoostMixin, TabBenchmarkModel, CatBoostRegressor):
-    @merge_and_apply_signature(merge_signatures(CatBoostRegressor.__init__, CatBoostMixin.__init__))
+    @merge_and_apply_signature(merge_signatures(signature(CatBoostRegressor.__init__), signature(CatBoostMixin.__init__)))
     def __init__(
             self,
             *,
@@ -270,7 +271,7 @@ class TabBenchmarkCatBoostRegressor(CatBoostMixin, TabBenchmarkModel, CatBoostRe
 
 
 class TabBenchmarkCatBoostClassifier(CatBoostMixin, TabBenchmarkModel, CatBoostClassifier):
-    @merge_and_apply_signature(merge_signatures(CatBoostClassifier.__init__, CatBoostMixin.__init__))
+    @merge_and_apply_signature(merge_signatures(signature(CatBoostClassifier.__init__), signature(CatBoostMixin.__init__)))
     def __init__(
             self,
             *,

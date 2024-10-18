@@ -1,4 +1,5 @@
 from __future__ import annotations
+from inspect import signature
 import datetime
 import os
 import pickle
@@ -462,7 +463,7 @@ class XGBMixin(GBDTMixin):
 
 
 class TabBenchmarkXGBClassifier(XGBMixin, TabBenchmarkModel, XGBClassifier):
-    @merge_and_apply_signature(merge_signatures(XGBModel.__init__, XGBMixin.__init__))
+    @merge_and_apply_signature(merge_signatures(signature(XGBModel.__init__), signature(XGBMixin.__init__)))
     def __init__(
             self,
             *,
@@ -476,7 +477,7 @@ class TabBenchmarkXGBClassifier(XGBMixin, TabBenchmarkModel, XGBClassifier):
 
 
 class TabBenchmarkXGBRegressor(XGBMixin, TabBenchmarkModel, XGBRegressor):
-    @merge_and_apply_signature(merge_signatures(XGBModel.__init__, XGBMixin.__init__))
+    @merge_and_apply_signature(merge_signatures(signature(XGBModel.__init__), signature(XGBMixin.__init__)))
     def __init__(
             self,
             *,

@@ -11,10 +11,10 @@ from tab_benchmark.preprocess import create_data_preprocess_pipeline, create_tar
 from tab_benchmark.utils import sequence_to_list
 
 
-def merge_signatures(*functions, repeated_parameters='keep_last'):
+def merge_signatures(*signatures, repeated_parameters='keep_last'):
     parameters = {}
-    for function in functions:
-        for name, parameter in inspect.signature(function).parameters.items():
+    for signature in signatures:
+        for name, parameter in signature.parameters.items():
             if name in parameters:
                 if repeated_parameters == 'keep_last':
                     parameters[name] = parameter
@@ -39,19 +39,9 @@ def merge_signatures(*functions, repeated_parameters='keep_last'):
     return inspect.Signature(orderly_parameters)
 
 
-def change_default_parameter_value_from_signature(function, map_parameter_name_to_new_default):
-    signature = inspect.signature(function)
-    parameters = dict(signature.parameters)
-    for name, new_default in map_parameter_name_to_new_default.items():
-        if name in parameters:
-            parameter = parameters[name]
-            parameters[name] = parameter.replace(default=new_default)
-    return signature.replace(parameters=list(parameters.values()))
-
-
 def merge_and_apply_signature(signature_to_merge):
     def decorator(function):
-        signature = merge_signatures(signature_to_merge, function, repeated_parameters='keep_last')
+        signature = merge_signatures(signature_to_merge, inspect.signature(function), repeated_parameters='keep_last')
 
         def wrapper(*args, **kwargs):
             bound_arguments = signature.bind(*args, **kwargs)
@@ -251,7 +241,8 @@ early_stopping_patience_gbdt = 100
 
 
 class GBDTMixin(EarlyStoppingMixin, PreprocessingMixin, TaskDependentParametersMixin):
-    @apply_signature(merge_signatures(PreprocessingMixin.__init__, EarlyStoppingMixin.__init__))
+    @merge_and_apply_signature(merge_signatures(inspect.signature(PreprocessingMixin.__init__),
+                                                inspect.signature(EarlyStoppingMixin.__init__)))
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.pruned_trial = False

@@ -1,4 +1,5 @@
 import datetime
+from inspect import signature
 import re
 import time
 from collections import defaultdict, OrderedDict
@@ -358,7 +359,7 @@ class LGBMMixin(GBDTMixin):
 
 
 class TabBenchmarkLGBMClassifier(LGBMMixin, TabBenchmarkModel, LGBMClassifier):
-    @merge_and_apply_signature(merge_signatures(LGBMClassifier.__init__, LGBMMixin.__init__))
+    @merge_and_apply_signature(merge_signatures(signature(LGBMClassifier.__init__), signature(LGBMMixin.__init__)))
     def __init__(
             self,
             *,
@@ -372,7 +373,7 @@ class TabBenchmarkLGBMClassifier(LGBMMixin, TabBenchmarkModel, LGBMClassifier):
 
 
 class TabBenchmarkLGBMRegressor(LGBMMixin, TabBenchmarkModel, LGBMRegressor):
-    @merge_and_apply_signature(merge_signatures(LGBMRegressor.__init__, LGBMMixin.__init__))
+    @merge_and_apply_signature(merge_signatures(signature(LGBMRegressor.__init__), signature(LGBMMixin.__init__)))
     def __init__(
             self,
             *,
