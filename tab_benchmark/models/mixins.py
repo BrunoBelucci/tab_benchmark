@@ -22,20 +22,36 @@ def merge_signatures(*signatures, repeated_parameters='keep_last'):
                     pass
             else:
                 parameters[name] = parameter
+    parameters_cp = deepcopy(parameters)
     # reorder parameters if needed
-    positional_only = [parameter for parameter in parameters.values() if parameter.kind == parameter.POSITIONAL_ONLY]
-    positional_or_keyword = [parameter for parameter in parameters.values()
-                             if parameter.kind == parameter.POSITIONAL_OR_KEYWORD]
-    var_positional = [parameter for parameter in parameters.values() if parameter.kind == parameter.VAR_POSITIONAL]
-    keyword_only = [parameter for parameter in parameters.values() if parameter.kind == parameter.KEYWORD_ONLY]
-    var_keyword = [parameter for parameter in parameters.values() if parameter.kind == parameter.VAR_KEYWORD]
+    positional_only = [parameters.pop(name) for name, parameter in parameters_cp.items()
+                       if parameter.kind == parameter.POSITIONAL_ONLY]
+    parameters_cp = deepcopy(parameters)  # update parameters_cp
+    positional_or_keyword_without_default = [parameters.pop(name) for name, parameter in parameters_cp.items()
+                                             if parameter.kind == parameter.POSITIONAL_OR_KEYWORD and
+                                             parameter.default == parameter.empty]
+    parameters_cp = deepcopy(parameters)  # update parameters_cp
+    positional_or_keyword_with_default = [parameters.pop(name) for name, parameter in parameters_cp.items()
+                                          if parameter.kind == parameter.POSITIONAL_OR_KEYWORD and
+                                          parameter.default != parameter.empty]
+    parameters_cp = deepcopy(parameters)  # update parameters_cp
+    var_positional = [parameters.pop(name) for name, parameter in parameters_cp.items()
+                      if parameter.kind == parameter.VAR_POSITIONAL]
+    parameters_cp = deepcopy(parameters)  # update parameters_cp
+    keyword_only = [parameters.pop(name) for name, parameter in parameters_cp.items()
+                    if parameter.kind == parameter.KEYWORD_ONLY]
+    parameters_cp = deepcopy(parameters)  # update parameters_cp
+    var_keyword = [parameters.pop(name) for name, parameter in parameters_cp.items()
+                   if parameter.kind == parameter.VAR_KEYWORD]
     if repeated_parameters == 'keep_first':
         var_positional = var_positional[0] if var_positional else []
         var_keyword = [var_keyword[0]] if var_keyword else []
     else:
         var_positional = var_positional[-1] if var_positional else []
         var_keyword = [var_keyword[-1]] if var_keyword else []
-    orderly_parameters = positional_only + positional_or_keyword + var_positional + keyword_only + var_keyword
+        var_keyword = [var_keyword[-1]] if var_keyword else []
+    orderly_parameters = (positional_only + var_positional + positional_or_keyword_without_default
+                          + positional_or_keyword_with_default + keyword_only + var_keyword)
     return inspect.Signature(orderly_parameters)
 
 
@@ -44,7 +60,7 @@ def merge_and_apply_signature(signature_to_merge):
         signature = merge_signatures(signature_to_merge, inspect.signature(function), repeated_parameters='keep_last')
 
         def wrapper(*args, **kwargs):
-            bound_arguments = signature.bind(*args, **kwargs)
+            bound_arguments = signature.bind_partial(*args, **kwargs)
             param_names = list(signature.parameters.keys())
             arguments = bound_arguments.kwargs
             for i, arg in enumerate(bound_arguments.args):
@@ -53,6 +69,7 @@ def merge_and_apply_signature(signature_to_merge):
 
         wrapper.__signature__ = signature
         return wrapper
+
     return decorator
 
 
@@ -167,6 +184,7 @@ class PreprocessingMixin:
     continuous_target_type:
         Data type for target.
     """
+
     def __init__(
             self,
             *,
