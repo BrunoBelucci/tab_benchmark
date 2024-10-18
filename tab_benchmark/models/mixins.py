@@ -231,10 +231,16 @@ class PreprocessingMixin:
         return self.data_preprocess_pipeline_, self.target_preprocess_pipeline_
 
 
+n_estimators_gbdt = 10000
+early_stopping_patience_gbdt = 100
+
+
 class GBDTMixin(EarlyStoppingMixin, PreprocessingMixin, TaskDependentParametersMixin):
     @apply_signature(merge_signatures(PreprocessingMixin.__init__, EarlyStoppingMixin.__init__))
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        self.pruned_trial = False
+        self.reached_timeout = False
 
     def fit(
             self,
@@ -291,3 +297,13 @@ class TabBenchmarkModel(ABC):
 
     def before_fit(self, X, y, **kwargs):
         return X, y, kwargs
+
+    @staticmethod
+    @abstractmethod
+    def create_search_space():
+        raise NotImplementedError
+
+    @staticmethod
+    @abstractmethod
+    def get_recommended_params():
+        raise NotImplementedError

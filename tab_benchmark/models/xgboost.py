@@ -12,7 +12,8 @@ import numpy as np
 import optuna
 import pandas as pd
 from sklearn.base import BaseEstimator
-from tab_benchmark.models.mixins import TabBenchmarkModel, GBDTMixin, apply_signature, merge_signatures
+from tab_benchmark.models.mixins import TabBenchmarkModel, GBDTMixin, apply_signature, merge_signatures, \
+    n_estimators_gbdt, early_stopping_patience_gbdt
 from xgboost import XGBClassifier, XGBRegressor, XGBModel, collective
 from xgboost.callback import (TrainingCallback, _Model,
                               EarlyStopping as OriginalEarlyStopping, _Score, _ScoreList)
@@ -161,6 +162,7 @@ class TrainingCheckPoint(TrainingCallback):
                         model_to_save.save_model(path)
             self.epoch_counter = 0  # reset counter
         self.epoch_counter += 1
+        return False
 
 
 class TimerXGBoost(TrainingCallback):
@@ -414,6 +416,49 @@ class XGBMixin(GBDTMixin):
             )
 
         return params
+
+    @staticmethod
+    def create_search_space():
+        # In Well tunned...
+        # Not tunning n_estimators following discussion at
+        # https://openreview.net/forum?id=Fp7__phQszn&noteId=Z7Y_qxwDjiM
+        search_space = dict(
+            learning_rate=optuna.distributions.FloatDistribution(1e-3, 1.0, log=True),
+            reg_lambda=optuna.distributions.FloatDistribution(1e-10, 1.0, log=True),
+            reg_alpha=optuna.distributions.FloatDistribution(1e-10, 1.0, log=True),
+            gamma=optuna.distributions.FloatDistribution(1e-1, 1.0, log=True),
+            colsample_bylevel=optuna.distributions.FloatDistribution(0.1, 1.0),
+            colsample_bynode=optuna.distributions.FloatDistribution(0.1, 1.0),
+            colsample_bytree=optuna.distributions.FloatDistribution(0.1, 1.0),
+            max_depth=optuna.distributions.IntDistribution(1, 20),
+            max_delta_step=optuna.distributions.IntDistribution(0, 10),
+            min_child_weight=optuna.distributions.FloatDistribution(0.1, 20.0, log=True),
+            subsample=optuna.distributions.FloatDistribution(0.01, 1.0),
+        )
+        default_values = dict(
+            learning_rate=0.3,
+            reg_lambda=1.0,
+            reg_alpha=1e-10,
+            gamma=1e-1,
+            colsample_bylevel=1.0,
+            colsample_bynode=1.0,
+            colsample_bytree=1.0,
+            max_depth=6,
+            max_delta_step=0,
+            min_child_weight=1.0,
+            subsample=1.0,
+        )
+        return search_space, default_values
+
+    @staticmethod
+    def get_recommended_params():
+        default_values_from_search_space = XGBMixin.create_search_space()[1]
+        default_values_from_search_space.update(dict(
+            n_estimators=n_estimators_gbdt,
+            auto_early_stopping=True,
+            early_stopping_patience=early_stopping_patience_gbdt,
+        ))
+        return default_values_from_search_space
 
 
 class TabBenchmarkXGBClassifier(XGBMixin, TabBenchmarkModel, XGBClassifier):
