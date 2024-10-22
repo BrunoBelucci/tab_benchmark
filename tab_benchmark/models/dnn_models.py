@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from copy import deepcopy
 from functools import partial
 from inspect import signature, Signature
@@ -5,6 +7,7 @@ from pathlib import Path
 from typing import Optional
 from warnings import warn
 
+import cloudpickle
 import mlflow
 import pandas as pd
 import torch
@@ -21,7 +24,8 @@ from tab_benchmark.dnns.utils.external.node.lib.facebook_optimizer.optimizer imp
 from tab_benchmark.models.dnn_model import DNNModel
 from tab_benchmark.models.mixins import (EarlyStoppingMixin, PreprocessingMixin, TaskDependentParametersMixin,
                                          TabBenchmarkModel, merge_signatures, merge_and_apply_signature)
-from tab_benchmark.utils import sequence_to_list
+from tab_benchmark.utils import sequence_to_list, get_default_tag, get_formated_file_path, get_most_recent_file_path
+
 early_stopping_patience_dnn = 40
 max_epochs_dnn = 300
 
@@ -182,6 +186,25 @@ def dnn_factory(architecture_cls, create_search_space_fn, get_recommended_params
         def get_recommended_params():
             return get_recommended_params_fn()
 
+        def save_model(self, save_dir: [Path | str] = None, tag: Optional[str] = None) -> Path:
+            prefix = self.__class__.__name__ + '_dnn'
+            ext = 'pt'
+            if tag is None:
+                tag = get_default_tag()
+            file_path = get_formated_file_path(save_dir, prefix, ext, tag)
+            torch.save(self, file_path, pickle_module=cloudpickle)
+            return super().save_model(save_dir, tag)
+
+        def load_model(self, save_dir: Path | str = None, tag: Optional[str] = None):
+            prefix = self.__class__.__name__ + '_dnn'
+            ext = 'pt'
+            if tag is None:
+                tag = get_default_tag()
+            file_path = get_most_recent_file_path(save_dir, prefix, ext, tag)
+            self = torch.load(file_path)
+            return super().load_model(save_dir, tag)
+
+    TabBenchmarkDNN.__name__ = f'TabBenchmark{architecture_cls.__name__}'
     return TabBenchmarkDNN
 
 

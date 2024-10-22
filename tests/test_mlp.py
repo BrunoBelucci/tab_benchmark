@@ -1,5 +1,6 @@
 import pytest
-from tests.utils import generate_data_interesting_parameters, _test_fit_fn, _test_predict_fn, _test_predict_proba_fn
+from tests.utils import generate_data_interesting_parameters, _test_fit_fn, _test_predict_fn, _test_predict_proba_fn, \
+    _test_save_and_load_model_fn
 from tab_benchmark.models.dnn_models import TabBenchmarkMLP
 
 
@@ -26,3 +27,7 @@ def test_predict_proba_classifier(task, tmp_path):
     kwargs['output_dir'] = tmp_path
     _test_predict_proba_fn(classifier, kwargs, task)
 
+
+@pytest.mark.parametrize("task", ['classification', 'binary_classification', 'regression', 'multi_regression'])
+def test_save_and_load_model(task, tmp_path):
+    _test_save_and_load_model_fn(classifier, kwargs, task, tmp_path)

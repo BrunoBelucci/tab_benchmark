@@ -54,7 +54,6 @@ def sklearn_factory(sklearn_cls):
             file_path = get_formated_file_path(save_dir, prefix, ext, tag)
             with open(file_path, 'wb') as file:
                 cloudpickle.dump(self, file)
-            #joblib.dump(self, file_path)
             return super().save_model(save_dir, tag)
 
         def load_model(self, save_dir: Path | str = None, tag: Optional[str] = None):
@@ -65,9 +64,9 @@ def sklearn_factory(sklearn_cls):
             file_path = get_most_recent_file_path(save_dir, prefix, ext, tag)
             with open(file_path, 'rb') as file:
                 self = cloudpickle.load(file)
-            # self = joblib.load(file_path)
             return super().load_model(save_dir, tag)
 
+    TabBenchmarkSklearn.__name__ = f'TabBenchmark{sklearn_cls.__name__}'
     return TabBenchmarkSklearn
 
 # Linear models
