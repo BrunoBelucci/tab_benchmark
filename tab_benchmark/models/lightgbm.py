@@ -353,7 +353,7 @@ class LGBMMixin(GBDTMixin):
 
     @staticmethod
     def get_recommended_params():
-        default_values_from_search_space = LGBMMixin.create_search_space_lgbm()[1]
+        default_values_from_search_space = LGBMMixin.create_search_space()[1]
         default_values_from_search_space.update(dict(
             n_estimators=n_estimators_gbdt,
             auto_early_stopping=True,

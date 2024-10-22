@@ -6,7 +6,6 @@ from inspect import signature, Signature
 from pathlib import Path
 from typing import Optional
 from warnings import warn
-
 import cloudpickle
 import mlflow
 import pandas as pd
@@ -245,7 +244,8 @@ def get_recommended_params_dnn(create_search_space_dnn_fn):
     return default_values_from_search_space
 
 
-TabBenchmarkMLP = dnn_factory(MLP, create_search_space_mlp, get_recommended_params_dnn)
+TabBenchmarkMLP = dnn_factory(MLP, create_search_space_mlp, partial(get_recommended_params_dnn,
+                                                                    create_search_space_mlp))
 
 
 def create_search_space_resnet():
@@ -277,7 +277,8 @@ def create_search_space_resnet():
     return search_space, default_values
 
 
-TabBenchmarkResNet = dnn_factory(ResNet, create_search_space_resnet, get_recommended_params_dnn)
+TabBenchmarkResNet = dnn_factory(ResNet, create_search_space_resnet, partial(get_recommended_params_dnn,
+                                                                             create_search_space_resnet))
 
 
 def create_search_space_transformer():
@@ -305,7 +306,8 @@ def create_search_space_transformer():
     return search_space, default_values
 
 
-TabBenchmarkTransformer = dnn_factory(Transformer, create_search_space_transformer, get_recommended_params_dnn)
+TabBenchmarkTransformer = dnn_factory(Transformer, create_search_space_transformer,
+                                      partial(get_recommended_params_dnn, create_search_space_transformer))
 
 
 class NodeMixin(DNNMixin):
@@ -335,7 +337,8 @@ def create_search_space_node():
     return search_space, default_values
 
 
-TabBenchmarkNode = dnn_factory(Node, create_search_space_transformer, get_recommended_params_dnn, NodeMixin)
+TabBenchmarkNode = dnn_factory(Node, create_search_space_transformer,
+                               partial(get_recommended_params_dnn, create_search_space_node), NodeMixin)
 
 
 class TabTransformetSaintMixin(DNNMixin):
@@ -375,9 +378,12 @@ def create_search_space_saint():
     return search_space, default_values
 
 
-TabBenchmarkSaint = dnn_factory(Saint, create_search_space_saint, get_recommended_params_dnn, TabTransformetSaintMixin)
+TabBenchmarkSaint = dnn_factory(Saint, create_search_space_saint,
+                                partial(get_recommended_params_dnn, create_search_space_saint),
+                                TabTransformetSaintMixin)
 
-TabBenchmarkTabTransformer = dnn_factory(TabTransformer, create_search_space_saint, get_recommended_params_dnn,
+TabBenchmarkTabTransformer = dnn_factory(TabTransformer, create_search_space_saint,
+                                         partial(get_recommended_params_dnn, create_search_space_saint),
                                          TabTransformetSaintMixin)
 
 
@@ -444,4 +450,5 @@ def create_search_space_tabnet():
     return search_space, default_values
 
 
-TabBenchmarkTabNet = dnn_factory(TabNet, create_search_space_tabnet, get_recommended_params_dnn, TabNetMixin)
+TabBenchmarkTabNet = dnn_factory(TabNet, create_search_space_tabnet,
+                                 partial(get_recommended_params_dnn, create_search_space_tabnet), TabNetMixin)

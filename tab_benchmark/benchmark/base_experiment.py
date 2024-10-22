@@ -1,6 +1,7 @@
 from __future__ import annotations
 import argparse
 import shlex
+import tempfile
 import time
 from multiprocessing import cpu_count
 from pathlib import Path
@@ -595,7 +596,8 @@ class BaseExperiment:
             raise NotImplementedError
         return metrics, report_metric
 
-    def _fit_model(self, model, fit_params, data_return, metrics, report_metric, **kwargs):
+    def _fit_model(self, model, fit_params, data_return, metrics, report_metric, log_to_mlflow=False, run_id=None,
+                   **kwargs):
         """Fit the model to the data.
 
         Parameters
@@ -670,6 +672,16 @@ class BaseExperiment:
             **fit_params)
         fit_return = dict(model=model, X_train=X_train, y_train=y_train, X_test=X_test, y_test=y_test,
                           X_validation=X_validation, y_validation=y_validation)
+        if self.save_dir:
+            if log_to_mlflow:
+                # will log the model to mlflow artifacts
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    temp_dir = Path(temp_dir)
+                    model.save_model(temp_dir)
+                    mlflow.log_artifacts(str(temp_dir.resolve()), artifact_path='model', run_id=run_id)
+            else:
+                # will log the model directly to the save_dir
+                model.save(self.save_dir)
         return fit_return
 
     def _evaluate_model(self, metrics, report_metric, fit_return, data_return, create_validation_set=False,
@@ -806,7 +818,8 @@ class BaseExperiment:
 
             # fit model
             fit_return = self._fit_model(model=model, fit_params=fit_params, data_return=data_return, metrics=metrics,
-                                         report_metric=report_metric, **kwargs)
+                                         report_metric=report_metric, log_to_mlflow=log_to_mlflow, run_id=run_id,
+                                         **kwargs)
             results['fit_return'] = fit_return
 
             # evaluate model
