@@ -18,7 +18,8 @@ from tab_benchmark.models.mixins import TabBenchmarkModel, GBDTMixin, merge_and_
 from xgboost import XGBClassifier, XGBRegressor, XGBModel, collective
 from xgboost.callback import (TrainingCallback, _Model,
                               EarlyStopping as OriginalEarlyStopping, _Score, _ScoreList)
-from tab_benchmark.utils import get_metric_fn, flatten_dict
+from tab_benchmark.utils import get_metric_fn, flatten_dict, get_default_tag, get_formated_file_path, \
+    get_most_recent_file_path
 
 
 def remove_old_models(path, name, extension, save_top_k):
@@ -460,6 +461,22 @@ class XGBMixin(GBDTMixin):
             early_stopping_patience=early_stopping_patience_gbdt,
         ))
         return default_values_from_search_space
+
+    def save_model(self, save_dir: [Path | str] = None, tag: Optional[str] = None) -> Path:
+        prefix = self.__class__.__name__ + '_xgb'
+        ext = 'json'
+        if tag is None:
+            tag = get_default_tag()
+        file_path = get_formated_file_path(save_dir, prefix, ext, tag)
+        XGBModel.save_model(self, file_path)
+        return super().save_model(save_dir, tag)
+
+    def load_model(self, save_dir: Path | str = None, tag: Optional[str] = None) -> None:
+        prefix = self.__class__.__name__ + '_xgb'
+        ext = 'json'
+        file_path = get_most_recent_file_path(save_dir, prefix, ext, tag)
+        XGBModel.load_model(self, file_path)
+        return super().load_model(save_dir, tag)
 
 
 class TabBenchmarkXGBClassifier(XGBMixin, TabBenchmarkModel, XGBClassifier):

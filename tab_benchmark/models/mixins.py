@@ -1,5 +1,6 @@
 from __future__ import annotations
 import inspect
+import json
 from abc import ABC, abstractmethod
 from copy import deepcopy
 from pathlib import Path
@@ -7,8 +8,9 @@ from typing import Optional, Sequence
 from warnings import warn
 import optuna
 import pandas as pd
+import joblib
 from tab_benchmark.preprocess import create_data_preprocess_pipeline, create_target_preprocess_pipeline
-from tab_benchmark.utils import sequence_to_list
+from tab_benchmark.utils import sequence_to_list, get_default_tag, get_formated_file_path, get_most_recent_file_path
 
 
 def merge_signatures(*signatures, repeated_parameters='keep_last'):
@@ -253,6 +255,45 @@ class PreprocessingMixin:
         )
         return self.data_preprocess_pipeline_, self.target_preprocess_pipeline_
 
+    def save_model(self, save_dir: [Path | str] = None, tag: Optional[str] = None) -> Path:
+        prefix = self.__class__.__name__ + '_data_preprocess_pipeline'
+        ext = 'joblib'
+        file_path_data_preprocess_pipeline = get_formated_file_path(save_dir, prefix, ext, tag)
+        prefix = self.__class__.__name__ + '_target_preprocess_pipeline'
+        file_path_target_preprocess_pipeline = get_formated_file_path(save_dir, prefix, ext, tag)
+        self._save_preprocess_pipeline(file_path_data_preprocess_pipeline, file_path_target_preprocess_pipeline)
+        return super().save_model(save_dir, tag)
+
+    def _save_preprocess_pipeline(self, data_preprocess_pipeline_path: Path | str,
+                                  target_preprocess_pipeline_path: Path | str) -> None:
+        """Save the preprocess pipeline to a file in the output_dir."""
+        if self.data_preprocess_pipeline_ is not None:
+            with open(data_preprocess_pipeline_path, 'wb') as file:
+                joblib.dump(self.data_preprocess_pipeline_, file)
+        if self.target_preprocess_pipeline_ is not None:
+            with open(target_preprocess_pipeline_path, 'wb') as file:
+                joblib.dump(self.target_preprocess_pipeline_, file)
+
+    def load_model(self, save_dir: Path | str = None, tag: Optional[str] = None):
+        prefix = self.__class__.__name__ + '_data_preprocess_pipeline'
+        ext = 'joblib'
+        most_recent_data_preprocess_pipeline_path = get_most_recent_file_path(save_dir, prefix, ext, tag)
+        prefix = self.__class__.__name__ + '_target_preprocess_pipeline'
+        most_recent_target_preprocess_pipeline_path = get_most_recent_file_path(save_dir, prefix, ext, tag)
+        self._load_preprocess_pipeline(most_recent_data_preprocess_pipeline_path,
+                                       most_recent_target_preprocess_pipeline_path)
+        return super().load_model(save_dir, tag)
+
+    def _load_preprocess_pipeline(self, data_preprocess_pipeline_path: Path | str,
+                                  target_preprocess_pipeline_path: Path | str) -> None:
+        """Load the preprocess pipeline from a file in the output_dir."""
+        if data_preprocess_pipeline_path.exists():
+            with open(data_preprocess_pipeline_path, 'rb') as file:
+                self.data_preprocess_pipeline = joblib.load(file)
+        if target_preprocess_pipeline_path.exists():
+            with open(target_preprocess_pipeline_path, 'rb') as file:
+                self.target_preprocess_pipeline = joblib.load(file)
+
 
 n_estimators_gbdt = 10000
 early_stopping_patience_gbdt = 100
@@ -331,3 +372,38 @@ class TabBenchmarkModel(ABC):
     @abstractmethod
     def get_recommended_params():
         raise NotImplementedError
+
+    @abstractmethod
+    def save_model(self, save_dir: [Path | str] = None, tag: Optional[str] = None) -> Path:
+        prefix = self.__class__.__name__ + '_serializable'
+        ext = 'json'
+        file_path = get_formated_file_path(save_dir, prefix, ext, tag)
+        self._save_serializable(file_path)
+        return file_path
+
+    @abstractmethod
+    def load_model(self, save_dir: Path | str = None, tag: Optional[str] = None):
+        prefix = self.__class__.__name__ + '_serializable'
+        ext = 'json'
+        most_recent_serializable_path = get_most_recent_file_path(save_dir, prefix, ext, tag)
+        self._load_serializable(most_recent_serializable_path)
+        return self
+
+    def _save_serializable(self, serializable_path: Path | str) -> None:
+        """Save every serializable attribute of the model to a file in the serializable_path."""
+        serializable_att = vars(self).copy()
+        for key, value in serializable_att.copy().items():
+            with open(serializable_path, 'w') as file:
+                try:
+                    json.dump(value, file)
+                except TypeError:
+                    serializable_att.pop(key, None)
+        with open(serializable_path, 'w') as file:
+            json.dump(serializable_att, file)
+
+    def _load_serializable(self, serializable_path: Path | str) -> None:
+        """Load every serializable attribute of the model from a file in the serializable_path."""
+        with open(serializable_path, 'r') as file:
+            serializable_att = json.load(file)
+        for key, value in serializable_att.items():
+            setattr(self, key, value)
