@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import datetime
 from inspect import signature
 import time
@@ -5,11 +7,11 @@ from pathlib import Path
 from typing import Optional
 import mlflow
 import pandas as pd
-from catboost import CatBoostRegressor, CatBoostClassifier
+from catboost import CatBoostRegressor, CatBoostClassifier, CatBoost
 from tab_benchmark.models.mixins import n_estimators_gbdt, early_stopping_patience_gbdt, GBDTMixin, TabBenchmarkModel, \
     merge_signatures, merge_and_apply_signature
 import optuna
-from tab_benchmark.utils import flatten_dict
+from tab_benchmark.utils import flatten_dict, get_default_tag, get_formated_file_path, get_most_recent_file_path
 
 
 class ReportToOptunaCatboost:
@@ -252,6 +254,22 @@ class CatBoostMixin(GBDTMixin):
         self._output_dir = value
         if value is not None:
             self.set_params(**{'train_dir': value})
+
+    def save_model(self, save_dir: Path | str = None, tag: Optional[str] = None) -> Path:
+        prefix = self.__class__.__name__ + '_catboost'
+        ext = 'cbm'
+        if tag is None:
+            tag = get_default_tag()
+        file_path = get_formated_file_path(save_dir, prefix, ext, tag)
+        CatBoost.save_model(self, file_path, format='cbm')
+        return super().save_model(save_dir, tag)
+
+    def load_model(self, save_dir: Path | str = None, tag: Optional[str] = None) -> None:
+        prefix = self.__class__.__name__ + '_catboost'
+        ext = 'cbm'
+        file_path = get_most_recent_file_path(save_dir, prefix, ext, tag)
+        CatBoost.load_model(self, file_path, format='cbm')
+        return super().load_model(save_dir, tag)
 
 
 class TabBenchmarkCatBoostRegressor(CatBoostMixin, TabBenchmarkModel, CatBoostRegressor):

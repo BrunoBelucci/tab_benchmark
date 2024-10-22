@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import datetime
 from inspect import signature
 import re
@@ -15,6 +17,8 @@ from tab_benchmark.models.mixins import n_estimators_gbdt, early_stopping_patien
 from tab_benchmark.models.xgboost import remove_old_models
 import lightgbm.basic
 import optuna
+import joblib
+from tab_benchmark.utils import get_default_tag, get_formated_file_path, get_most_recent_file_path
 
 
 # Monkey patching the lightgbm to support nested dictionaries
@@ -356,6 +360,22 @@ class LGBMMixin(GBDTMixin):
             early_stopping_patience=early_stopping_patience_gbdt,
         ))
         return default_values_from_search_space
+
+    def save_model(self, save_dir: [Path | str] = None, tag: Optional[str] = None) -> Path:
+        prefix = self.__class__.__name__ + '_lgbm'
+        ext = 'joblib'
+        if tag is None:
+            tag = get_default_tag()
+        file_path = get_formated_file_path(save_dir, prefix, ext, tag)
+        joblib.dump(self, file_path)
+        return super().save_model(save_dir, tag)
+
+    def load_model(self, save_dir: Path | str = None, tag: Optional[str] = None) -> None:
+        prefix = self.__class__.__name__ + '_lgbm'
+        ext = 'joblib'
+        file_path = get_most_recent_file_path(save_dir, prefix, ext, tag)
+        self = joblib.load(file_path)
+        return super().load_model(save_dir, tag)
 
 
 class TabBenchmarkLGBMClassifier(LGBMMixin, TabBenchmarkModel, LGBMClassifier):
