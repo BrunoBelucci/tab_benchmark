@@ -159,3 +159,29 @@ def _test_predict_proba_fn(model_class, model_kwargs, task):
     y_pred_1 = model.predict_proba(X_test)
     y_pred_2 = model.predict_proba(X_test)
     assert np.isclose(y_pred_1, y_pred_2).all()
+
+
+def _test_save_and_load_model_fn(model_class, model_kwargs, task, tmp_path):
+    if task == 'classification':
+        n_classes = 5
+    elif task == 'binary_classification':
+        n_classes = 2
+    elif task == 'regression':
+        n_classes = 1
+    elif task == 'multi_regression':
+        n_classes = 3
+    else:
+        raise ValueError('Unknown task')
+    X, y, cat_features_idx, cat_features_names, cont_features_names, orderly_features_names = generate_data(10, 5, 100,
+                                                                                                            n_classes,
+                                                                                                            10, task)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    model, X_test, y_test = fit_model(model_class, model_kwargs, X_train, y_train, cat_features_names,
+                                      cont_features_names,
+                                      orderly_features_names, task, X_test, y_test)
+    y_pred_1 = model.predict(X_test)
+    model.save_model(tmp_path)
+    model_loaded = model_class(**model_kwargs)
+    model_loaded = model_loaded.load_model(tmp_path)
+    y_pred_2 = model_loaded.predict(X_test)
+    assert np.isclose(y_pred_1.astype(float), y_pred_2.astype(float)).all()

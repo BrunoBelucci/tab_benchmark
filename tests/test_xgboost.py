@@ -1,10 +1,12 @@
 import pytest
-from tests.utils import generate_data_interesting_parameters, _test_fit_fn, _test_predict_fn, _test_predict_proba_fn
+from tests.utils import generate_data_interesting_parameters, _test_fit_fn, _test_predict_fn, _test_predict_proba_fn, \
+    _test_save_and_load_model_fn
 from tab_benchmark.models.xgboost import TabBenchmarkXGBClassifier, TabBenchmarkXGBRegressor
 
 
 classifier = TabBenchmarkXGBClassifier
 regressor = TabBenchmarkXGBRegressor
+kwargs = {}
 
 
 @pytest.mark.parametrize("n_features, n_cat_features, samples, n_classes, max_cat_dim, task",
@@ -33,3 +35,12 @@ def test_predict_classifier(task, tmp_path):
 def test_predict_proba_classifier(task, tmp_path):
     _test_predict_proba_fn(classifier, {}, task)
 
+
+@pytest.mark.parametrize("task", ['classification', 'binary_classification'])
+def test_save_and_load_model_classifier(task, tmp_path):
+    _test_save_and_load_model_fn(classifier, kwargs, task, tmp_path)
+
+
+@pytest.mark.parametrize("task", ['regression', 'multi_regression'])
+def test_save_and_load_model_regressor(task, tmp_path):
+    _test_save_and_load_model_fn(regressor, kwargs, task, tmp_path)

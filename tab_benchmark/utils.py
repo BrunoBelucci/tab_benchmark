@@ -1,11 +1,12 @@
 from __future__ import annotations
-
 import gc
 import subprocess
+import time
 import warnings
 from copy import copy
 from functools import partial
 from inspect import signature, Parameter
+from pathlib import Path
 from typing import Sequence, Optional
 import numpy as np
 import random
@@ -15,6 +16,43 @@ from lightning.pytorch.utilities.memory import is_cuda_out_of_memory, is_cudnn_s
 from sklearn.metrics import mean_squared_error, root_mean_squared_error, log_loss, roc_auc_score, r2_score, \
     mean_absolute_error, mean_absolute_percentage_error, accuracy_score, balanced_accuracy_score, f1_score
 from sklearn.model_selection import train_test_split
+
+
+def get_most_recent_file_path(directory: str | Path, prefix: Optional[str] = None, ext: Optional[str] = None,
+                              tag: Optional[str] = None):
+    prefix = prefix or ''
+    ext = ext or ''
+    if isinstance(directory, str):
+        directory = Path(directory)
+    if tag is None:
+        tag = get_default_tag(only_pattern=True)
+        file_name = prefix + '_' + tag + '.' + ext
+        most_recent_path = sorted(directory.glob(file_name))[-1]
+    else:
+        file_name = prefix + '_' + tag + '.' + ext
+        most_recent_path = directory / file_name
+        if not most_recent_path.exists():
+            raise FileNotFoundError(f'File {file_name} not found in {directory}.')
+    return most_recent_path
+
+
+def get_formated_file_path(save_dir: str | Path, prefix: Optional[str] = None, ext: Optional[str] = None,
+                           tag: Optional[str] = None):
+    if isinstance(save_dir, str):
+        save_dir = Path(save_dir)
+    if tag is None:
+        tag = get_default_tag()
+    file_name = f'{prefix}_{tag}.{ext}'
+    file_path = save_dir / file_name
+    return file_path
+
+
+def get_default_tag(only_pattern=False):
+    time_saved = time.localtime()[:6]
+    if only_pattern:
+        return '????_??_??_??h??min??s'
+    else:
+        return '{:4d}_{:02d}_{:02d}_{:02d}h{:02d}min{:02d}s'.format(*time_saved)
 
 
 def clear_memory():
@@ -253,7 +291,6 @@ def get_git_revision_hash() -> str:
 
 
 def extends(fn_being_extended, map_default_values_change=None, additional_params=None, exclude_params=None):
-
     exclude_params = exclude_params if exclude_params is not None else []
     additional_params = additional_params if additional_params is not None else []
 
@@ -272,7 +309,7 @@ def extends(fn_being_extended, map_default_values_change=None, additional_params
             if map_default_values_change:
                 for name, default_value in map_default_values_change.items():
                     if name not in exclude_params:
-                        param = Parameter(name, kind=Parameter.KEYWORD_ONLY , default=default_value)
+                        param = Parameter(name, kind=Parameter.KEYWORD_ONLY, default=default_value)
                         parameters.append(param)
         else:
             parameters = [param for name, param in fn_being_extended_parameters.items() if name not in exclude_params]
@@ -369,6 +406,7 @@ def extends(fn_being_extended, map_default_values_change=None, additional_params
             doc += fn.__doc__
         wrapper.__doc__ = doc
         return wrapper
+
     return decorator
 
 
@@ -397,9 +435,9 @@ def train_test_split_forced(train_data, train_target, test_size_pct, random_stat
             if isinstance(only_1_member_class, tuple):
                 only_1_member_class = only_1_member_class[0]
             index_of_only_1_member_class = train_target[train_target.iloc[:, 0] == only_1_member_class].index[0]
-            train_data = pd.concat([train_data, train_data.loc[[index_of_only_1_member_class]]]).\
+            train_data = pd.concat([train_data, train_data.loc[[index_of_only_1_member_class]]]). \
                 reset_index(drop=True)
-            train_target = pd.concat([train_target, train_target.loc[[index_of_only_1_member_class]]]).\
+            train_target = pd.concat([train_target, train_target.loc[[index_of_only_1_member_class]]]). \
                 reset_index(drop=True)
         if stratify is not None:
             stratify = train_target

@@ -175,6 +175,7 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
         self.pruned_trial = False
         self.report_to_optuna = None
         self.report_loss_to_optuna = None
+        self.optuna_trial = None
 
     def __post_init__(self):
         if self.architecture_params is None and self.architecture_params_not_from_dataset is None:
@@ -224,7 +225,6 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
             delete_checkpoints: bool = False,
             eval_set: Optional[Sequence[tuple[pd.DataFrame, pd.DataFrame]]] = None,
             eval_name: Optional[Sequence[str]] = None,
-            report_to_optuna: bool = False,
             optuna_trial: Optional[optuna.Trial] = None,
             init_model: Optional[Path | str] = None,
     ):
@@ -251,10 +251,8 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
         eval_name:
             Names of the evaluation sets. If None, they will be named as 'validation_i', where i is the index of
             the set.
-        report_to_optuna:
-            If True, it will report the metrics to optuna. Default is False.
         optuna_trial:
-            If report_to_optuna is True, it will report the metrics to this trial. Default is None.
+            If report_to_optuna is True, it will report the metrics to this trial. If None, it will not report.
         init_model:
             Path to a lightning model checkpoint to initialize the model and resume training. Default is None.
         """
@@ -272,7 +270,7 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
 
         if cat_dims is None:
             # we will get the dimensions including the possible eval_set
-            X_all = pd.concat([X] + [set[0] for set in eval_set] if eval_set is not None else [], axis=0)
+            X_all = pd.concat([X] + ([set[0] for set in eval_set] if eval_set is not None else []), axis=0)
             cat_dims = [X_all.iloc[:, idx].nunique() for idx in cat_features_idx]
             del X_all
 
@@ -282,7 +280,7 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
 
         if n_classes is None:
             if task in ('classification', 'binary_classification'):
-                y_all = pd.concat([y] + [set[1] for set in eval_set] if eval_set is not None else [], axis=0)
+                y_all = pd.concat([y] + ([set[1] for set in eval_set] if eval_set is not None else []), axis=0)
                 n_classes = y_all.nunique().iloc[0]
                 del y_all
             else:
@@ -323,8 +321,8 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
         # we will consider that the last metric of eval_metric will be used as validation
         # if no eval_metric is provided, we use only the loss function
         # if no eval_set is provided, we use only the training set
-        eval_metric = sequence_to_list(self.eval_metric) if self.eval_metric is not None else []
-        eval_name = sequence_to_list(eval_name) if eval_name is not None else ['train']
+        eval_metric = sequence_to_list(self.eval_metric) if self.eval_metric else []
+        eval_name = sequence_to_list(eval_name) if eval_name else ['train']
 
         callbacks_tuples = []
         if eval_metric:
@@ -333,7 +331,7 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
         if self.log_losses:
             callbacks_tuples.append((DefaultLogs, dict()))
 
-        if report_to_optuna:
+        if optuna_trial:
             self.reported_metric = eval_metric[-1] if eval_metric else 'loss'
             self.reported_eval_name = eval_name[-1]
             callbacks_tuples.append((ReportToOptuna, dict(optuna_trial=optuna_trial,
@@ -388,7 +386,7 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
             else:
                 refit = False
 
-        if report_to_optuna:
+        if optuna_trial:
             for callback in self.lit_callbacks_:
                 if isinstance(callback, ReportToOptuna):
                     self.pruned_trial = callback.pruned_trial
@@ -428,7 +426,7 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
         self.cat_features_idx_ = cat_features_idx
         self.cat_dims_ = cat_dims
         self.n_classes_ = n_classes
-        self.report_to_optuna = report_to_optuna
+        self.optuna_trial = optuna_trial
         return self
 
     def predict(self, X: pd.DataFrame, logits: bool = False):

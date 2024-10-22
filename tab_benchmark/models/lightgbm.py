@@ -1,18 +1,24 @@
+from __future__ import annotations
+
 import datetime
+from inspect import signature
 import re
 import time
 from collections import defaultdict, OrderedDict
 from pathlib import Path
 from typing import Optional, Dict, Any
 import mlflow
-import numpy as np
+import pandas as pd
 from lightgbm import LGBMRegressor, LGBMClassifier
 from lightgbm.basic import _is_numpy_1d_array, _to_string, _NUMERIC_TYPES, _is_numeric, _log_info
 from lightgbm.callback import CallbackEnv, _EarlyStoppingCallback, _format_eval_result, EarlyStopException
-from tab_benchmark.models.xgboost import n_estimators_gbdt, early_stopping_patience_gbdt, remove_old_models
-from tab_benchmark.models.factories import sklearn_factory
+from tab_benchmark.models.mixins import n_estimators_gbdt, early_stopping_patience_gbdt, GBDTMixin, TabBenchmarkModel, \
+    merge_signatures, merge_and_apply_signature
+from tab_benchmark.models.xgboost import remove_old_models
 import lightgbm.basic
 import optuna
+import joblib
+from tab_benchmark.utils import get_default_tag, get_formated_file_path, get_most_recent_file_path
 
 
 # Monkey patching the lightgbm to support nested dictionaries
@@ -104,54 +110,6 @@ def conditional_num_leaves(trial):
     return trial.suggest_int('num_leaves', min_leaves, max_leaves)
 
 
-def create_search_space_lgbm():
-    # In Well tunned... + doc
-    # Not tunning n_estimators following discussion at
-    # https://openreview.net/forum?id=Fp7__phQszn&noteId=Z7Y_qxwDjiM
-    search_space = dict(
-        learning_rate=optuna.distributions.FloatDistribution(1e-3, 1.0, log=True),
-        reg_lambda=optuna.distributions.FloatDistribution(1e-10, 1, log=True),
-        reg_alpha=optuna.distributions.FloatDistribution(1e-10, 1.0, log=True),
-        min_split_gain=optuna.distributions.FloatDistribution(1e-10, 1.0, log=True),
-        colsample_bytree=optuna.distributions.FloatDistribution(0.1, 1),
-        feature_fraction_bynode=optuna.distributions.FloatDistribution(0.1, 1),
-        max_depth=optuna.distributions.IntDistribution(1, 20),
-        max_delta_step=optuna.distributions.IntDistribution(0, 10),
-        min_child_weight=optuna.distributions.FloatDistribution(1e-3, 20, log=True),
-        subsample=optuna.distributions.FloatDistribution(0.01, 1),
-        subsample_freq=optuna.distributions.IntDistribution(1, 11),
-        # num_leaves=optuna.distributions.IntDistribution(1, 4096),  # should be < 2^(max_depth)
-        num_leaves=conditional_num_leaves,
-        min_child_samples=optuna.distributions.IntDistribution(1, 1000000)
-    )
-    default_values = dict(
-        learning_rate=0.1,
-        reg_lambda=1e-10,
-        reg_alpha=1e-10,
-        min_split_gain=1e-10,
-        colsample_bytree=1.0,
-        feature_fraction_bynode=1.0,
-        max_depth=6,
-        max_delta_step=0,
-        min_child_weight=1e-3,
-        subsample=1.0,
-        subsample_freq=1,
-        # num_leaves=31,
-        min_child_samples=20
-    )
-    return search_space, default_values
-
-
-def get_recommended_params_lgbm():
-    default_values_from_search_space = create_search_space_lgbm()[1]
-    default_values_from_search_space.update(dict(
-        n_estimators=n_estimators_gbdt,
-        auto_early_stopping=True,
-        early_stopping_patience=early_stopping_patience_gbdt,
-    ))
-    return default_values_from_search_space
-
-
 class ReportToOptunaLGBM:
     def __init__(self, metric_name, eval_name, optuna_trial):
         super().__init__()
@@ -179,14 +137,10 @@ class ReportToOptunaLGBM:
 
 
 class LogToMLFlowLGBM:
-    def __init__(self, run_id, log_every_n_steps=50, reported_metric=None, reported_eval_name=None):
+    def __init__(self, run_id, log_every_n_steps=50):
         super().__init__()
         self.run_id = run_id
         self.log_every_n_steps = log_every_n_steps
-        if reported_metric:
-            mlflow.log_params({f'{reported_eval_name}_report_metric': reported_metric}, run_id=self.run_id)
-        self.reported_metric = reported_metric
-        self.reported_eval_name = reported_eval_name
 
     def __call__(self, env: CallbackEnv) -> None:
         if env.iteration % self.log_every_n_steps != 0:
@@ -246,117 +200,207 @@ map_our_metric_to_lgbm_metric = {
 }
 
 
-def before_fit_lgbm(self, X, y, task=None, cat_features=None, cat_dims=None, n_classes=None, eval_set=None,
-                    eval_name=None, report_to_optuna=None, optuna_trial=None,
-                    init_model=None, **args_and_kwargs):
-    if n_classes is not None:
-        if n_classes > 2:
-            self.set_params(**{'num_class': n_classes})
+class LGBMMixin(GBDTMixin):
+    @property
+    def map_task_to_default_values(self):
+        return {
+            'classification': {'objective': 'multiclass', 'eval_metric': 'logloss'},
+            'binary_classification': {'objective': 'binary', 'eval_metric': 'logloss'},
+            'regression': {'objective': 'regression', 'eval_metric': 'rmse'},
+            'multi_regression': {'objective': 'regression', 'eval_metric': 'rmse'},
+        }
 
-    callbacks = args_and_kwargs.get('callbacks', [])
+    def fit(
+            self,
+            X: pd.DataFrame,
+            y: pd.DataFrame | pd.Series,
+            task: Optional[str] = None,
+            cat_features: Optional[list[str]] = None,
+            cat_dims: Optional[list[int]] = None,
+            n_classes: Optional[int] = None,
+            eval_set: Optional[list[tuple]] = None,
+            eval_name: Optional[list[str]] = None,
+            init_model: Optional[str | Path] = None,
+            optuna_trial: Optional[optuna.Trial] = None,
+            **kwargs
+    ):
+        fit_return = super().fit(X, y, task=task, cat_features=cat_features, cat_dims=cat_dims, n_classes=n_classes,
+                                 eval_set=eval_set, eval_name=eval_name, init_model=init_model,
+                                 optuna_trial=optuna_trial,
+                                 **kwargs)
+        for callback in self.callbacks:
+            if isinstance(callback, ReportToOptunaLGBM):
+                self.pruned_trial = callback.pruned_trial
+                if self.mlflow_run_id:
+                    log_metrics = {'pruned': int(callback.pruned_trial)}
+                    mlflow.log_metrics(log_metrics, run_id=self.mlflow_run_id)
+            elif isinstance(callback, TimerLGBM):
+                self.reached_timeout = callback.reached_timeout
+                if self.mlflow_run_id:
+                    log_metrics = {'reached_timeout': int(callback.reached_timeout)}
+                    mlflow.log_metrics(log_metrics, run_id=self.mlflow_run_id)
+        return fit_return
 
-    eval_metric = self.get_params().get('eval_metric', None)
+    def before_fit(
+            self,
+            X: pd.DataFrame,
+            y: pd.DataFrame | pd.Series,
+            task: Optional[str] = None,
+            cat_features: Optional[list[str]] = None,
+            cat_dims: Optional[list[int]] = None,
+            n_classes: Optional[int] = None,
+            eval_set: Optional[list[tuple]] = None,
+            eval_name: Optional[list[str]] = None,
+            init_model: Optional[str | Path] = None,
+            optuna_trial: Optional[optuna.Trial] = None,
+            **kwargs
+    ):
+        if n_classes is not None:
+            if n_classes > 2:
+                self.set_params(**{'num_class': n_classes})
 
-    fit_arguments = args_and_kwargs.copy() if args_and_kwargs else {}
+        callbacks = kwargs.get('callbacks', [])
 
-    callbacks = callbacks if callbacks is not None else []
+        eval_metric = self.get_params().get('eval_metric', None)
 
-    if self.early_stopping_patience > 0:
-        # for the moment we will leave the default early stopping callback
-        self.set_params(**{'early_stopping_rounds': self.early_stopping_patience})
-        # we will add a training checkpoint callback
-        callbacks.append(TrainingCheckPointLGBM(self.output_dir))
+        fit_arguments = kwargs.copy() if kwargs else {}
 
-    if eval_metric is not None:
-        eval_metric = map_our_metric_to_lgbm_metric[(eval_metric, task)]
-        self.set_params(**{'metric': eval_metric})
-    else:
-        eval_metric = self.get_params().get('metric', None)
+        callbacks = callbacks if callbacks is not None else []
 
-    if report_to_optuna:
-        reported_metric = eval_metric
-        reported_eval_name = eval_name[-1]
-        callbacks.append(ReportToOptunaLGBM(reported_metric, reported_eval_name, optuna_trial))
-    else:
-        reported_metric = None
-        reported_eval_name = None
+        if self.early_stopping_patience > 0:
+            # for the moment we will leave the default early stopping callback
+            self.set_params(**{'early_stopping_rounds': self.early_stopping_patience})
+            # we will add a training checkpoint callback
+            callbacks.append(TrainingCheckPointLGBM(directory=self.output_dir, interval=self.checkpoint_interval))
 
-    if self.log_to_mlflow_if_running and self.run_id is not None:
-        callbacks.append(LogToMLFlowLGBM(run_id=self.run_id, reported_metric=reported_metric,
-                                         reported_eval_name=reported_eval_name,
-                                         log_every_n_steps=self.log_interval))
+        if eval_metric is not None:
+            eval_metric = map_our_metric_to_lgbm_metric[(eval_metric, task)]
+            self.set_params(**{'metric': eval_metric})
+        else:
+            eval_metric = self.get_params().get('metric', None)
 
-    if self.max_time:
-        callbacks.append(TimerLGBM(duration=self.max_time))
+        if optuna_trial:
+            reported_metric = eval_metric
+            reported_eval_name = eval_name[-1]
+            callbacks.append(ReportToOptunaLGBM(reported_metric, reported_eval_name, optuna_trial))
+        else:
+            reported_metric = None
+            reported_eval_name = None
 
-    # we will rename the columns to avoid problems with the lightgbm
-    X = X.rename(columns=lambda x: re.sub('[^A-Za-z0-9_]+', '', x))
-    if eval_set:
-        for i in range(len(eval_set)):
-            X_eval, y_eval = eval_set[i]
-            X_eval = X_eval.rename(columns=lambda x: re.sub('[^A-Za-z0-9_]+', '', x))
-            eval_set[i] = (X_eval, y_eval)
+        if self.mlflow_run_id:
+            log_params = {'lgbm_reported_metric': reported_metric, 'lgbm_reported_eval_name': reported_eval_name}
+            mlflow.log_params(log_params, run_id=self.mlflow_run_id)
+            callbacks.append(LogToMLFlowLGBM(run_id=self.mlflow_run_id, log_every_n_steps=self.log_interval))
 
-    if cat_features is not None:
-        cat_features = [re.sub('[^A-Za-z0-9_]+', '', x) for x in cat_features]
-        fit_arguments['categorical_feature'] = cat_features
+        if self.max_time:
+            callbacks.append(TimerLGBM(duration=self.max_time))
 
-    fit_arguments['eval_names'] = eval_name
-    fit_arguments['callbacks'] = callbacks
-    self.callbacks = callbacks
-    fit_arguments.update(dict(X=X, y=y, eval_set=eval_set, init_model=init_model))
-    return fit_arguments
+        # we will rename the columns to avoid problems with the lightgbm fit
+        X = X.rename(columns=lambda x: re.sub('[^A-Za-z0-9_]+', '', x))
+        if eval_set:
+            for i in range(len(eval_set)):
+                X_eval, y_eval = eval_set[i]
+                X_eval = X_eval.rename(columns=lambda x: re.sub('[^A-Za-z0-9_]+', '', x))
+                eval_set[i] = (X_eval, y_eval)
+
+        if cat_features is not None:
+            cat_features = [re.sub('[^A-Za-z0-9_]+', '', x) for x in cat_features]
+            fit_arguments['categorical_feature'] = cat_features
+
+        fit_arguments['eval_names'] = eval_name
+        fit_arguments['callbacks'] = callbacks
+        self.callbacks = callbacks
+        fit_arguments.update(dict(X=X, y=y, eval_set=eval_set, init_model=init_model))
+        return super().before_fit(**fit_arguments)
+
+    @staticmethod
+    def create_search_space():
+        # In Well tunned... + doc
+        # Not tunning n_estimators following discussion at
+        # https://openreview.net/forum?id=Fp7__phQszn&noteId=Z7Y_qxwDjiM
+        search_space = dict(
+            learning_rate=optuna.distributions.FloatDistribution(1e-3, 1.0, log=True),
+            reg_lambda=optuna.distributions.FloatDistribution(1e-10, 1, log=True),
+            reg_alpha=optuna.distributions.FloatDistribution(1e-10, 1.0, log=True),
+            min_split_gain=optuna.distributions.FloatDistribution(1e-10, 1.0, log=True),
+            colsample_bytree=optuna.distributions.FloatDistribution(0.1, 1),
+            feature_fraction_bynode=optuna.distributions.FloatDistribution(0.1, 1),
+            max_depth=optuna.distributions.IntDistribution(1, 20),
+            max_delta_step=optuna.distributions.IntDistribution(0, 10),
+            min_child_weight=optuna.distributions.FloatDistribution(1e-3, 20, log=True),
+            subsample=optuna.distributions.FloatDistribution(0.01, 1),
+            subsample_freq=optuna.distributions.IntDistribution(1, 11),
+            # num_leaves=optuna.distributions.IntDistribution(1, 4096),  # should be < 2^(max_depth)
+            num_leaves=conditional_num_leaves,
+            min_child_samples=optuna.distributions.IntDistribution(1, 1000000)
+        )
+        default_values = dict(
+            learning_rate=0.1,
+            reg_lambda=1e-10,
+            reg_alpha=1e-10,
+            min_split_gain=1e-10,
+            colsample_bytree=1.0,
+            feature_fraction_bynode=1.0,
+            max_depth=6,
+            max_delta_step=0,
+            min_child_weight=1e-3,
+            subsample=1.0,
+            subsample_freq=1,
+            # num_leaves=31,
+            min_child_samples=20
+        )
+        return search_space, default_values
+
+    @staticmethod
+    def get_recommended_params():
+        default_values_from_search_space = LGBMMixin.create_search_space_lgbm()[1]
+        default_values_from_search_space.update(dict(
+            n_estimators=n_estimators_gbdt,
+            auto_early_stopping=True,
+            early_stopping_patience=early_stopping_patience_gbdt,
+        ))
+        return default_values_from_search_space
+
+    def save_model(self, save_dir: [Path | str] = None, tag: Optional[str] = None) -> Path:
+        prefix = self.__class__.__name__ + '_lgbm'
+        ext = 'joblib'
+        if tag is None:
+            tag = get_default_tag()
+        file_path = get_formated_file_path(save_dir, prefix, ext, tag)
+        joblib.dump(self, file_path)
+        return super().save_model(save_dir, tag)
+
+    def load_model(self, save_dir: Path | str = None, tag: Optional[str] = None) -> None:
+        prefix = self.__class__.__name__ + '_lgbm'
+        ext = 'joblib'
+        file_path = get_most_recent_file_path(save_dir, prefix, ext, tag)
+        self = joblib.load(file_path)
+        return super().load_model(save_dir, tag)
 
 
-def after_fit_lgbm(self, fit_return):
-    for callback in self.callbacks:
-        if isinstance(callback, ReportToOptunaLGBM):
-            self.pruned_trial = callback.pruned_trial
-            if self.log_to_mlflow_if_running and self.run_id is not None:
-                log_metrics = {'pruned': int(callback.pruned_trial)}
-                mlflow.log_metrics(log_metrics, run_id=self.run_id)
-        elif isinstance(callback, TimerLGBM):
-            self.reached_timeout = callback.reached_timeout
-            if self.log_to_mlflow_if_running and self.run_id is not None:
-                log_metrics = {'reached_timeout': int(callback.reached_timeout)}
-                mlflow.log_metrics(log_metrics, run_id=self.run_id)
-    return fit_return
+class TabBenchmarkLGBMClassifier(LGBMMixin, TabBenchmarkModel, LGBMClassifier):
+    @merge_and_apply_signature(merge_signatures(signature(LGBMClassifier.__init__), signature(LGBMMixin.__init__)))
+    def __init__(
+            self,
+            *,
+            categorical_encoder='ordinal',
+            categorical_type='category',
+            data_scaler=None,
+            **kwargs
+    ):
+        super().__init__(categorical_encoder=categorical_encoder, categorical_type=categorical_type,
+                         data_scaler=data_scaler, **kwargs)
 
 
-TabBenchmarkLGBMRegressor = sklearn_factory(
-    LGBMRegressor,
-    has_early_stopping=True,
-    default_values={
-        'categorical_encoder': 'ordinal',
-        'categorical_type': 'category',
-        'data_scaler': None,
-        'objective': 'regression',
-        'eval_metric': 'rmse'
-    },
-    before_fit_method=before_fit_lgbm,
-    after_fit_method=after_fit_lgbm,
-    extra_dct={
-        'create_search_space': staticmethod(create_search_space_lgbm),
-        'get_recommended_params': staticmethod(get_recommended_params_lgbm),
-    }
-)
-
-TabBenchmarkLGBMClassifier = sklearn_factory(
-    LGBMClassifier,
-    has_early_stopping=True,
-    default_values={
-        'categorical_encoder': 'ordinal',
-        'categorical_type': 'category',
-        'data_scaler': None,
-    },
-    map_task_to_default_values={
-        'binary_classification': {'objective': 'binary', 'eval_metric': 'logloss'},
-        'classification': {'objective': 'multiclass', 'eval_metric': 'logloss'},
-    },
-    before_fit_method=before_fit_lgbm,
-    after_fit_method=after_fit_lgbm,
-    extra_dct={
-        'create_search_space': staticmethod(create_search_space_lgbm),
-        'get_recommended_params': staticmethod(get_recommended_params_lgbm),
-    }
-)
+class TabBenchmarkLGBMRegressor(LGBMMixin, TabBenchmarkModel, LGBMRegressor):
+    @merge_and_apply_signature(merge_signatures(signature(LGBMRegressor.__init__), signature(LGBMMixin.__init__)))
+    def __init__(
+            self,
+            *,
+            categorical_encoder='ordinal',
+            categorical_type='category',
+            data_scaler=None,
+            **kwargs
+    ):
+        super().__init__(categorical_encoder=categorical_encoder, categorical_type=categorical_type,
+                         data_scaler=data_scaler, **kwargs)
