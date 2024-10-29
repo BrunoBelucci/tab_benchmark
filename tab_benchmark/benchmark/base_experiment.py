@@ -168,6 +168,8 @@ class BaseExperiment:
             If True, clean the work directory after running the experiment. Defaults to True.
         raise_on_fit_error :
             If True, raise an error if it is encountered when fitting the model. Defaults to False.
+        parser :
+            The parser to be used in the experiment. Defaults to None, which means that the parser will be created.
         error_score :
             The default value to be used if a error occurs when evaluating the model. Defaults to 'raise' which
             raises an error.
@@ -421,18 +423,17 @@ class BaseExperiment:
         os.makedirs(log_dir, exist_ok=True)
         if self.log_file_name is None:
             name = self.experiment_name
-            if (log_dir / f'{name}.log').exists():
-                file_names = sorted(log_dir.glob(f'{name}_????.log'))
-                if file_names:
-                    file_name = file_names[-1].name
-                    id_file = int(file_name.split('_')[-1].split('.')[0])
-                    name = f'{name}_{id_file + 1:04d}'
-                else:
-                    name = name + '_0001'
-            log_file_name = f'{name}.log'
-            self.log_file_name = log_file_name
         else:
-            log_file_name = self.log_file_name
+            name = self.log_file_name
+        if (log_dir / f'{name}.log').exists():
+            file_names = sorted(log_dir.glob(f'{name}_????.log'))
+            if file_names:
+                file_name = file_names[-1].name
+                id_file = int(file_name.split('_')[-1].split('.')[0])
+                name = f'{name}_{id_file + 1:04d}'
+            else:
+                name = name + '_0001'
+        log_file_name = f'{name}.log'
         logging.basicConfig(filename=log_dir / log_file_name,
                             format='%(asctime)s - %(levelname)s\n%(message)s\n',
                             level=logging.INFO, filemode=filemode)
