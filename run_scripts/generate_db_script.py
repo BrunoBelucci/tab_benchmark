@@ -1,6 +1,7 @@
 import argparse
 from pathlib import Path
 from inspect import cleandoc
+import os
 
 
 def generate_postgres_db_script(
@@ -11,10 +12,15 @@ def generate_postgres_db_script(
         db_name='tab_benchmark', db_port=5001, mlflow_port=5002, generate_sbatch=True,
         # sbatch parameters
         n_cores=6, clust_name='clust1', job_name='tab_benchmark_db',
-        output_job_dir=str(Path(__file__).parent.parent / 'results' / 'sbatch_outputs' / '%x.%J.out'),
-        error_job_dir=str(Path(__file__).parent.parent / 'results' / 'sbatch_errors' / '%x.%J.out'),
+        output_job_file=str(Path(__file__).parent.parent / 'results' / 'sbatch_outputs' / '%x.%J.out'),
+        error_job_file=str(Path(__file__).parent.parent / 'results' / 'sbatch_errors' / '%x.%J.out'),
         wall_time='364-23:59:59',
 ):
+    if isinstance(file_dir, str):
+        file_dir = Path(file_dir)
+    os.makedirs(file_dir, exist_ok=True)
+    if isinstance(database_root_dir, str):
+        database_root_dir = Path(database_root_dir)
     database_dir = database_root_dir / (db_name + '_db')
     log_file = database_dir / (db_name + '.log')
     sh_content = cleandoc(f"""
@@ -32,8 +38,8 @@ def generate_postgres_db_script(
         #SBATCH -c {n_cores}
         #SBATCH -w {clust_name}
         #SBATCH --job-name={job_name}
-        #SBATCH --output={output_job_dir}
-        #SBATCH --error={error_job_dir}
+        #SBATCH --output={output_job_file}
+        #SBATCH --error={error_job_file}
         #SBATCH --time={wall_time}
         """) + '\n'
         file_content = sbatch_content + sh_content

@@ -1,6 +1,10 @@
-from inspect import cleandoc
-from pathlib import Path
 import os
+from inspect import cleandoc
+from generate_db_script import generate_postgres_db_script
+from tab_benchmark.datasets import datasets_characteristics_path
+import pandas as pd
+from pathlib import Path
+from shutil import rmtree
 
 
 def generate_experiment_scripts(
@@ -24,8 +28,9 @@ def generate_experiment_scripts(
         validation_resample_strategy='next_fold',
         pct_validation=0.1,
         n_jobs=1,
-        file_dir=Path.cwd() / 'experiment_scripts',
-        experiment_file=Path(__file__).parent.parent / 'tab_benchmark' / 'benchmark' / 'base_experiment.py',
+        scripts_dir=Path.cwd() / 'experiment_scripts',
+        python_file_dir=Path(__file__).parent.parent / 'tab_benchmark' / 'benchmark',
+        python_file_name='base_experiment.py',
         experiment_name='tab_benchmark_experiment',
         log_dir=Path(__file__).parent.parent / 'results' / 'logs',
         work_dir=Path('/tmp'),
@@ -50,6 +55,7 @@ def generate_experiment_scripts(
         sbatch_output=str(Path(__file__).parent.parent / 'results' / 'sbatch_outputs' / '%x.%J.out'),
         sbatch_error=str(Path(__file__).parent.parent / 'results' / 'sbatch_errors' / '%x.%J.out'),
         sbatch_time='364-23:59:59',
+        sbatch_mincpus=None,
         **kwargs
 ):
     """Generate scripts for each individual combination of models, seeds, datasets, and folds."""
@@ -68,15 +74,16 @@ def generate_experiment_scripts(
         task_samples = [0]
 
     # create directory if it does not exist
-    if isinstance(file_dir, str):
-        file_dir = Path(file_dir)
-    os.makedirs(file_dir, exist_ok=True)
+    if isinstance(scripts_dir, str):
+        file_dir = Path(scripts_dir)
+    os.makedirs(scripts_dir, exist_ok=True)
 
     # create base content for shell script
     base_sh_content = cleandoc(f"""
     eval "$(conda shell.bash hook)"
     conda activate {conda_env}
-    python {experiment_file}""")
+    cd {python_file_dir}
+    python {python_file_name}""")
     base_sh_content += (f" --experiment_name {experiment_name} --log_dir {log_dir} --work_dir {work_dir} "
                         f"--save_dir {save_dir} --mlflow_tracking_uri {mlflow_tracking_uri} --n_jobs {n_jobs}")
     if models_params is not None:
@@ -115,6 +122,8 @@ def generate_experiment_scripts(
             sbatch_content += f"#SBATCH -w {sbatch_w}\n"
         if sbatch_exclude is not None:
             sbatch_content += f"#SBATCH --exclude={sbatch_exclude}\n"
+        if sbatch_mincpus is not None:
+            sbatch_content += f"#SBATCH --mincpus={sbatch_mincpus}\n"
         sbatch_content += f"#SBATCH --output={sbatch_output}\n"
         sbatch_content += f"#SBATCH --error={sbatch_error}\n"
         sbatch_content += f"#SBATCH --time={sbatch_time}\n"
@@ -144,7 +153,7 @@ def generate_experiment_scripts(
                                              f"--datasets_names_or_ids {dataset_name_or_id} "
                                              f"--seeds_datasets {seed_dataset} --folds {fold} "
                                              f"--log_file_name {combination_name}")
-                            file_path = file_dir / f"{combination_name}{file_ext}"
+                            file_path = scripts_dir / f"{combination_name}{file_ext}"
                             file_paths.append(file_path)
                             with open(file_path, 'w') as file:
                                 file.write(file_content)
@@ -165,8 +174,63 @@ def generate_experiment_scripts(
                                                  f"--tasks_ids {task_id} --task_repeats {task_repeat} "
                                                  f"--task_folds {task_fold} --task_samples {task_sample} "
                                                  f"--log_file_name {combination_name}")
-                                file_path = file_dir / f"{combination_name}{file_ext}"
+                                file_path = scripts_dir / f"{combination_name}{file_ext}"
                                 file_paths.append(file_path)
                                 with open(file_path, 'w') as file:
                                     file.write(file_content)
     return file_paths
+
+
+file_dir = Path() / 'scripts'
+rmtree(file_dir, ignore_errors=True)
+# create the database
+file_name = 'start_db_adacap'
+conda_env = 'tab_benchmark'
+database_root_dir = '/home/users/belucci/adacap/results'
+db_name = 'adacap'
+db_port = 5001
+mlflow_port = 5002
+generate_sbatch = True
+n_cores = 6
+clust_name = 'clust9'
+job_name = 'adacap_db'
+output_job_file = '/home/users/belucci/adacap/results/sbatch_outputs/%x.%J.out'
+error_job_file = '/home/users/belucci/adacap/results/sbatch_errors/%x.%J.err'
+wall_time = '364-23:59:59'
+db_file = generate_postgres_db_script(file_dir=file_dir, file_name=file_name, conda_env=conda_env,
+                                      database_root_dir=database_root_dir, db_name=db_name, db_port=db_port,
+                                      mlflow_port=mlflow_port, generate_sbatch=generate_sbatch, n_cores=n_cores,
+                                      clust_name=clust_name, job_name=job_name, output_job_file=output_job_file,
+                                      error_job_file=error_job_file, wall_time=wall_time)
+
+# get datasets characteristics
+datasets_characteristics = pd.read_csv(datasets_characteristics_path)
+
+# create the experiment scripts
+models_nickname = ['TabBenchmarkMLP']
+seeds_models = [0]
+tasks_ids = datasets_characteristics.loc[datasets_characteristics['task_name'] == 'regression', 'task_id'].to_list()
+task_folds = [0]
+n_jobs = 1
+# scripts_dir = Path() / 'scripts'
+python_file_dir = '/home/users/belucci/adacap'
+python_file_name = '-m adacap.experiments.pruning'
+experiment_name = 'MLP'
+log_dir = '/home/users/belucci/adacap/results/logs'
+work_dir = '/tmp'
+save_dir = '/home/users/belucci/adacap/results/outputs'
+mlflow_tracking_uri = f'http://{clust_name}.ceremade.dauphine.lan:{mlflow_port}/'
+generate_sbatch = True
+sbatch_c = 2
+sbatch_w = 'clust6,clust7,clust8'
+sbatch_output = '/home/users/belucci/adacap/results/sbatch_outputs/%x.%J.out'
+sbatch_error = '/home/users/belucci/adacap/results/sbatch_errors/%x.%J.err'
+sbatch_time = '364-23:59:59'
+sbatch_mincpus = 4
+generate_experiment_scripts(models_nickname=models_nickname, seeds_models=seeds_models, tasks_ids=tasks_ids,
+                            task_folds=task_folds, n_jobs=n_jobs, scripts_dir=file_dir, python_file_dir=python_file_dir,
+                            python_file_name=python_file_name,
+                            experiment_name=experiment_name, log_dir=log_dir, work_dir=work_dir, save_dir=save_dir,
+                            mlflow_tracking_uri=mlflow_tracking_uri, generate_sbatch=generate_sbatch, sbatch_c=sbatch_c,
+                            sbatch_w=sbatch_w, sbatch_output=sbatch_output, sbatch_error=sbatch_error,
+                            sbatch_time=sbatch_time, sbatch_mincpus=sbatch_mincpus)
