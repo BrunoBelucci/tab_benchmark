@@ -198,7 +198,7 @@ class BaseExperiment:
             The number of gpus to be used in the dask cluster. Defaults to 0.
         """
         self.models_nickname = models_nickname if models_nickname else []
-        self.seeds_model = seeds_models if seeds_models else [0]
+        self.seeds_models = seeds_models if seeds_models else [0]
         self.n_jobs = n_jobs
 
         self.models_params = self._validate_dict_of_models_params(models_params, self.models_nickname)
@@ -274,7 +274,7 @@ class BaseExperiment:
         self.parser.add_argument('--create_validation_set', action='store_true')
         self.parser.add_argument('--models_nickname', type=str, choices=self.models_dict.keys(),
                                  nargs='*', default=self.models_nickname)
-        self.parser.add_argument('--seeds_model', nargs='*', type=int, default=self.seeds_model)
+        self.parser.add_argument('--seeds_models', nargs='*', type=int, default=self.seeds_models)
         self.parser.add_argument('--n_jobs', type=int, default=self.n_jobs,
                                  help='Number of threads/cores to be used by the model if it supports it. '
                                       'Obs.: In the CEREMADE cluster the minimum number of cores that can be requested'
@@ -365,7 +365,7 @@ class BaseExperiment:
 
         self.datasets_names_or_ids = args.datasets_names_or_ids
         self.seeds_datasets = args.seeds_datasets
-        self.seeds_model = args.seeds_model
+        self.seeds_models = args.seeds_models
         self.resample_strategy = args.resample_strategy
         self.k_folds = args.k_folds
         self.folds = args.folds
@@ -1387,7 +1387,7 @@ class BaseExperiment:
         """Get the combinations of the experiment."""
         if self.using_own_resampling:
             # (model_nickname, seed_model, dataset_name_or_id, seed_dataset, fold)
-            combinations = list(product(self.models_nickname, self.seeds_model, self.datasets_names_or_ids,
+            combinations = list(product(self.models_nickname, self.seeds_models, self.datasets_names_or_ids,
                                         self.seeds_datasets, self.folds))
             extra_params = dict(is_openml_task=False, resample_strategy=self.resample_strategy,
                                 n_folds=self.k_folds, pct_test=self.pct_test,
@@ -1396,7 +1396,7 @@ class BaseExperiment:
 
         else:
             # (model_nickname, seed_model, task_id, task_fold, task_repeat, task_sample)
-            combinations = list(product(self.models_nickname, self.seeds_model, self.tasks_ids, self.task_folds,
+            combinations = list(product(self.models_nickname, self.seeds_models, self.tasks_ids, self.task_folds,
                                         self.task_repeats, self.task_samples))
             extra_params = dict(is_openml_task=True)
         extra_params.update(dict(n_jobs=self.n_jobs, log_to_mlflow=self.log_to_mlflow,
@@ -1567,7 +1567,7 @@ class BaseExperiment:
     def _get_kwargs_to_log_experiment(self):
         """Get the kwargs to log the experiment."""
         kwargs_to_log = dict(experiment_name=self.experiment_name, models_nickname=self.models_nickname,
-                             seeds_model=self.seeds_model)
+                             seeds_models=self.seeds_models)
         if self.using_own_resampling:
             kwargs_to_log.update(dict(datasets_names_or_ids=self.datasets_names_or_ids,
                                       seeds_datasets=self.seeds_datasets,
