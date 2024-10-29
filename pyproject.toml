@@ -70,7 +70,6 @@ dependencies = [
     "distributed",
     "dask-jobqueue",
     "openml",
-    "ray[tune]",
     "optuna"
 ]
 
@@ -86,8 +85,8 @@ docs = [
   "sphinx-rtd-theme",
 ]
 all = [
-    "tabular_benchmark[test]",
-    "tabular_benchmark[docs]",
+    "tab_benchmark[test]",
+    "tab_benchmark[docs]",
 ]
 
 
