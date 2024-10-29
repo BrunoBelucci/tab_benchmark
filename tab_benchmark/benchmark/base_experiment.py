@@ -79,6 +79,7 @@ class BaseExperiment:
             create_validation_set: bool = False,
             models_dict: Optional[dict] = None,
             log_dir: str | Path = Path.cwd() / 'logs',
+            log_file_name: Optional[str] = None,
             work_dir: str | Path = Path.cwd() / 'work',
             save_dir: Optional[str | Path] = None,
             clean_work_dir: bool = True,
@@ -155,7 +156,44 @@ class BaseExperiment:
             The dictionary with the models to be used in the experiment, it must be a dictionary with the keys being
             the nickname of the model and the values being another dictionary with the class of the model and the
             parameters of the model.
-
+        log_dir :
+            The directory where the logs will be saved. Defaults to 'logs'.
+        log_file_name :
+            The name of the log file. If None, it will be the experiment_name. Defaults to None.
+        work_dir :
+            The directory where the intermediate outputs will be saved. Defaults to 'work'.
+        save_dir :
+            The directory where the final trained models will be saved.
+        clean_work_dir :
+            If True, clean the work directory after running the experiment. Defaults to True.
+        raise_on_fit_error :
+            If True, raise an error if it is encountered when fitting the model. Defaults to False.
+        error_score :
+            The default value to be used if a error occurs when evaluating the model. Defaults to 'raise' which
+            raises an error.
+        log_to_mlflow :
+            If True, log the results to mlflow. Defaults to True.
+        mlflow_tracking_uri :
+            The uri of the mlflow server. Defaults to 'sqlite:///' + str(Path.cwd().resolve()) + '/tab_benchmark.db'.
+        check_if_exists :
+            If True, check if the experiment already exists in mlflow. Defaults to True.
+        dask_cluster_type :
+            The type of the dask cluster to be used. It can be 'local' or 'slurm'. Defaults to None, which means
+            that dask will not be used.
+        n_workers :
+            The number of workers to be used in the dask cluster. Defaults to 1.
+        n_processes :
+            The number of processes to be used in the dask cluster. Defaults to 1.
+        n_cores :
+            The number of cores to be used in the dask cluster. Defaults to 1.
+        dask_memory :
+            The memory to be used in the dask cluster. Defaults to None.
+        dask_job_extra_directives :
+            The extra directives to be used in the dask cluster. Defaults to None.
+        dask_address :
+            The address of an initialized dask cluster. Defaults to None.
+        n_gpus :
+            The number of gpus to be used in the dask cluster. Defaults to 0.
         """
         self.models_nickname = models_nickname if models_nickname else []
         self.seeds_model = seeds_models if seeds_models else [0]
@@ -164,7 +202,7 @@ class BaseExperiment:
         self.models_params = self._validate_dict_of_models_params(models_params, self.models_nickname)
         self.fits_params = self._validate_dict_of_models_params(fits_params, self.models_nickname)
 
-        # when performing our own resampling0
+        # when performing our own resampling
         self.datasets_names_or_ids = datasets_names_or_ids
         self.seeds_datasets = seeds_datasets if seeds_datasets else [0]
         self.resample_strategy = resample_strategy
@@ -197,6 +235,7 @@ class BaseExperiment:
         if isinstance(log_dir, str):
             log_dir = Path(log_dir)
         self.log_dir = log_dir
+        self.log_file_name = log_file_name
         if isinstance(work_dir, str):
             work_dir = Path(work_dir)
         self.work_dir = work_dir
@@ -276,6 +315,7 @@ class BaseExperiment:
         self.parser.add_argument('--task_folds', nargs='*', type=int, default=self.task_folds)
 
         self.parser.add_argument('--log_dir', type=Path, default=self.log_dir)
+        self.parser.add_argument('--log_file_name', type=str, default=self.log_file_name)
         self.parser.add_argument('--work_dir', type=Path, default=self.work_dir)
         self.parser.add_argument('--save_dir', type=Path, default=self.save_dir)
         self.parser.add_argument('--do_not_clean_work_dir', action='store_true')
@@ -379,7 +419,7 @@ class BaseExperiment:
         if log_dir is None:
             log_dir = self.log_dir
         os.makedirs(log_dir, exist_ok=True)
-        if self.logger_filename is None:
+        if self.log_file_name is None:
             name = self.experiment_name
             if (log_dir / f'{name}.log').exists():
                 file_names = sorted(log_dir.glob(f'{name}_????.log'))
@@ -389,11 +429,11 @@ class BaseExperiment:
                     name = f'{name}_{id_file + 1:04d}'
                 else:
                     name = name + '_0001'
-            logger_filename = f'{name}.log'
-            self.logger_filename = logger_filename
+            log_file_name = f'{name}.log'
+            self.log_file_name = log_file_name
         else:
-            logger_filename = self.logger_filename
-        logging.basicConfig(filename=log_dir / logger_filename,
+            log_file_name = self.log_file_name
+        logging.basicConfig(filename=log_dir / log_file_name,
                             format='%(asctime)s - %(levelname)s\n%(message)s\n',
                             level=logging.INFO, filemode=filemode)
 
