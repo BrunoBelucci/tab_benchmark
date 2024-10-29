@@ -11,8 +11,8 @@ def generate_postgres_db_script(
         db_name='tab_benchmark', db_port=5001, mlflow_port=5002, generate_sbatch=True,
         # sbatch parameters
         n_cores=6, clust_name='clust1', job_name='tab_benchmark_db',
-        output_job_dir='/home/users/belucci/outputs/%x.%J.out',
-        error_job_dir='/home/users/belucci/outputs/%x.%J.err',
+        output_job_dir=str(Path(__file__).parent.parent / 'results' / 'sbatch_outputs' / '%x.%J.out'),
+        error_job_dir=str(Path(__file__).parent.parent / 'results' / 'sbatch_errors' / '%x.%J.out'),
         wall_time='364-23:59:59',
 ):
     database_dir = database_root_dir / (db_name + '_db')
@@ -44,6 +44,7 @@ def generate_postgres_db_script(
     file_path = file_dir / (file_name + file_ext)
     with open(file_path, 'w') as file:
         file.write(file_content)
+    return file_path
 
 
 if __name__ == '__main__':
