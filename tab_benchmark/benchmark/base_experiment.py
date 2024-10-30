@@ -508,8 +508,8 @@ class BaseExperiment:
         os.makedirs(output_dir, exist_ok=True)
         model = get_model(model_nickname, seed_model, model_params, models_dict, n_jobs, output_dir=output_dir)
         if log_to_mlflow:
-            if hasattr(model, 'run_id'):
-                setattr(model, 'run_id', run_id)
+            if hasattr(model, 'mlflow_run_id'):
+                setattr(model, 'mlflow_run_id', run_id)
         if create_validation_set:
             # we disable auto early stopping when creating a validation set, because we will use it to validate
             if hasattr(model, 'auto_early_stopping'):
