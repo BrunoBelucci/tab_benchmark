@@ -55,7 +55,6 @@ def generate_experiment_scripts(
         sbatch_output=str(Path(__file__).parent.parent / 'results' / 'sbatch_outputs' / '%x.%J.out'),
         sbatch_error=str(Path(__file__).parent.parent / 'results' / 'sbatch_errors' / '%x.%J.out'),
         sbatch_time='364-23:59:59',
-        sbatch_mincpus=None,
         **kwargs
 ):
     """Generate scripts for each individual combination of models, seeds, datasets, and folds."""
@@ -122,8 +121,6 @@ def generate_experiment_scripts(
             sbatch_content += f"#SBATCH -w {sbatch_w}\n"
         if sbatch_exclude is not None:
             sbatch_content += f"#SBATCH --exclude={sbatch_exclude}\n"
-        if sbatch_mincpus is not None:
-            sbatch_content += f"#SBATCH --mincpus={sbatch_mincpus}\n"
         sbatch_content += f"#SBATCH --output={sbatch_output}\n"
         sbatch_content += f"#SBATCH --error={sbatch_error}\n"
         sbatch_content += f"#SBATCH --time={sbatch_time}\n"
@@ -222,15 +219,14 @@ save_dir = '/home/users/belucci/adacap/results/outputs'
 mlflow_tracking_uri = f'http://{clust_name}.ceremade.dauphine.lan:{mlflow_port}/'
 generate_sbatch = True
 sbatch_c = 2
-sbatch_w = 'clust6,clust7,clust8'
+sbatch_w = 'clust6'
 sbatch_output = '/home/users/belucci/adacap/results/sbatch_outputs/%x.%J.out'
 sbatch_error = '/home/users/belucci/adacap/results/sbatch_errors/%x.%J.err'
 sbatch_time = '364-23:59:59'
-sbatch_mincpus = 4
 generate_experiment_scripts(models_nickname=models_nickname, seeds_models=seeds_models, tasks_ids=tasks_ids,
                             task_folds=task_folds, n_jobs=n_jobs, scripts_dir=file_dir, python_file_dir=python_file_dir,
                             python_file_name=python_file_name,
                             experiment_name=experiment_name, log_dir=log_dir, work_dir=work_dir, save_dir=save_dir,
                             mlflow_tracking_uri=mlflow_tracking_uri, generate_sbatch=generate_sbatch, sbatch_c=sbatch_c,
                             sbatch_w=sbatch_w, sbatch_output=sbatch_output, sbatch_error=sbatch_error,
-                            sbatch_time=sbatch_time, sbatch_mincpus=sbatch_mincpus)
+                            sbatch_time=sbatch_time)
