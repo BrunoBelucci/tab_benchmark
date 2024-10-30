@@ -3,7 +3,6 @@ import time
 from functools import partial
 from math import floor
 from typing import Optional
-
 import optuna
 import pandas as pd
 from optuna_integration import DaskStorage
@@ -741,6 +740,7 @@ class HPOExperiment(BaseExperiment):
                            model_params=None,
                            fit_params=None,
                            experiment_name=None, mlflow_tracking_uri=None, check_if_exists=None,
+                           n_jobs=1, log_to_mlflow=True, return_results=False, clean_work_dir=True,
                            **kwargs):
         parent_run_id = super()._create_mlflow_run(*args, create_validation_set=create_validation_set,
                                                    model_params=model_params, fit_params=fit_params,

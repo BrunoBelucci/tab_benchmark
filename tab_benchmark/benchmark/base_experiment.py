@@ -1410,6 +1410,9 @@ class BaseExperiment:
                            model_params=None,
                            fit_params=None,
                            experiment_name=None, mlflow_tracking_uri=None, check_if_exists=None,
+                           # just add some kwargs that are not unique to the run to ignore them when checking
+                           # for existent runs
+                           n_jobs=1, log_to_mlflow=True, return_results=False, clean_work_dir=True,
                            **kwargs):
         """Create a mlflow run."""
         is_openml_task = kwargs.get('is_openml_task', False)
