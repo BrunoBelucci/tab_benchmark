@@ -1504,8 +1504,9 @@ class BaseExperiment:
             free_workers = list(workers.keys())
             futures = []
             submitted_combinations = 0
+            finished_combinations = 0
             with tqdm(total=len(combinations), desc='Combinations completed') as progress_bar:
-                while submitted_combinations < total_combinations:
+                while finished_combinations < total_combinations:
                     # submit tasks to free workers
                     while free_workers and submitted_combinations < total_combinations:
                         worker_name = free_workers.pop()
@@ -1534,6 +1535,7 @@ class BaseExperiment:
                         n_combinations_failed += 1
                     else:
                         n_combinations_none += 1
+                    finished_combinations += 1
                     progress_bar.update(1)
                     log_and_print_msg(str(progress_bar), succesfully_completed=n_combinations_successfully_completed,
                                       failed=n_combinations_failed, none=n_combinations_none)
