@@ -12,6 +12,7 @@ from lightning import Callback
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 from lightning.pytorch.utilities.memory import is_out_of_cpu_memory
 from lightning.pytorch.loggers.mlflow import MLFlowLogger
+import mlflow
 from scipy.special import softmax
 from sklearn.base import BaseEstimator, ClassifierMixin, RegressorMixin, clone
 from torch import nn
@@ -382,9 +383,8 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
                         refit = True
                         if isinstance(self.lit_trainer_.logger, MLFlowLogger):
                             # update mlflow run status to running instead of failed
-                            mlflow_client = self.lit_trainer_.logger.experiment
                             run_id = self.lit_trainer_.logger.run_id
-                            mlflow_client.update_run(run_id, status='RUNNING')
+                            mlflow.start_run(run_id=run_id)
                     else:
                         raise exception
                 else:
