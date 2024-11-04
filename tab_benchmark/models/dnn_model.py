@@ -11,6 +11,7 @@ import lightning as L
 from lightning import Callback
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 from lightning.pytorch.utilities.memory import is_out_of_cpu_memory
+from lightning.pytorch.loggers.mlflow import MLFlowLogger
 from scipy.special import softmax
 from sklearn.base import BaseEstimator, ClassifierMixin, RegressorMixin, clone
 from torch import nn
@@ -368,7 +369,7 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
             except RuntimeError as exception:
                 if is_oom_error(exception):
                     if self.auto_reduce_batch_size:
-                        warn('OOM error detected, reducing batch size by half.')
+                        warn(f'OOM error detected, reducing batch size by half, new batch size: {self.batch_size // 2}')
                         self.batch_size = self.batch_size // 2
                         if self.batch_size <= 2 or is_out_of_cpu_memory(exception):
                             msg = (f"Batch size of {self.batch_size} is too small (<2) or cpu oom, "
@@ -379,6 +380,11 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
                         self.initialize_datamodule(X, y, task, cat_features_idx, cat_dims, n_classes, eval_set,
                                                    eval_name, self.batch_size, new_batch_size=True)
                         refit = True
+                        if isinstance(self.lit_trainer_.logger, MLFlowLogger):
+                            # update mlflow run status to running instead of failed
+                            mlflow_client = self.lit_trainer_.logger.experiment
+                            run_id = self.lit_trainer_.logger.run_id
+                            mlflow_client.update_run(run_id, status='RUNNING')
                     else:
                         raise exception
                 else:
