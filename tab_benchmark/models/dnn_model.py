@@ -322,7 +322,7 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
         # if no eval_metric is provided, we use only the loss function
         # if no eval_set is provided, we use only the training set
         eval_metric = sequence_to_list(self.eval_metric) if self.eval_metric else []
-        eval_name = sequence_to_list(eval_name) if eval_name else ['train']
+        eval_name_optuna_es = sequence_to_list(eval_name) if eval_name else ['train']
 
         callbacks_tuples = []
         if eval_metric:
@@ -333,13 +333,13 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
 
         if optuna_trial:
             self.reported_metric = eval_metric[-1] if eval_metric else 'loss'
-            self.reported_eval_name = eval_name[-1]
+            self.reported_eval_name = eval_name_optuna_es[-1]
             callbacks_tuples.append((ReportToOptuna, dict(optuna_trial=optuna_trial,
                                                           reported_metric=self.reported_metric,
                                                           reported_eval_name=self.reported_eval_name)))
 
-        callbacks_tuples.extend(get_early_stopping_callback(eval_name[-1], eval_metric[-1] if eval_metric else 'loss',
-                                                            self.early_stopping_patience))
+        callbacks_tuples.extend(get_early_stopping_callback(
+            eval_name_optuna_es[-1], eval_metric[-1] if eval_metric else 'loss', self.early_stopping_patience))
 
         if self.max_time:
             callbacks_tuples.append((TimerDNN, dict(duration=self.max_time)))
