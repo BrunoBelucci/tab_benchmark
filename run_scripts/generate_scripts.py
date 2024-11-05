@@ -86,9 +86,9 @@ def generate_experiment_scripts(
     base_sh_content += (f" --experiment_name {experiment_name} --log_dir {log_dir} --work_dir {work_dir} "
                         f"--save_dir {save_dir} --mlflow_tracking_uri {mlflow_tracking_uri} --n_jobs {n_jobs}")
     if models_params is not None:
-        base_sh_content += f" --models_params {models_params}"
+        base_sh_content += f" --models_params '{models_params}'"
     if fits_params is not None:
-        base_sh_content += f" --fits_params {fits_params}"
+        base_sh_content += f" --fits_params '{fits_params}'"
     if dask_cluster_type is not None:
         base_sh_content += (f" --dask_cluster_type {dask_cluster_type} --n_workers {n_workers} "
                             f"--n_processes {n_processes} --n_cores {n_cores} --n_gpus {n_gpus}")
