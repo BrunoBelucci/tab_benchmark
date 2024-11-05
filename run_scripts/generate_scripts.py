@@ -204,29 +204,34 @@ db_file = generate_postgres_db_script(file_dir=file_dir, file_name=file_name, co
 datasets_characteristics = pd.read_csv(datasets_characteristics_path)
 
 # create the experiment scripts
-models_nickname = ['TabBenchmarkMLP']
+models_nickname = ['TabBenchmarkTransformer']
+models_params = '{"n_jobs":0,"auto_reduce_batch_size":1}'
 seeds_models = [0]
-tasks_ids = datasets_characteristics.loc[datasets_characteristics['task_name'] == 'regression', 'task_id'].to_list()
-task_folds = [0]
+tasks_ids = [361091, 359942, 361287, 361097, 361291, 361292, 361101, 361293, 361103, 361104, 361294, 361241, 361242, 361247, 361252, 361253, 4774, 361254, 362086, 361257, 362089, 361260, 362093, 362094, 361266, 361268, 361077, 362110, 361279]
+task_folds = [i for i in range(10)]
 n_jobs = 1
 # scripts_dir = Path() / 'scripts'
 python_file_dir = '/home/users/belucci/adacap'
 python_file_name = '-m adacap.experiments.pruning'
-experiment_name = 'MLP'
+experiment_name = 'Transformer_gpu'
 log_dir = '/home/users/belucci/adacap/results/logs'
 work_dir = '/tmp'
 save_dir = '/home/users/belucci/adacap/results/outputs'
 mlflow_tracking_uri = f'http://{clust_name}.ceremade.dauphine.lan:{mlflow_port}/'
 generate_sbatch = True
 sbatch_c = 2
-sbatch_w = 'clust6'
+sbatch_G = 1
+sbatch_w = None
 sbatch_output = '/home/users/belucci/adacap/results/sbatch_outputs/%x.%J.out'
 sbatch_error = '/home/users/belucci/adacap/results/sbatch_errors/%x.%J.err'
 sbatch_time = '364-23:59:59'
+sbatch_exclude = 'clust1,clust2,clust11,clust12'
+n_gpus = 1
 generate_experiment_scripts(models_nickname=models_nickname, seeds_models=seeds_models, tasks_ids=tasks_ids,
                             task_folds=task_folds, n_jobs=n_jobs, scripts_dir=file_dir, python_file_dir=python_file_dir,
                             python_file_name=python_file_name,
                             experiment_name=experiment_name, log_dir=log_dir, work_dir=work_dir, save_dir=save_dir,
                             mlflow_tracking_uri=mlflow_tracking_uri, generate_sbatch=generate_sbatch, sbatch_c=sbatch_c,
                             sbatch_w=sbatch_w, sbatch_output=sbatch_output, sbatch_error=sbatch_error,
-                            sbatch_time=sbatch_time)
+                            sbatch_G=sbatch_G, sbatch_time=sbatch_time, n_gpus=n_gpus, models_params=models_params,
+                            sbatch_exclude=sbatch_exclude)
