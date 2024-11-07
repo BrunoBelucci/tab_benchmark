@@ -10,7 +10,8 @@ import optuna
 import pandas as pd
 import joblib
 from tab_benchmark.preprocess import create_data_preprocess_pipeline, create_target_preprocess_pipeline
-from tab_benchmark.utils import sequence_to_list, get_default_tag, get_formated_file_path, get_most_recent_file_path
+from tab_benchmark.utils import sequence_to_list, get_default_tag, get_formated_file_path, get_most_recent_file_path, \
+    train_test_split_forced
 
 
 def merge_signatures(*signatures, repeated_parameters='keep_last'):
@@ -151,6 +152,41 @@ class EarlyStoppingMixin:
         self.output_dir = output_dir
         self.eval_metric = eval_metric
         self.max_time = max_time
+
+    def fit(
+            self,
+            X: pd.DataFrame,
+            y: pd.DataFrame | pd.Series,
+            task: Optional[str] = None,
+            cat_features: Optional[list[str]] = None,
+            cat_dims: Optional[list[int]] = None,
+            n_classes: Optional[int] = None,
+            eval_set: Optional[list[tuple]] = None,
+            eval_name: Optional[list[str]] = None,
+            init_model: Optional[str | Path] = None,
+            optuna_trial: Optional[optuna.Trial] = None,
+            **kwargs
+    ):
+        if self.auto_early_stopping:
+            if task == 'classification' or task == 'binary_classification':
+                stratify = y
+            else:
+                stratify = None
+            X, X_valid, y, y_valid = train_test_split_forced(
+                X, y,
+                test_size_pct=self.early_stopping_validation_size,
+                # random_state=random_seed,  this will be ensured by set_seeds
+                stratify=stratify
+            )
+            eval_set = eval_set if eval_set else []
+            eval_set = sequence_to_list(eval_set)
+            eval_set.append((X_valid, y_valid))
+            eval_name = eval_name if eval_name else []
+            eval_name = sequence_to_list(eval_name)
+            eval_name.append('validation_es')
+        return super().fit(X, y, task=task, cat_features=cat_features, cat_dims=cat_dims, n_classes=n_classes,
+                           eval_set=eval_set, eval_name=eval_name, init_model=init_model, optuna_trial=optuna_trial,
+                           **kwargs)
 
 
 class PreprocessingMixin:
