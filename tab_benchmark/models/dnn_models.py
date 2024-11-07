@@ -26,7 +26,7 @@ from tab_benchmark.models.mixins import (EarlyStoppingMixin, PreprocessingMixin,
 from tab_benchmark.utils import sequence_to_list, get_default_tag, get_formated_file_path, get_most_recent_file_path
 
 early_stopping_patience_dnn = 40
-max_epochs_dnn = 300
+max_epochs_dnn = 500
 
 
 class DNNMixin(EarlyStoppingMixin, PreprocessingMixin, TaskDependentParametersMixin):

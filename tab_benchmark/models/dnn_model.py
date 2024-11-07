@@ -111,7 +111,7 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
 
     def __init__(
             self,
-            max_epochs: Optional[int] = 300,  # will add max_epochs to lit_trainer_params, None to disable,
+            max_epochs: Optional[int] = 500,  # will add max_epochs to lit_trainer_params, None to disable,
             batch_size: int = 1024,
             log_losses: bool = True,  # will automatically create DefaultLogs callback, False to disable
             add_default_root_dir_to_lit_trainer_kwargs: bool = True,
