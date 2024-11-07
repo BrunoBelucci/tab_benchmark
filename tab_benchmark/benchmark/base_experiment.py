@@ -13,6 +13,7 @@ import logging
 import warnings
 import numpy as np
 import pandas as pd
+import torch
 from distributed import WorkerPlugin, Worker, Client
 import dask
 from tab_benchmark.benchmark.utils import set_mlflow_tracking_uri_check_if_exists, get_model, load_openml_task, \
@@ -832,10 +833,11 @@ class BaseExperiment:
             start_time = time.perf_counter()
             # logging
             log_and_print_msg('Running...', **kwargs)
-            if self.n_gpus > 0:
+            if self.n_gpus > 0 and self.dask_cluster_type is not None:
                 # Number of gpus in this job / Number of models being trained in parallel
                 fraction_of_gpu_being_used = self.n_gpus / (self.n_cores / self.n_jobs)
                 set_per_process_memory_fraction(fraction_of_gpu_being_used)
+            if torch.cuda.is_available() or self.n_gpus > 0:
                 reset_peak_memory_stats()
             model_nickname = kwargs.get('model_nickname')
             model_params = model_params if model_params else self.models_params.get(model_nickname, {}).copy()
@@ -907,7 +909,7 @@ class BaseExperiment:
                     mlflow_client.set_tag(run_id, tag, value)
                 # in MB (in linux getrusage seems to returns in KB)
                 log_metrics = {'elapsed_time': total_time, 'max_memory_used': getrusage(RUSAGE_SELF).ru_maxrss / 1000}
-                if self.n_gpus > 0:
+                if torch.cuda.is_available() or self.n_gpus > 0:
                     log_metrics['max_cuda_memory_reserved'] = max_memory_reserved() / (1024 ** 2)  # in MB
                     log_metrics['max_cuda_memory_allocated'] = max_memory_allocated() / (1024 ** 2)  # in MB
                 mlflow.log_metrics(log_metrics, run_id=run_id)
@@ -936,6 +938,7 @@ class BaseExperiment:
             dask_job_extra_directives=self.dask_job_extra_directives,
             dask_address=self.dask_address,
             n_gpus=self.n_gpus,
+            cuda_available=torch.cuda.is_available(),
         ))
         tags_to_log = dict(
             # slurm parameters
