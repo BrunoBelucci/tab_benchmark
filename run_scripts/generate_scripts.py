@@ -12,6 +12,7 @@ def generate_experiment_scripts(
         seeds_models=None,
         models_params=None,
         fits_params=None,
+        create_validation_set=False,
         # either tasks_ids or datasets_names_or_ids must be provided
         tasks_ids=None,
         datasets_names_or_ids=None,
@@ -98,6 +99,8 @@ def generate_experiment_scripts(
             base_sh_content += f" --dask_job_extra_directives {dask_job_extra_directives}"
     if dask_address is not None:
         base_sh_content += f" --dask_address {dask_address}"
+    if create_validation_set:
+        base_sh_content += ' --create_validation_set'
     if datasets_names_or_ids is not None and tasks_ids is None:
         base_sh_content += (f" --resample_strategy {resample_strategy} --k_folds {k_folds} "
                             f"--pct_test {pct_test} --validation_resample_strategy {validation_resample_strategy} "
