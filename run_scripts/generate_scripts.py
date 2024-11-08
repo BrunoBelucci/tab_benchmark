@@ -210,9 +210,10 @@ datasets_characteristics = pd.read_csv(datasets_characteristics_path)
 models_nickname = ['TabBenchmarkTransformer']
 models_params = '{"n_jobs":0,"auto_reduce_batch_size":1}'
 seeds_models = [0]
-tasks_ids = [361091, 359942, 361287, 361097, 361291, 361292, 361101, 361293, 361103, 361104, 361294, 361241, 361242, 361247, 361252, 361253, 4774, 361254, 362086, 361257, 362089, 361260, 362093, 362094, 361266, 361268, 361077, 362110, 361279]
+tasks_ids = list({361091, 359942, 361097, 361101, 361103, 361104, 361241, 361242, 361252, 361253, 361268, 361287, 361291, 361292, 361293, 362089, 362091, 362093, 362094, 361072, 361077, 362110})
 task_folds = [i for i in range(10)]
 n_jobs = 1
+create_validation_set = True
 # scripts_dir = Path() / 'scripts'
 python_file_dir = '/home/users/belucci/adacap'
 python_file_name = '-m adacap.experiments.pruning'
@@ -237,4 +238,4 @@ generate_experiment_scripts(models_nickname=models_nickname, seeds_models=seeds_
                             mlflow_tracking_uri=mlflow_tracking_uri, generate_sbatch=generate_sbatch, sbatch_c=sbatch_c,
                             sbatch_w=sbatch_w, sbatch_output=sbatch_output, sbatch_error=sbatch_error,
                             sbatch_G=sbatch_G, sbatch_time=sbatch_time, n_gpus=n_gpus, models_params=models_params,
-                            sbatch_exclude=sbatch_exclude)
+                            sbatch_exclude=sbatch_exclude, create_validation_set=create_validation_set)
