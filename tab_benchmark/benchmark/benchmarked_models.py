@@ -12,11 +12,11 @@ from torch import nn
 
 models_dict = {model_cls.__name__: (model_cls, {}) for model_cls in all_sklearn_models}
 
-
 models_dict.update({
     TabBenchmarkXGBClassifier.__name__: (TabBenchmarkXGBClassifier, TabBenchmarkXGBClassifier.get_recommended_params()),
     TabBenchmarkXGBRegressor.__name__: (TabBenchmarkXGBRegressor, TabBenchmarkXGBRegressor.get_recommended_params()),
-    TabBenchmarkLGBMClassifier.__name__: (TabBenchmarkLGBMClassifier, TabBenchmarkLGBMClassifier.get_recommended_params()),
+    TabBenchmarkLGBMClassifier.__name__: (
+    TabBenchmarkLGBMClassifier, TabBenchmarkLGBMClassifier.get_recommended_params()),
     TabBenchmarkLGBMRegressor.__name__: (TabBenchmarkLGBMRegressor, TabBenchmarkLGBMRegressor.get_recommended_params()),
     TabBenchmarkCatBoostClassifier.__name__: (TabBenchmarkCatBoostClassifier,
                                               TabBenchmarkCatBoostClassifier.get_recommended_params()),
@@ -28,11 +28,11 @@ models_dict.update({
 def init_GLU_kwargs(model):
     # lazy initialization
     if issubclass(model, TabBenchmarkMLP):
-        return dict(activation_fn=GLU(256), initialization_fn=partial(initialize_glu_, input_dim=256, output_dim=256))
+        return dict(activation_fns=GLU(256), initialization_fns=partial(initialize_glu_, input_dim=256, output_dim=256))
     elif issubclass(model, TabBenchmarkResNet):
-        return dict(activation_fn_1=GLU(256), activation_fn_2=GLU(256),
-                    initialization_fn_1=partial(initialize_glu_, input_dim=256, output_dim=256),
-                    initialization_fn_2=partial(initialize_glu_, input_dim=256, output_dim=256))
+        return dict(activation_fns_1=GLU(256), activation_fns_2=GLU(256),
+                    initialization_fns_1=partial(initialize_glu_, input_dim=256, output_dim=256),
+                    initialization_fns_2=partial(initialize_glu_, input_dim=256, output_dim=256))
 
 
 models_dict.update(
@@ -45,39 +45,41 @@ models_dict.update(
         'TabBenchmarkTabNet': (TabBenchmarkTabNet, TabBenchmarkTabNet.get_recommended_params()),
         'TabBenchmarkTabTransformer': (TabBenchmarkTabTransformer, TabBenchmarkTabTransformer.get_recommended_params()),
         'TabBenchmarkMLP_Deeper': (TabBenchmarkMLP, {'n_layers': 8}),
-        'TabBenchmarkMLP_Wider': (TabBenchmarkMLP, {'hidden_dim': 512}),
+        'TabBenchmarkMLP_Wider': (TabBenchmarkMLP, {'hidden_dims': 512}),
         'TabBenchmarkResNet_Deeper': (TabBenchmarkResNet, {'n_blocks': 4}),
         'TabBenchmarkResNet_Wider': (TabBenchmarkResNet, {'blocks_dim': 512}),
         'TabBenchmarkMLP_GLU': (TabBenchmarkMLP, init_GLU_kwargs),
-        'TabBenchmarkMLP_SNN': (TabBenchmarkMLP, dict(activation_fn=nn.SELU(), initialization_fn=init_snn,
-                                   dropout_module_class=nn.AlphaDropout, norm_module_class=nn.Identity)),
-        'TabBenchmarkResNet_SNN': (TabBenchmarkResNet, dict(activation_fn_1=nn.SELU(), activation_fn_2=nn.SELU(),
-                                         initialization_fn_1=init_snn, initialization_fn_2=init_snn,
-                                         dropout_module_class_1=nn.AlphaDropout,
-                                         dropout_module_class_2=nn.AlphaDropout,
-                                         norm_module_class_1=nn.Identity, norm_module_class_2=nn.Identity)),
+        'TabBenchmarkMLP_SNN': (TabBenchmarkMLP, dict(activation_fns=nn.SELU(), initialization_fns=init_snn,
+                                                      dropouts_modules_class=nn.AlphaDropout,
+                                                      norms_modules_class=nn.Identity)),
+        'TabBenchmarkResNet_SNN': (TabBenchmarkResNet, dict(activation_fns_1=nn.SELU(), activation_fns_2=nn.SELU(),
+                                                            initialization_fns_1=init_snn, initialization_fns_2=init_snn,
+                                                            dropouts_modules_class_1=nn.AlphaDropout,
+                                                            dropouts_modules_class_2=nn.AlphaDropout,
+                                                            norms_modules_class_1=nn.Identity,
+                                                            norms_modules_class_2=nn.Identity)),
         'TabBenchmarkResNet_GLU': (TabBenchmarkResNet, init_GLU_kwargs),
         'TabBenchmarkMLP_GReLUOneCycleLR': (TabBenchmarkMLP, dict(
-            activation_fn=GeneralReLU(0.1, 0.4), initialization_fn=partial(nn.init.kaiming_normal_, a=0.1),
+            activation_fns=GeneralReLU(0.1, 0.4), initialization_fns=partial(nn.init.kaiming_normal_, a=0.1),
             lit_callbacks_tuples=[(OneCycleLR, dict(max_lr=1e-3)), ],
-            early_stopping_patience=0, n_iter=100, lit_trainer_params=dict(max_epochs=100))),
+            early_stopping_patience=0, max_epochs=200)),
         'TabBenchmarkResNet_GReLUOneCycleLR': (TabBenchmarkResNet, dict(
-            activation_fn_1=GeneralReLU(0.1, 0.4), activation_fn_2=GeneralReLU(0.1, 0.4),
-            initialization_fn_1=partial(nn.init.kaiming_normal_, a=0.1),
-            initialization_fn_2=partial(nn.init.kaiming_normal_, a=0.1),
+            activation_fns_1=GeneralReLU(0.1, 0.4), activation_fns_2=GeneralReLU(0.1, 0.4),
+            initialization_fns_1=partial(nn.init.kaiming_normal_, a=0.1),
+            initialization_fns_2=partial(nn.init.kaiming_normal_, a=0.1),
             lit_callbacks_tuples=[(OneCycleLR, dict(max_lr=1e-3)), ],
-            early_stopping_patience=0, n_iter=100, lit_trainer_params=dict(max_epochs=100))),
+            early_stopping_patience=0, max_epochs=200)),
         'TabBenchmarkMLP_GReLUAutoOneCycleLR': (TabBenchmarkMLP, dict(
-            activation_fn=GeneralReLU(0.1, 0.4), initialization_fn=partial(nn.init.kaiming_normal_, a=0.1),
+            activation_fns=GeneralReLU(0.1, 0.4), initialization_fns=partial(nn.init.kaiming_normal_, a=0.1),
             lit_callbacks_tuples=[(AutomaticOneCycleLR, dict(suggestion_method='steep',
                                                              early_stop_threshold=None)), ],
-            early_stopping_patience=0, n_iter=100, lit_trainer_params=dict(max_epochs=100))),
+            early_stopping_patience=0, max_epochs=200)),
         'TabBenchmarkResNet_GReLUAutoOneCycleLR': (TabBenchmarkResNet, dict(
-            activation_fn_1=GeneralReLU(0.1, 0.4), activation_fn_2=GeneralReLU(0.1, 0.4),
-            initialization_fn_1=partial(nn.init.kaiming_normal_, a=0.1),
-            initialization_fn_2=partial(nn.init.kaiming_normal_, a=0.1),
+            activation_fns_1=GeneralReLU(0.1, 0.4), activation_fns_2=GeneralReLU(0.1, 0.4),
+            initialization_fns_1=partial(nn.init.kaiming_normal_, a=0.1),
+            initialization_fns_2=partial(nn.init.kaiming_normal_, a=0.1),
             lit_callbacks_tuples=[(AutomaticOneCycleLR, dict(suggestion_method='steep',
                                                              early_stop_threshold=None)), ],
-            early_stopping_patience=0, n_iter=100, lit_trainer_params=dict(max_epochs=100))),
+            early_stopping_patience=0, max_epochs=200)),
     }
 )
