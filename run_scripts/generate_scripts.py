@@ -51,6 +51,7 @@ def generate_experiment_scripts(
         generate_sbatch=True,
         sbatch_c=None,
         sbatch_G=None,
+        sbatch_gres_mps=None,
         sbatch_w=None,
         sbatch_exclude=None,
         sbatch_output=str(Path(__file__).parent.parent / 'results' / 'sbatch_outputs' / '%x.%J.out'),
@@ -120,6 +121,8 @@ def generate_experiment_scripts(
             sbatch_content += f"#SBATCH -c {sbatch_c}\n"
         if sbatch_G is not None:
             sbatch_content += f"#SBATCH -G {sbatch_G}\n"
+        if sbatch_gres_mps is not None:
+            sbatch_content += f"#SBATCH --gres=mps:{sbatch_gres_mps}\n"
         if sbatch_w is not None:
             sbatch_content += f"#SBATCH -w {sbatch_w}\n"
         if sbatch_exclude is not None:
@@ -207,8 +210,9 @@ db_file = generate_postgres_db_script(file_dir=file_dir, file_name=file_name, co
 datasets_characteristics = pd.read_csv(datasets_characteristics_path)
 
 # create the experiment scripts
-models_nickname = ['TabBenchmarkTransformer']
-models_params = '{"n_jobs":0,"auto_reduce_batch_size":1}'
+models_nickname = ['TabBenchmarkMLP', 'TabBenchmarkMLP_Deeper', 'TabBenchmarkMLP_Wider', 'TabBenchmarkMLP_GLU',
+                   'TabBenchmarkMLP_SNN', 'TabBenchmarkMLP_GReLUOneCycleLR', 'TabBenchmarkMLP_GReLUAutoOneCycleLR']
+models_params = '{"n_jobs":0}'  #,"auto_reduce_batch_size":1}'
 seeds_models = [0]
 tasks_ids = list({361091, 359942, 361097, 361101, 361103, 361104, 361241, 361242, 361252, 361253, 361268, 361287, 361291, 361292, 361293, 362089, 362091, 362093, 362094, 361072, 361077, 362110})
 task_folds = [i for i in range(10)]
@@ -217,14 +221,15 @@ create_validation_set = True
 # scripts_dir = Path() / 'scripts'
 python_file_dir = '/home/users/belucci/adacap'
 python_file_name = '-m adacap.experiments.pruning'
-experiment_name = 'Transformer_gpu'
+experiment_name = 'MLP_gpu'
 log_dir = '/home/users/belucci/adacap/results/logs'
 work_dir = '/tmp'
 save_dir = '/home/users/belucci/adacap/results/outputs'
 mlflow_tracking_uri = f'http://{clust_name}.ceremade.dauphine.lan:{mlflow_port}/'
 generate_sbatch = True
 sbatch_c = 2
-sbatch_G = 1
+sbatch_G = 0
+sbatch_gres_mps = 25
 sbatch_w = None
 sbatch_output = '/home/users/belucci/adacap/results/sbatch_outputs/%x.%J.out'
 sbatch_error = '/home/users/belucci/adacap/results/sbatch_errors/%x.%J.err'
@@ -237,5 +242,6 @@ generate_experiment_scripts(models_nickname=models_nickname, seeds_models=seeds_
                             experiment_name=experiment_name, log_dir=log_dir, work_dir=work_dir, save_dir=save_dir,
                             mlflow_tracking_uri=mlflow_tracking_uri, generate_sbatch=generate_sbatch, sbatch_c=sbatch_c,
                             sbatch_w=sbatch_w, sbatch_output=sbatch_output, sbatch_error=sbatch_error,
-                            sbatch_G=sbatch_G, sbatch_time=sbatch_time, n_gpus=n_gpus, models_params=models_params,
+                            sbatch_G=sbatch_G, sbatch_gres_mps=sbatch_gres_mps,
+                            sbatch_time=sbatch_time, n_gpus=n_gpus, models_params=models_params,
                             sbatch_exclude=sbatch_exclude, create_validation_set=create_validation_set)
