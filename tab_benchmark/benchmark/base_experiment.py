@@ -1502,7 +1502,7 @@ class BaseExperiment:
                               f'You can check the dask dashboard to get more information about the progress and '
                               f'the workers.')
 
-            workers = {worker_name: value['resources'] for worker_name, value
+            workers = {value['name']: value['resources'] for worker_address, value
                        in client.scheduler_info()['workers'].items()}
             free_workers = list(workers.keys())
             futures = []
