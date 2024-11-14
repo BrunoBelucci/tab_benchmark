@@ -380,6 +380,7 @@ class BaseExperiment:
         self.task_samples = args.task_samples
 
         self.log_dir = args.log_dir
+        self.log_file_name = args.log_file_name
         self.work_dir = args.work_dir
         self.save_dir = args.save_dir
         self.clean_work_dir = not args.do_not_clean_work_dir
