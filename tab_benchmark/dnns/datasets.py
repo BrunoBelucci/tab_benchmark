@@ -6,32 +6,32 @@ import lightning as L
 from torch.utils.data import DataLoader, Dataset
 
 numpy_str_type_to_torch_type_dict = {
-        np.bool_      : torch.bool,
-        np.uint8      : torch.uint8,
-        np.int8       : torch.int8,
-        np.int16      : torch.int16,
-        np.int32      : torch.int32,
-        np.int64      : torch.int64,
-        np.float16    : torch.float16,
-        np.float32    : torch.float32,
-        np.float64    : torch.float64,
-        np.complex64  : torch.complex64,
-        np.complex128 : torch.complex128,
-        'bool'        : torch.bool,
-        'uint8'       : torch.uint8,
-        'int8'        : torch.int8,
-        'int16'       : torch.int16,
-        'int32'       : torch.int32,
-        'int64'       : torch.int64,
-        'float16'     : torch.float16,
-        'float32'     : torch.float32,
-        'float64'     : torch.float64,
-        'complex64'   : torch.complex64,
-        'complex128'  : torch.complex128,
-        int           : torch.int64,
-        float         : torch.float32,
-        bool          : torch.bool,
-    }
+    np.bool_: torch.bool,
+    np.uint8: torch.uint8,
+    np.int8: torch.int8,
+    np.int16: torch.int16,
+    np.int32: torch.int32,
+    np.int64: torch.int64,
+    np.float16: torch.float16,
+    np.float32: torch.float32,
+    np.float64: torch.float64,
+    np.complex64: torch.complex64,
+    np.complex128: torch.complex128,
+    'bool': torch.bool,
+    'uint8': torch.uint8,
+    'int8': torch.int8,
+    'int16': torch.int16,
+    'int32': torch.int32,
+    'int64': torch.int64,
+    'float16': torch.float16,
+    'float32': torch.float32,
+    'float64': torch.float64,
+    'complex64': torch.complex64,
+    'complex128': torch.complex128,
+    int: torch.int64,
+    float: torch.float32,
+    bool: torch.bool,
+}
 
 
 class TabularDataset(Dataset):
@@ -55,6 +55,7 @@ class TabularDataset(Dataset):
         categorical_dims: list[int]
             List of the number of categories for each categorical feature.
     """
+
     def __init__(self, x: pd.DataFrame, y: pd.DataFrame | None, task: str, categorical_features_idx: list[int],
                  categorical_dims: list[int], name=None,
                  store_as_tensor: bool = False, continuous_type: Optional[np.dtype] = None,
@@ -139,6 +140,7 @@ class TabularDataset(Dataset):
 
 class EmptyDataset(Dataset):
     """Empty dataset for when there is no validation or test set."""
+
     def __init__(self):
         super().__init__()
 
@@ -181,6 +183,7 @@ class TabularDataModule(L.LightningDataModule):
         categorical_type: np.dtype
             Type of categorical features. Can be any numpy dtype.
     """
+
     def __init__(self, x_train: pd.DataFrame, y_train: pd.DataFrame, task: str, categorical_features_idx: list[int],
                  categorical_dims: list[int],
                  eval_sets: Optional[list[tuple[pd.DataFrame, pd.DataFrame]]] = None,
@@ -238,6 +241,16 @@ class TabularDataModule(L.LightningDataModule):
         self.train_dataset = None
         self.validation_datasets = None
         self.test_dataset = None
+        self.dataset_cls = TabularDataset
+        self.dataset_common_kwargs = dict(
+            task=self.task,
+            categorical_features_idx=self.categorical_features_idx,
+            categorical_dims=self.categorical_dims,
+            store_as_tensor=self.store_as_tensor,
+            continuous_type=self.continuous_type,
+            categorical_type=self.categorical_type,
+            n_classes=self.n_classes
+        )
 
     def setup(self, stage: str):
         """Sets up the data, creating the Datasets for the DataLoader.
@@ -247,13 +260,8 @@ class TabularDataModule(L.LightningDataModule):
                 Stage of the setup. Can be 'fit' or 'test'.
         """
         if stage == 'fit':
-            self.train_dataset = TabularDataset(x=self.x_train, y=self.y_train, task=self.task,
-                                                categorical_features_idx=self.categorical_features_idx,
-                                                categorical_dims=self.categorical_dims,
-                                                store_as_tensor=self.store_as_tensor,
-                                                continuous_type=self.continuous_type,
-                                                categorical_type=self.categorical_type, name='train',
-                                                n_classes=self.n_classes)
+            self.train_dataset = self.dataset_cls(x=self.x_train, y=self.y_train, name='train',
+                                                  **self.dataset_common_kwargs)
             if self.eval_sets:
                 if self.eval_names is None:
                     self.eval_names = [f'validation_{i}' for i in range(len(self.eval_sets))]
@@ -261,11 +269,7 @@ class TabularDataModule(L.LightningDataModule):
                 for eval_set, name in zip(self.eval_sets, self.eval_names):
                     (x_valid, y_valid) = eval_set
                     self.validation_datasets[name] = (
-                        TabularDataset(x=x_valid, y=y_valid, task=self.task, name=name,
-                                       categorical_features_idx=self.categorical_features_idx,
-                                       categorical_dims=self.categorical_dims, store_as_tensor=self.store_as_tensor,
-                                       continuous_type=self.continuous_type, categorical_type=self.categorical_type,
-                                       n_classes=self.n_classes)
+                        self.dataset_cls(x=x_valid, y=y_valid, name=name, **self.dataset_common_kwargs)
                     )
         else:
             pass
