@@ -39,19 +39,21 @@ Node_params = Node_recommended_params.copy()
 TabNet_params = TabNet_recommended_params.copy()
 
 
-def init_GLU_kwargs(model_cls):
+def init_GLU_kwargs(model_cls, **kwargs):
     # lazy initialization
     if model_cls.__name__ == TabBenchmarkMLP.__name__:
-        return {**MLP_params.copy(),
-                **dict(activation_fns=GLU(256),
-                       initialization_fns=partial(initialize_glu_, input_dim=256, output_dim=256))}
+        glu_kwargs = {**MLP_params.copy(),
+                      **dict(activation_fns=GLU(256),
+                             initialization_fns=partial(initialize_glu_, input_dim=256, output_dim=256))}
     elif model_cls.__name__ == TabBenchmarkResNet.__name__:
-        return {**ResNet_params.copy(),
-                **dict(activation_fns_1=GLU(256), activation_fns_2=GLU(256),
-                       initialization_fns_1=partial(initialize_glu_, input_dim=256, output_dim=256),
-                       initialization_fns_2=partial(initialize_glu_, input_dim=256, output_dim=256))}
+        glu_kwargs = {**ResNet_params.copy(),
+                      **dict(activation_fns_1=GLU(256), activation_fns_2=GLU(256),
+                             initialization_fns_1=partial(initialize_glu_, input_dim=256, output_dim=256),
+                             initialization_fns_2=partial(initialize_glu_, input_dim=256, output_dim=256))}
     else:
         raise ValueError(f'Unknown model_cls: {model_cls}')
+    glu_kwargs.update(kwargs)
+    return glu_kwargs
 
 
 models_dict.update(
