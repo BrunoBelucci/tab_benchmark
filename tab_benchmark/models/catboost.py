@@ -92,10 +92,10 @@ class CatBoostMixin(GBDTMixin):
     @property
     def map_task_to_default_values(self):
         return {
-            'regression': {'loss_function': 'RMSE', 'eval_metric': 'rmse'},
-            'multi_regression': {'loss_function': 'MultiRMSE', 'eval_metric': 'rmse'},
-            'classification': {'loss_function': 'MultiClass', 'eval_metric': 'logloss'},
-            'binary_classification': {'loss_function': 'Logloss', 'eval_metric': 'logloss'},
+            'regression': {'loss_function': 'RMSE', 'es_eval_metric': 'rmse'},
+            'multi_regression': {'loss_function': 'MultiRMSE', 'es_eval_metric': 'rmse'},
+            'classification': {'loss_function': 'MultiClass', 'es_eval_metric': 'logloss'},
+            'binary_classification': {'loss_function': 'Logloss', 'es_eval_metric': 'logloss'},
         }
 
     def fit(
@@ -149,10 +149,12 @@ class CatBoostMixin(GBDTMixin):
             if n_classes > 2:
                 self.set_params(**{'classes_count': n_classes})
 
-        eval_metric = self.get_params().get('eval_metric', None)
-        if eval_metric is not None:
-            eval_metric = map_our_metric_to_catboost_metric[(eval_metric, task)]
+        es_eval_metric = self.get_params().get('es_eval_metric', None)
+        if es_eval_metric is not None:
+            eval_metric = map_our_metric_to_catboost_metric[(es_eval_metric, task)]
             self.set_params(**{'eval_metric': eval_metric})
+            # we need to remove the parameter to avoid catboost complaining about unknown parameter
+            del self._init_params['es_eval_metric']
 
         callbacks = callbacks if callbacks else []
 
@@ -278,13 +280,14 @@ class TabBenchmarkCatBoostRegressor(CatBoostMixin, TabBenchmarkModel, CatBoostRe
             self,
             *,
             loss_function='default',
-            eval_metric='default',
+            es_eval_metric='default',
             categorical_encoder='ordinal',
             categorical_type='int32',
             data_scaler=None,
             **kwargs
     ):
-        super().__init__(loss_function=loss_function, eval_metric=eval_metric, categorical_encoder=categorical_encoder,
+        super().__init__(loss_function=loss_function, es_eval_metric=es_eval_metric,
+                         categorical_encoder=categorical_encoder,
                          categorical_type=categorical_type, data_scaler=data_scaler, **kwargs)
 
 
@@ -294,11 +297,12 @@ class TabBenchmarkCatBoostClassifier(CatBoostMixin, TabBenchmarkModel, CatBoostC
             self,
             *,
             loss_function='default',
-            eval_metric='default',
+            es_eval_metric='default',
             categorical_encoder='ordinal',
             categorical_type='int32',
             data_scaler=None,
             **kwargs
     ):
-        super().__init__(loss_function=loss_function, eval_metric=eval_metric, categorical_encoder=categorical_encoder,
+        super().__init__(loss_function=loss_function, es_eval_metric=es_eval_metric,
+                         categorical_encoder=categorical_encoder,
                          categorical_type=categorical_type, data_scaler=data_scaler, **kwargs)

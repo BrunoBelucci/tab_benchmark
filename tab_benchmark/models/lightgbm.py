@@ -204,10 +204,10 @@ class LGBMMixin(GBDTMixin):
     @property
     def map_task_to_default_values(self):
         return {
-            'classification': {'objective': 'multiclass', 'eval_metric': 'logloss'},
-            'binary_classification': {'objective': 'binary', 'eval_metric': 'logloss'},
-            'regression': {'objective': 'regression', 'eval_metric': 'rmse'},
-            'multi_regression': {'objective': 'regression', 'eval_metric': 'rmse'},
+            'classification': {'objective': 'multiclass', 'es_eval_metric': 'logloss'},
+            'binary_classification': {'objective': 'binary', 'es_eval_metric': 'logloss'},
+            'regression': {'objective': 'regression', 'es_eval_metric': 'rmse'},
+            'multi_regression': {'objective': 'regression', 'es_eval_metric': 'rmse'},
         }
 
     def fit(
@@ -261,7 +261,7 @@ class LGBMMixin(GBDTMixin):
 
         callbacks = kwargs.get('callbacks', [])
 
-        eval_metric = self.get_params().get('eval_metric', None)
+        es_eval_metric = self.get_params().get('es_eval_metric', None)
 
         fit_arguments = kwargs.copy() if kwargs else {}
 
@@ -273,8 +273,8 @@ class LGBMMixin(GBDTMixin):
             # we will add a training checkpoint callback
             callbacks.append(TrainingCheckPointLGBM(directory=self.output_dir, interval=self.checkpoint_interval))
 
-        if eval_metric is not None:
-            eval_metric = map_our_metric_to_lgbm_metric[(eval_metric, task)]
+        if es_eval_metric is not None:
+            eval_metric = map_our_metric_to_lgbm_metric[(es_eval_metric, task)]
             self.set_params(**{'metric': eval_metric})
         else:
             eval_metric = self.get_params().get('metric', None)

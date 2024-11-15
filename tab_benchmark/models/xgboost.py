@@ -273,10 +273,10 @@ class XGBMixin(GBDTMixin):
     @property
     def map_task_to_default_values(self):
         return {
-            'classification': {'objective': 'multi:softmax', 'eval_metric': 'logloss'},
-            'binary_classification': {'objective': 'binary:logistic', 'eval_metric': 'logloss'},
-            'regression': {'objective': 'reg:squarederror', 'eval_metric': 'rmse'},
-            'multi_regression': {'objective': 'reg:squarederror', 'eval_metric': 'rmse'},
+            'classification': {'objective': 'multi:softmax', 'es_eval_metric': 'logloss'},
+            'binary_classification': {'objective': 'binary:logistic', 'es_eval_metric': 'logloss'},
+            'regression': {'objective': 'reg:squarederror', 'es_eval_metric': 'rmse'},
+            'multi_regression': {'objective': 'reg:squarederror', 'es_eval_metric': 'rmse'},
         }
 
     def fit(
@@ -335,10 +335,10 @@ class XGBMixin(GBDTMixin):
             if n_classes > 2:
                 self.set_params(**{'num_class': n_classes})
 
-        our_eval_metric = self.eval_metric
-        if our_eval_metric is not None:
-            _, _, higher_is_better = get_metric_fn(our_eval_metric)
-            xgb_eval_metric = map_our_metric_to_xgboost_metric[(our_eval_metric, task)]
+        es_eval_metric = self.es_eval_metric
+        if es_eval_metric is not None:
+            _, _, higher_is_better = get_metric_fn(es_eval_metric)
+            xgb_eval_metric = map_our_metric_to_xgboost_metric[(es_eval_metric, task)]
             self.set_params(**{'eval_metric': xgb_eval_metric})
         else:
             higher_is_better = False
