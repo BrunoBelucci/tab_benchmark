@@ -103,7 +103,7 @@ class EarlyStoppingMixin:
     auto_early_stopping:
         Whether to use early stopping automatically, i.e., split the training data into training and validation sets
         and stop training when the validation score does not improve anymore.
-    early_stopping_validation_size:
+    auto_early_stopping_validation_size:
         Size of the validation set when using auto early stopping.
     early_stopping_patience:
         Patience for early stopping.
@@ -117,7 +117,7 @@ class EarlyStoppingMixin:
         Interval for saving a checkpoint.
     output_dir:
         Output directory for saving the model checkpoint.
-    eval_metric:
+    es_eval_metric:
         Evaluation metric. If None, the default metric of the model will be used. This metric can be any defined
         in get_metric_fn, and if there is an equivalent metric in the model, it will be used.
     max_time:
@@ -130,28 +130,28 @@ class EarlyStoppingMixin:
             self,
             *,
             auto_early_stopping: bool = True,
-            early_stopping_validation_size=0.1,
+            auto_early_stopping_validation_size=0.1,
             early_stopping_patience: int = 0,
             mlflow_run_id=None,
             log_interval: int = 50,
             save_checkpoint: bool = False,
             checkpoint_interval: int = 100,
             output_dir: Optional[str | Path] = None,
-            eval_metric: Optional[str] = None,
+            es_eval_metric: Optional[str] = None,
             max_time: Optional[int | dict] = None,
             **kwargs
     ):
-        super().__init__(**kwargs)
         self.auto_early_stopping = auto_early_stopping
-        self.early_stopping_validation_size = early_stopping_validation_size
+        self.auto_early_stopping_validation_size = auto_early_stopping_validation_size
         self.early_stopping_patience = early_stopping_patience
         self.mlflow_run_id = mlflow_run_id
         self.log_interval = log_interval
         self.save_checkpoint = save_checkpoint
         self.checkpoint_interval = checkpoint_interval
         self.output_dir = output_dir
-        self.eval_metric = eval_metric
+        self.es_eval_metric = es_eval_metric
         self.max_time = max_time
+        super().__init__(**kwargs)
 
     def fit(
             self,
@@ -174,7 +174,7 @@ class EarlyStoppingMixin:
                 stratify = None
             X, X_valid, y, y_valid = train_test_split_forced(
                 X, y,
-                test_size_pct=self.early_stopping_validation_size,
+                test_size_pct=self.auto_early_stopping_validation_size,
                 # random_state=random_seed,  this will be ensured by set_seeds
                 stratify=stratify
             )
@@ -242,7 +242,6 @@ class PreprocessingMixin:
             continuous_target_type: Optional[type | str] = 'float32',
             **kwargs
     ):
-        super().__init__(**kwargs)
         self.categorical_imputer = categorical_imputer
         self.continuous_imputer = continuous_imputer
         self.categorical_encoder = categorical_encoder
@@ -259,6 +258,7 @@ class PreprocessingMixin:
         self.continuous_target_type = continuous_target_type
         self.target_preprocess_pipeline_ = None
         self.data_preprocess_pipeline_ = None
+        super().__init__(**kwargs)
 
     def create_preprocess_pipeline(
             self,
@@ -331,6 +331,34 @@ class PreprocessingMixin:
                 self.target_preprocess_pipeline = joblib.load(file)
 
 
+def check_y_eval_set_eval_name_cat_features(X, y, eval_set, eval_name, cat_features, cat_dims=None):
+    if isinstance(y, pd.Series):
+        y = y.to_frame()
+
+    eval_set = sequence_to_list(eval_set) if eval_set is not None else []
+    eval_name = sequence_to_list(eval_name) if eval_name is not None else []
+    if eval_set and not eval_name:
+        eval_name = [f'validation_{i}' for i in range(len(eval_set))]
+    if len(eval_set) != len(eval_name):
+        raise AttributeError('eval_set and eval_name should have the same length')
+
+    if cat_features:
+        # if we pass cat_features as column names, we can ensure that they are in the dataframe
+        # (and not dropped during preprocessing for example)
+        if isinstance(cat_features[0], str):
+            cat_features_without_dropped = deepcopy(cat_features)
+            if cat_dims is not None:
+                cat_features_dims = dict(zip(cat_features, cat_dims))
+            for i, feature in enumerate(cat_features):
+                if feature not in X.columns:
+                    warn(f'Categorical feature {feature} is not in the dataframe. It will be ignored.')
+                    cat_features_without_dropped.remove(feature)
+            cat_features = cat_features_without_dropped
+            if cat_dims is not None:
+                cat_dims = [cat_features_dims[feature] for feature in cat_features]
+    return y, eval_set, eval_name, cat_features, cat_dims
+
+
 n_estimators_gbdt = 10000
 early_stopping_patience_gbdt = 100
 
@@ -339,9 +367,9 @@ class GBDTMixin(EarlyStoppingMixin, PreprocessingMixin, TaskDependentParametersM
     @merge_and_apply_signature(merge_signatures(inspect.signature(PreprocessingMixin.__init__),
                                                 inspect.signature(EarlyStoppingMixin.__init__)))
     def __init__(self, **kwargs):
-        super().__init__(**kwargs)
         self.pruned_trial = False
         self.reached_timeout = False
+        super().__init__(**kwargs)
 
     def fit(
             self,
@@ -357,30 +385,8 @@ class GBDTMixin(EarlyStoppingMixin, PreprocessingMixin, TaskDependentParametersM
             optuna_trial: Optional[optuna.Trial] = None,
             **kwargs
     ):
-        if isinstance(y, pd.Series):
-            y = y.to_frame()
-
-        eval_set = sequence_to_list(eval_set) if eval_set is not None else []
-        eval_name = sequence_to_list(eval_name) if eval_name is not None else []
-        if eval_set and not eval_name:
-            eval_name = [f'validation_{i}' for i in range(len(eval_set))]
-        if len(eval_set) != len(eval_name):
-            raise AttributeError('eval_set and eval_name should have the same length')
-
-        if cat_features:
-            # if we pass cat_features as column names, we can ensure that they are in the dataframe
-            # (and not dropped during preprocessing for example)
-            if isinstance(cat_features[0], str):
-                cat_features_without_dropped = deepcopy(cat_features)
-                if cat_dims is not None:
-                    cat_features_dims = dict(zip(cat_features, cat_dims))
-                for i, feature in enumerate(cat_features):
-                    if feature not in X.columns:
-                        warn(f'Categorical feature {feature} is not in the dataframe. It will be ignored.')
-                        cat_features_without_dropped.remove(feature)
-                cat_features = cat_features_without_dropped
-                if cat_dims is not None:
-                    cat_dims = [cat_features_dims[feature] for feature in cat_features]
+        y, eval_set, eval_name, cat_features, cat_dims = check_y_eval_set_eval_name_cat_features(
+            X, y, eval_set, eval_name, cat_features, cat_dims)
         return super().fit(X, y, task=task, cat_features=cat_features, cat_dims=cat_dims, n_classes=n_classes,
                            eval_set=eval_set, eval_name=eval_name, init_model=init_model, optuna_trial=optuna_trial,
                            **kwargs)

@@ -4,44 +4,23 @@ import copy
 from shutil import rmtree
 from typing import Optional, Callable, Sequence
 from warnings import warn
-import optuna
 import pandas as pd
 import torch
 import lightning as L
 from lightning import Callback
-from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 from lightning.pytorch.utilities.memory import is_out_of_cpu_memory
 from lightning.pytorch.loggers.mlflow import MLFlowLogger
 from scipy.special import softmax
 from sklearn.base import BaseEstimator, ClassifierMixin, RegressorMixin, clone
 from torch import nn
 from torch.utils.data import DataLoader
-from tab_benchmark.dnns.callbacks import DefaultLogs
-from tab_benchmark.dnns.callbacks.evaluate_metric import EvaluateMetric
-from tab_benchmark.dnns.callbacks.report_to_optuna import ReportToOptuna
-from tab_benchmark.dnns.callbacks.timer import TimerDNN
 from tab_benchmark.dnns.datasets import TabularDataModule, TabularDataset
 from tab_benchmark.dnns.modules import TabularModule
-from tab_benchmark.utils import sequence_to_list, get_metric_fn, is_oom_error, clear_memory
+from tab_benchmark.utils import sequence_to_list, is_oom_error, clear_memory
 
 
-def get_early_stopping_callback(eval_name, eval_metric, early_stopping_patience) -> list[tuple[type[Callback], dict]]:
-    if early_stopping_patience > 0:
-        if eval_metric == 'loss':
-            higher_is_better = False
-        else:
-            metric_fn, need_proba, higher_is_better = get_metric_fn(eval_metric)
-        if higher_is_better:
-            mode = 'max'
-        else:
-            mode = 'min'
-        return [
-            (EarlyStopping, dict(monitor=f'{eval_name}_{eval_metric}', patience=early_stopping_patience,
-                                 min_delta=0, mode=mode)),
-            (ModelCheckpoint, dict(monitor=f'{eval_name}_{eval_metric}', every_n_epochs=1, save_last=True, mode=mode)),
-        ]
-    else:
-        return []
+early_stopping_patience_dnn = 40
+max_epochs_dnn = 500
 
 
 class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
@@ -53,23 +32,8 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
         Number of epochs to train the model. It adds max_epochs to lit_trainer_params. If None, it will not be added.
     batch_size:
         Batch size for training. Default is 1024.
-    log_losses:
-        If True, it will automatically create DefaultLogs callback. Default is True.
-    add_default_root_dir_to_lit_trainer_kwargs:
-        If True, it will add default_root_dir to lit_trainer_params. Default is True.
     n_jobs:
         Number of workers for the DataLoader. Default is 0 (no parallelism).
-    early_stopping_patience:
-        Number of epochs to wait before stopping the training if the validation loss does not improve. Default is 40.
-        It adds EarlyStopping callback. If 0, it will not be added.
-    max_time:
-        Maximum time to train the model. It adds TimerDNN callback. If None, it will not be added. The interruption will
-        be done at the end of the epoch, and this will be the parameter duration of the TimerDNN callback. It accepts
-        an integer representing the number of seconds or a dict containing key-value compatible with timedelta.
-    use_best_model:
-        If True, it will load the best model. Default is True.
-    output_dir:
-        Directory to save the model.
     dnn_architecture_class:
         Class of the DNN architecture.
     loss_fn:
@@ -99,10 +63,6 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
     lit_trainer_params:
         Dictionary with the arguments to be passed to the trainer. More information about the trainer can be found
         at: https://lightning.ai/docs/pytorch/stable/common/trainer.html. Defaults to an empty dictionary.
-    continuous_type:
-        Type of continuous features. Default is 'float32'.
-    categorical_type:
-        Type of categorical features. Default is 'int64'.
     min_occurrences_to_add_category:
         We will add one more category to cat_dims if the least frequent category has less than
         min_occurrences_to_add_category occurrences and if we are inferring the dimensions from the dataset.
@@ -111,19 +71,12 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
 
     def __init__(
             self,
-            max_epochs: Optional[int] = 500,  # will add max_epochs to lit_trainer_params, None to disable,
+            max_epochs: Optional[int] = max_epochs_dnn,  # will add max_epochs to lit_trainer_params, None to disable,
             batch_size: int = 1024,
-            log_losses: bool = True,  # will automatically create DefaultLogs callback, False to disable
-            add_default_root_dir_to_lit_trainer_kwargs: bool = True,
             n_jobs: int = 0,  # will add num_workers to lit_datamodule_kwargs
-            early_stopping_patience: int = 40,  # will add EarlyStopping callback, 0 to disable
-            use_best_model: bool = True,  # will load the best model if True, False to load the last model
-            max_time: Optional[str | int] = None,  # will add Timer callback, None to disable
             auto_reduce_batch_size: bool = False,
-            output_dir: Optional[Path | str] = None,
             dnn_architecture_class: type[nn.Module] = None,
             loss_fn: Optional[Callable] = torch.nn.functional.mse_loss,
-            eval_metric: Optional[Sequence[str]] = None,
             architecture_params: Optional[dict] = None,
             architecture_params_not_from_dataset: Optional[dict] = None,
             torch_optimizer_tuple: Optional[tuple[Callable, dict]] = None,
@@ -132,25 +85,18 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
             lit_datamodule_class: type[TabularDataModule] = TabularDataModule,
             lit_callbacks_tuples: Optional[list[tuple[type[Callback], dict]]] = None,
             lit_trainer_params: Optional[dict] = None,
-            continuous_type: Optional[type | str] = 'float32',
-            categorical_type: Optional[type | str] = 'int64',
+            default_continuous_type: Optional[type | str] = 'float32',
+            default_categorical_type: Optional[type | str] = 'int64',
             min_occurrences_to_add_category: int = 10,
             lr: Optional[float] = None,
             weight_decay: Optional[float] = None,
     ):
         self.max_epochs = max_epochs
         self.batch_size = batch_size
-        self.log_losses = log_losses
-        self.add_default_root_dir_to_lit_trainer_kwargs = add_default_root_dir_to_lit_trainer_kwargs
         self.n_jobs = n_jobs
-        self.early_stopping_patience = early_stopping_patience
-        self.use_best_model = use_best_model
-        self.max_time = max_time
         self.auto_reduce_batch_size = auto_reduce_batch_size
-        self.output_dir = output_dir if output_dir else Path.cwd() / 'dnn_model_output'
         self.dnn_architecture_class = dnn_architecture_class
         self.loss_fn = loss_fn
-        self.eval_metric = eval_metric
         self.architecture_params = architecture_params if architecture_params else {}
         self.architecture_params_not_from_dataset = architecture_params_not_from_dataset if (
             architecture_params_not_from_dataset) else {}
@@ -158,8 +104,8 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
         self._torch_scheduler_tuple = torch_scheduler_tuple if torch_scheduler_tuple else (None, {}, {})
         self.lit_module_class = lit_module_class
         self.lit_datamodule_class = lit_datamodule_class
-        self.continuous_type = continuous_type
-        self.categorical_type = categorical_type
+        self.default_continuous_type = default_continuous_type
+        self.default_categorical_type = default_categorical_type
         self.min_occurrences_to_add_category = min_occurrences_to_add_category
         self.lr = lr
         self.weight_decay = weight_decay
@@ -211,8 +157,8 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
             batch_size=batch_size,
             new_batch_size=new_batch_size,
             store_as_tensor=True,
-            continuous_type=self.continuous_type,
-            categorical_type=self.categorical_type
+            continuous_type=self.default_continuous_type,
+            categorical_type=self.default_categorical_type
         )
 
     def fit(
@@ -226,7 +172,6 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
             delete_checkpoints: bool = False,
             eval_set: Optional[Sequence[tuple[pd.DataFrame, pd.DataFrame]]] = None,
             eval_name: Optional[Sequence[str]] = None,
-            optuna_trial: Optional[optuna.Trial] = None,
             init_model: Optional[Path | str] = None,
     ):
         """Fit the model.
@@ -252,8 +197,6 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
         eval_name:
             Names of the evaluation sets. If None, they will be named as 'validation_i', where i is the index of
             the set.
-        optuna_trial:
-            If report_to_optuna is True, it will report the metrics to this trial. If None, it will not report.
         init_model:
             Path to a lightning model checkpoint to initialize the model and resume training. Default is None.
         """
@@ -271,7 +214,7 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
 
         if cat_dims is None:
             # we will get the dimensions including the possible eval_set
-            X_all = pd.concat([X] + ([set[0] for set in eval_set] if eval_set is not None else []), axis=0)
+            X_all = pd.concat([X] + ([e_set[0] for e_set in eval_set] if eval_set is not None else []), axis=0)
             cat_dims = [X_all.iloc[:, idx].nunique() for idx in cat_features_idx]
             del X_all
 
@@ -281,7 +224,7 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
 
         if n_classes is None:
             if task in ('classification', 'binary_classification'):
-                y_all = pd.concat([y] + ([set[1] for set in eval_set] if eval_set is not None else []), axis=0)
+                y_all = pd.concat([y] + ([e_set[1] for e_set in eval_set] if eval_set is not None else []), axis=0)
                 n_classes = y_all.nunique().iloc[0]
                 del y_all
             else:
@@ -317,43 +260,12 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
                 lit_scheduler_config=self.torch_scheduler_tuple[2])
 
         # initialize callbacks
-
-        # we will consider that the last set of eval_set will be used as validation
-        # we will consider that the last metric of eval_metric will be used as validation
-        # if no eval_metric is provided, we use only the loss function
-        # if no eval_set is provided, we use only the training set
-        eval_metric = sequence_to_list(self.eval_metric) if self.eval_metric else []
-        eval_name_optuna_es = sequence_to_list(eval_name) if eval_name else ['train']
-
-        callbacks_tuples = []
-        if eval_metric:
-            callbacks_tuples.append((EvaluateMetric, dict(eval_metric=eval_metric)))
-
-        if self.log_losses:
-            callbacks_tuples.append((DefaultLogs, dict()))
-
-        if optuna_trial:
-            self.reported_metric = eval_metric[-1] if eval_metric else 'loss'
-            self.reported_eval_name = eval_name_optuna_es[-1]
-            callbacks_tuples.append((ReportToOptuna, dict(optuna_trial=optuna_trial,
-                                                          reported_metric=self.reported_metric,
-                                                          reported_eval_name=self.reported_eval_name)))
-
-        callbacks_tuples.extend(get_early_stopping_callback(
-            eval_name_optuna_es[-1], eval_metric[-1] if eval_metric else 'loss', self.early_stopping_patience))
-
-        if self.max_time:
-            callbacks_tuples.append((TimerDNN, dict(duration=self.max_time)))
-
-        callbacks_tuples.extend(self.lit_callbacks_tuples)
-        self.lit_callbacks_ = [fn(**kwargs) for fn, kwargs in callbacks_tuples]
+        self.lit_callbacks_ = [fn(**kwargs) for fn, kwargs in self.lit_callbacks_tuples]
 
         # initialize trainer
         trainer_kwargs = self.lit_trainer_params.copy()
         if self.max_epochs is not None:
             trainer_kwargs['max_epochs'] = self.max_epochs
-        if self.add_default_root_dir_to_lit_trainer_kwargs:
-            trainer_kwargs['default_root_dir'] = self.output_dir
         self.lit_trainer_ = L.Trainer(**trainer_kwargs, callbacks=self.lit_callbacks_)
 
         if init_model:
@@ -392,34 +304,6 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
             else:
                 refit = False
 
-        if optuna_trial:
-            for callback in self.lit_callbacks_:
-                if isinstance(callback, ReportToOptuna):
-                    self.pruned_trial = callback.pruned_trial
-                    break
-
-        if self.max_time:
-            for callback in self.lit_callbacks_:
-                if isinstance(callback, TimerDNN):
-                    self.reached_timeout = callback.reached_timeout
-                    break
-
-        # load best model
-        if self.use_best_model:
-            if len(self.lit_trainer_.checkpoint_callbacks) > 1:
-                warn('More than one checkpoint callback found, using the one in trainer.checkpoint_callback')
-            if self.lit_trainer_.checkpoint_callback and self.lit_trainer_.checkpoint_callback.best_model_path != '':
-                self.lit_module_ = self.lit_module_class.load_from_checkpoint(
-                    self.lit_trainer_.checkpoint_callback.best_model_path)
-                if self.lit_trainer_.early_stopping_callback:
-                    self.lit_module_.best_iteration_ = (self.lit_trainer_.early_stopping_callback.stopped_epoch
-                                                        - self.early_stopping_patience)
-                else:
-                    self.lit_module_.best_iteration_ = self.lit_trainer_.current_epoch
-            else:
-                warn('No checkpoint callback found, cannot load best model, using last model instead.')
-                self.lit_module_.best_iteration_ = self.lit_trainer_.current_epoch
-
         # delete checkpoints
         if delete_checkpoints:
             for checkpoint_callback in self.lit_trainer_.checkpoint_callbacks:
@@ -432,7 +316,6 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
         self.cat_features_idx_ = cat_features_idx
         self.cat_dims_ = cat_dims
         self.n_classes_ = n_classes
-        self.optuna_trial = optuna_trial
         return self
 
     def predict(self, X: pd.DataFrame, logits: bool = False):
@@ -454,8 +337,8 @@ class DNNModel(BaseEstimator, ClassifierMixin, RegressorMixin):
             'categorical_dims': self.cat_dims_,
             'n_classes': self.n_classes_,
             'store_as_tensor': True,
-            'continuous_type': self.continuous_type,
-            'categorical_type': self.categorical_type,
+            'continuous_type': self.default_continuous_type,
+            'categorical_type': self.default_categorical_type,
         }
         dataset = TabularDataset(**dataset_kwargs)
         dataloader = DataLoader(dataset, batch_size=self.batch_size, num_workers=self.n_jobs)

@@ -11,22 +11,44 @@ import mlflow
 import pandas as pd
 import torch
 import optuna
-from lightning.pytorch.callbacks import Timer
 from lightning.pytorch.loggers import MLFlowLogger
 from tab_benchmark.dnns.architectures import Node, Saint, TabTransformer, TabNet
 from tab_benchmark.dnns.architectures.mlp import MLP
 from tab_benchmark.dnns.architectures.resnet import ResNet
 from tab_benchmark.dnns.architectures.transformer import Transformer
+from tab_benchmark.dnns.callbacks import DefaultLogs
+from tab_benchmark.dnns.callbacks.evaluate_metric import EvaluateMetric
 from tab_benchmark.dnns.callbacks.report_to_optuna import ReportToOptuna
+from tab_benchmark.dnns.callbacks.timer import TimerDNN
 from tab_benchmark.dnns.modules import TabNetModule
 from tab_benchmark.dnns.utils.external.node.lib.facebook_optimizer.optimizer import QHAdam
-from tab_benchmark.models.dnn_model import DNNModel
+from tab_benchmark.models.dnn_model import DNNModel, early_stopping_patience_dnn, max_epochs_dnn
 from tab_benchmark.models.mixins import (EarlyStoppingMixin, PreprocessingMixin, TaskDependentParametersMixin,
-                                         TabBenchmarkModel, merge_signatures, merge_and_apply_signature)
-from tab_benchmark.utils import sequence_to_list, get_default_tag, get_formated_file_path, get_most_recent_file_path
+                                         TabBenchmarkModel, merge_signatures, merge_and_apply_signature,
+                                         check_y_eval_set_eval_name_cat_features)
+from tab_benchmark.utils import (get_default_tag, get_formated_file_path, get_most_recent_file_path,
+                                 get_metric_fn)
+from lightning import Callback
+from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 
-early_stopping_patience_dnn = 40
-max_epochs_dnn = 500
+
+def get_early_stopping_callback(eval_name, eval_metric, early_stopping_patience) -> list[tuple[type[Callback], dict]]:
+    if early_stopping_patience > 0:
+        if eval_metric == 'loss':
+            higher_is_better = False
+        else:
+            metric_fn, need_proba, higher_is_better = get_metric_fn(eval_metric)
+        if higher_is_better:
+            mode = 'max'
+        else:
+            mode = 'min'
+        return [
+            (EarlyStopping, dict(monitor=f'{eval_name}_{eval_metric}', patience=early_stopping_patience,
+                                 min_delta=0, mode=mode)),
+            (ModelCheckpoint, dict(monitor=f'{eval_name}_{eval_metric}', every_n_epochs=1, save_last=True, mode=mode)),
+        ]
+    else:
+        return []
 
 
 class DNNMixin(EarlyStoppingMixin, PreprocessingMixin, TaskDependentParametersMixin):
@@ -37,17 +59,23 @@ class DNNMixin(EarlyStoppingMixin, PreprocessingMixin, TaskDependentParametersMi
     def __init__(
             self,
             categorical_type='int64',
+            default_categorical_type='int64',
             categorical_encoder='ordinal',
             categorical_target_type='int64',
             data_scaler='standard',
             loss_fn='default',
+            log_interval=1,
+            early_stopping_patience=early_stopping_patience_dnn,
+            use_best_model=True,
             **kwargs
     ):
-        super().__init__(categorical_type=categorical_type, categorical_encoder=categorical_encoder,
-                         categorical_target_type=categorical_target_type, data_scaler=data_scaler, loss_fn=loss_fn,
-                         **kwargs)
         self.pruned_trial = False
         self.reached_timeout = False
+        self.use_best_model = use_best_model
+        super().__init__(categorical_type=categorical_type, categorical_encoder=categorical_encoder,
+                         categorical_target_type=categorical_target_type, data_scaler=data_scaler, loss_fn=loss_fn,
+                         log_interval=log_interval, default_categorical_type=default_categorical_type,
+                         early_stopping_patience=early_stopping_patience, **kwargs)
 
     @property
     def map_task_to_default_values(self):
@@ -72,10 +100,28 @@ class DNNMixin(EarlyStoppingMixin, PreprocessingMixin, TaskDependentParametersMi
             optuna_trial: Optional[optuna.Trial] = None,
             **kwargs
     ):
+        self.optuna_trial = optuna_trial
         fit_return = super().fit(X, y, task=task, cat_features=cat_features, cat_dims=cat_dims, n_classes=n_classes,
                                  eval_set=eval_set, eval_name=eval_name, init_model=init_model,
                                  optuna_trial=optuna_trial,
                                  **kwargs)
+
+        # load best model
+        if self.use_best_model:
+            if len(self.lit_trainer_.checkpoint_callbacks) > 1:
+                warn('More than one checkpoint callback found, using the one in trainer.checkpoint_callback')
+            if self.lit_trainer_.checkpoint_callback and self.lit_trainer_.checkpoint_callback.best_model_path != '':
+                self.lit_module_ = self.lit_module_class.load_from_checkpoint(
+                    self.lit_trainer_.checkpoint_callback.best_model_path)
+                if self.lit_trainer_.early_stopping_callback:
+                    self.lit_module_.best_iteration_ = (self.lit_trainer_.early_stopping_callback.stopped_epoch
+                                                        - self.early_stopping_patience)
+                else:
+                    self.lit_module_.best_iteration_ = self.lit_trainer_.current_epoch
+            else:
+                warn('No checkpoint callback found, cannot load best model, using last model instead.')
+                self.lit_module_.best_iteration_ = self.lit_trainer_.current_epoch
+
         for callback in self.lit_callbacks_:
             if isinstance(callback, ReportToOptuna):
                 self.pruned_trial = callback.pruned_trial
@@ -84,11 +130,12 @@ class DNNMixin(EarlyStoppingMixin, PreprocessingMixin, TaskDependentParametersMi
                     mlflow.log_metrics(log_metrics, run_id=self.mlflow_run_id)
                     log_params = {f'{self.reported_eval_name}_report_metric': self.reported_metric}
                     mlflow.log_params(log_params, run_id=self.mlflow_run_id)
-            elif isinstance(callback, Timer):
-                self.reached_timeout = callback.time_remaining() <= 0
+            elif isinstance(callback, TimerDNN):
+                self.reached_timeout = callback.reached_timeout
                 if self.mlflow_run_id:
                     log_metrics = {'reached_timeout': int(self.reached_timeout)}
                     mlflow.log_metrics(log_metrics, run_id=self.mlflow_run_id)
+
         if self.auto_reduce_batch_size:
             if self.mlflow_run_id:
                 log_param = {'final_batch_size': self.batch_size}
@@ -109,38 +156,51 @@ class DNNMixin(EarlyStoppingMixin, PreprocessingMixin, TaskDependentParametersMi
             optuna_trial: Optional[optuna.Trial] = None,
             **kwargs
     ):
-        if isinstance(y, pd.Series):
-            y = y.to_frame()
-
-        eval_set = sequence_to_list(eval_set) if eval_set is not None else []
-        eval_name = sequence_to_list(eval_name) if eval_name is not None else []
-        if eval_set and not eval_name:
-            eval_name = [f'validation_{i}' for i in range(len(eval_set))]
-        if len(eval_set) != len(eval_name):
-            raise AttributeError('eval_set and eval_name should have the same length')
-
-        if cat_features:
-            # if we pass cat_features as column names, we can ensure that they are in the dataframe
-            # (and not dropped during preprocessing for example)
-            if isinstance(cat_features[0], str):
-                cat_features_without_dropped = deepcopy(cat_features)
-                if cat_dims is not None:
-                    cat_features_dims = dict(zip(cat_features, cat_dims))
-                for i, feature in enumerate(cat_features):
-                    if feature not in X.columns:
-                        warn(f'Categorical feature {feature} is not in the dataframe. It will be ignored.')
-                        cat_features_without_dropped.remove(feature)
-                cat_features = cat_features_without_dropped
-                if cat_dims is not None:
-                    cat_dims = [cat_features_dims[feature] for feature in cat_features]
+        y, eval_set, eval_name, cat_features, cat_dims = check_y_eval_set_eval_name_cat_features(
+            X, y, eval_set, eval_name, cat_features, cat_dims)
 
         fit_arguments = kwargs.copy() if kwargs else {}
+
+        # initialize callbacks and trainer params from EarlyStoppingMixin
+
+        # we will consider that the last set of eval_set will be used as validation
+        # we will consider that the last metric of eval_metric will be used as validation
+        # if no eval_metric is provided, we use only the loss function
+        # if no eval_set is provided, we use only the training set
+
+        callbacks_tuples = []
+        if self.es_eval_metric:
+            callbacks_tuples.append((EvaluateMetric, dict(eval_metric=self.es_eval_metric)))
+
+        if self.log_interval > 0:
+            callbacks_tuples.append((DefaultLogs, dict(log_interval_epoch=self.log_interval)))
+
+        if optuna_trial:
+            self.reported_metric = self.es_eval_metric if self.es_eval_metric else 'loss'
+            self.reported_eval_name = eval_name[-1] if eval_name else 'train'
+            callbacks_tuples.append((ReportToOptuna, dict(optuna_trial=optuna_trial,
+                                                          reported_metric=self.reported_metric,
+                                                          reported_eval_name=self.reported_eval_name)))
+
+        last_eval_name = eval_name[-1] if eval_name else 'train'
+        callbacks_tuples.extend(get_early_stopping_callback(
+            last_eval_name, self.es_eval_metric if self.es_eval_metric else 'loss', self.early_stopping_patience))
+
+        if self.max_time:
+            callbacks_tuples.append((TimerDNN, dict(duration=self.max_time)))
+
+        self.lit_callbacks_tuples = self.lit_callbacks_tuples + callbacks_tuples
+
         if self.mlflow_run_id:
             self.lit_trainer_params['logger'] = MLFlowLogger(run_id=self.mlflow_run_id,
                                                              tracking_uri=mlflow.get_tracking_uri())
+
+        if self.output_dir:
+            self.lit_trainer_params['default_root_dir'] = self.output_dir
+
         fit_arguments.update(
             dict(X=X, y=y, task=task, cat_features=cat_features, cat_dims=cat_dims, n_classes=n_classes,
-                 eval_set=eval_set, eval_name=eval_name, optuna_trial=optuna_trial, init_model=init_model))
+                 eval_set=eval_set, eval_name=eval_name, init_model=init_model))
         return super().before_fit(**fit_arguments)
 
 
@@ -314,10 +374,12 @@ class NodeMixin(DNNMixin):
     def __init__(
             self,
             categorical_type='float32',
+            default_categorical_type='float32',
             torch_optimizer_tuple=deepcopy((QHAdam, dict(nus=(0.7, 1.0), betas=(0.95, 0.998)))),
             **kwargs
     ):
-        super().__init__(categorical_type=categorical_type, torch_optimizer_tuple=torch_optimizer_tuple, **kwargs)
+        super().__init__(categorical_type=categorical_type, torch_optimizer_tuple=torch_optimizer_tuple,
+                         default_categorical_type=default_categorical_type, **kwargs)
 
 
 def create_search_space_node():
@@ -345,10 +407,12 @@ class TabTransformetSaintMixin(DNNMixin):
     def __init__(
             self,
             categorical_type='float32',
+            default_categorical_type='float32',
             torch_optimizer_tuple=deepcopy((torch.optim.AdamW, {'lr': 1e-4, 'weight_decay': 1e-2})),
             **kwargs
     ):
-        super().__init__(categorical_type=categorical_type, torch_optimizer_tuple=torch_optimizer_tuple, **kwargs)
+        super().__init__(categorical_type=categorical_type, torch_optimizer_tuple=torch_optimizer_tuple,
+                         default_categorical_type=default_categorical_type, **kwargs)
 
 
 def create_search_space_saint():
@@ -391,6 +455,7 @@ class TabNetMixin(DNNMixin):
     def __init__(
             self,
             categorical_type='float32',
+            default_categorical_type='float32',
             torch_optimizer_tuple=deepcopy((torch.optim.Adam, dict(lr=0.02))),
             torch_scheduler_tuple=deepcopy((
                     torch.optim.lr_scheduler.StepLR,
@@ -408,7 +473,7 @@ class TabNetMixin(DNNMixin):
     ):
         super().__init__(categorical_type=categorical_type, torch_optimizer_tuple=torch_optimizer_tuple,
                          torch_scheduler_tuple=torch_scheduler_tuple, lit_trainer_params=lit_trainer_params,
-                         lit_module_class=lit_module_class, **kwargs)
+                         lit_module_class=lit_module_class, default_categorical_type=default_categorical_type, **kwargs)
         self.gamma_sched = gamma_sched
         self.step_sched = step_sched
 
