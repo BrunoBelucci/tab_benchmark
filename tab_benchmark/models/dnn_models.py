@@ -65,6 +65,7 @@ class DNNMixin(EarlyStoppingMixin, PreprocessingMixin, TaskDependentParametersMi
             data_scaler='standard',
             loss_fn='default',
             log_interval=1,
+            auto_early_stopping=True,
             early_stopping_patience=early_stopping_patience_dnn,
             use_best_model=True,
             **kwargs
@@ -75,7 +76,8 @@ class DNNMixin(EarlyStoppingMixin, PreprocessingMixin, TaskDependentParametersMi
         super().__init__(categorical_type=categorical_type, categorical_encoder=categorical_encoder,
                          categorical_target_type=categorical_target_type, data_scaler=data_scaler, loss_fn=loss_fn,
                          log_interval=log_interval, default_categorical_type=default_categorical_type,
-                         early_stopping_patience=early_stopping_patience, **kwargs)
+                         auto_early_stopping=auto_early_stopping, early_stopping_patience=early_stopping_patience,
+                         **kwargs)
 
     @property
     def map_task_to_default_values(self):
@@ -296,11 +298,6 @@ def create_search_space_mlp():
 
 def get_recommended_params_dnn(create_search_space_dnn_fn):
     default_values_from_search_space = create_search_space_dnn_fn()[1]
-    default_values_from_search_space.update(dict(
-        max_epochs=max_epochs_dnn,
-        auto_early_stopping=True,
-        early_stopping_patience=early_stopping_patience_dnn,
-    ))
     return default_values_from_search_space
 
 
