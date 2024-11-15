@@ -4,6 +4,7 @@ import pandas as pd
 from pathlib import Path
 from shutil import rmtree
 import argparse
+from tqdm import tqdm
 
 
 def clean_orphan_artifactory(tracking_url, artifactory_root_dir, use_sql=True):
@@ -22,7 +23,8 @@ def clean_orphan_artifactory(tracking_url, artifactory_root_dir, use_sql=True):
     # get what exists in the filesystem but not in the mlflow tracking server
     orphan_artifactories = experiment_existent_artifactories - experiment_artifactories
     # remove orphan artifactories
-    for orphan_artifactory in orphan_artifactories:
+    print('Removing orphan experiment artifactories')
+    for orphan_artifactory in tqdm(orphan_artifactories):
         rmtree(orphan_artifactory)
 
     # now do the same for runs inside the experiments
@@ -39,7 +41,8 @@ def clean_orphan_artifactory(tracking_url, artifactory_root_dir, use_sql=True):
                                    for experiment_dir in artifactory_root_dir.iterdir()
                                    for run_dir in experiment_dir.iterdir()}
     orphan_runs_artifactories = runs_existent_artifactories - runs_artifactories
-    for orphan_run_artifactory in orphan_runs_artifactories:
+    print('Removing orphan runs artifactories')
+    for orphan_run_artifactory in tqdm(orphan_runs_artifactories):
         rmtree(orphan_run_artifactory)
     return True
 
