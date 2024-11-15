@@ -5,7 +5,7 @@ from typing import Optional
 import lightning as L
 from torch.utils.data import DataLoader, Dataset
 
-numpy_and_str_to_torch_type_dict = {
+numpy_str_type_to_torch_type_dict = {
         np.bool_      : torch.bool,
         np.uint8      : torch.uint8,
         np.int8       : torch.int8,
@@ -28,6 +28,9 @@ numpy_and_str_to_torch_type_dict = {
         'float64'     : torch.float64,
         'complex64'   : torch.complex64,
         'complex128'  : torch.complex128,
+        int           : torch.int64,
+        float         : torch.float32,
+        bool          : torch.bool,
     }
 
 
@@ -84,8 +87,8 @@ class TabularDataset(Dataset):
         self.categorical_dims = categorical_dims
         self.name = name
         if store_as_tensor:
-            categorical_type = numpy_and_str_to_torch_type_dict[categorical_type]
-            continuous_type = numpy_and_str_to_torch_type_dict[continuous_type]
+            categorical_type = numpy_str_type_to_torch_type_dict[categorical_type]
+            continuous_type = numpy_str_type_to_torch_type_dict[continuous_type]
             self.x_continuous = torch.as_tensor(x.iloc[:, continuous_features_idx].to_numpy(),
                                                 dtype=continuous_type)
             self.x_categorical = torch.as_tensor(x.iloc[:, categorical_features_idx].to_numpy(),
