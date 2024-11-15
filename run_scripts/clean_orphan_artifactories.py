@@ -46,8 +46,8 @@ def clean_orphan_artifactory(tracking_url, artifactory_root_dir, use_sql=True):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Clean orphan artifactories from mlflow tracking server')
-    parser.add_argument('--mlflow_tracking_uri', type=str, required=True, help='mlflow tracking uri')
+    parser.add_argument('--tracking_uri', type=str, required=True, help='mlflow or mlflow-sql tracking uri')
     parser.add_argument('--artifactory_root_dir', type=str, required=True, help='root dir of the artifactories')
     args = parser.parse_args()
     artifactory_root_dir = Path(args.artifactory_root_dir)
-    clean_orphan_artifactory(args.mlflow_tracking_uri, artifactory_root_dir)
+    clean_orphan_artifactory(args.tracking_uri, artifactory_root_dir)
