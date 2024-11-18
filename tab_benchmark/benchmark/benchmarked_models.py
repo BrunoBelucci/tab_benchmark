@@ -68,7 +68,7 @@ models_dict.update(
         'TabBenchmarkMLP_Deeper': (TabBenchmarkMLP, {**MLP_params.copy(), **{'n_layers': 8}}),
         'TabBenchmarkMLP_Wider': (TabBenchmarkMLP, {**MLP_params.copy(), **{'hidden_dims': 512}}),
         'TabBenchmarkResNet_Deeper': (TabBenchmarkResNet, {**ResNet_params.copy(), **{'n_blocks': 4}}),
-        'TabBenchmarkResNet_Wider': (TabBenchmarkResNet, {**ResNet_params.copy(), **{'blocks_dim': 512}}),
+        'TabBenchmarkResNet_Wider': (TabBenchmarkResNet, {**ResNet_params.copy(), **{'blocks_dims': 512}}),
         'TabBenchmarkMLP_GLU': (TabBenchmarkMLP, init_GLU_kwargs),
         'TabBenchmarkMLP_SNN': (
             TabBenchmarkMLP, {**MLP_params.copy(), **dict(activation_fns=nn.SELU(), initialization_fns=init_snn,
