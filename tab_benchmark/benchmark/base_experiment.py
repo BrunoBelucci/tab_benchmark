@@ -527,6 +527,10 @@ class BaseExperiment:
                 del model_params['output_dir']
                 mlflow_client = mlflow.client.MlflowClient(tracking_uri=self.mlflow_tracking_uri)
                 mlflow_client.set_tag(run_id, 'output_dir', output_dir)
+            for param_name in model_params.keys():
+                if callable(model_params[param_name]):
+                    # avoid serializing functions problems
+                    model_params[param_name] = model_params[param_name].__name__
             mlflow.log_params(model_params, run_id=run_id)
             # just to make it easier to filter after
             if model_nickname.find('TabBenchmark') != -1:
@@ -1509,7 +1513,7 @@ class BaseExperiment:
                               f'You can check the dask dashboard to get more information about the progress and '
                               f'the workers.')
 
-            workers = {value['name']: value['resources'] for worker_address, value
+            workers = {str(value['name']): value['resources'] for worker_address, value
                        in client.scheduler_info()['workers'].items()}
             free_workers = list(workers.keys())
             futures = []
