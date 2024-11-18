@@ -521,6 +521,12 @@ class BaseExperiment:
             if hasattr(model, 'loss_fn'):
                 # will be logged after
                 del model_params['loss_fn']
+            if hasattr(model, 'output_dir'):
+                # will be logged as a tag, because it can change if the run fails and we retry
+                output_dir = model_params['output_dir']
+                del model_params['output_dir']
+                mlflow_client = mlflow.client.MlflowClient(tracking_uri=self.mlflow_tracking_uri)
+                mlflow_client.set_tag(run_id, 'output_dir', output_dir)
             mlflow.log_params(model_params, run_id=run_id)
             # just to make it easier to filter after
             if model_nickname.find('TabBenchmark') != -1:
