@@ -7,6 +7,7 @@ from copy import deepcopy
 
 
 init_snn = partial(nn.init.kaiming_normal_, nonlinearity='linear')  # SNN initialization, check pytorch docs SELU
+init_snn.__name__ = 'init_snn'  # for logging purposes
 
 
 # adapted from tabnet

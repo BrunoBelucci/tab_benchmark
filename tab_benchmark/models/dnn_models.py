@@ -11,7 +11,7 @@ import mlflow
 import pandas as pd
 import torch
 import optuna
-from lightning.pytorch.loggers import MLFlowLogger
+from tab_benchmark.dnns.loggers.mlflow_logger import MLFlowLogger
 from tab_benchmark.dnns.architectures import Node, Saint, TabTransformer, TabNet
 from tab_benchmark.dnns.architectures.mlp import MLP
 from tab_benchmark.dnns.architectures.resnet import ResNet

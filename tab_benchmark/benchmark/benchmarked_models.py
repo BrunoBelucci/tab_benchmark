@@ -41,15 +41,17 @@ TabNet_params = TabNet_recommended_params.copy()
 
 def init_GLU_kwargs(model_cls, **kwargs):
     # lazy initialization
+    initialization_fn = partial(initialize_glu_, input_dim=256, output_dim=256)
+    initialization_fn.__name__ = 'initialize_glu_'
     if model_cls.__name__ == TabBenchmarkMLP.__name__:
         glu_kwargs = {**MLP_params.copy(),
                       **dict(activation_fns=GLU(256),
-                             initialization_fns=partial(initialize_glu_, input_dim=256, output_dim=256))}
+                             initialization_fns=initialization_fn)}
     elif model_cls.__name__ == TabBenchmarkResNet.__name__:
         glu_kwargs = {**ResNet_params.copy(),
                       **dict(activation_fns_1=GLU(256), activation_fns_2=GLU(256),
-                             initialization_fns_1=partial(initialize_glu_, input_dim=256, output_dim=256),
-                             initialization_fns_2=partial(initialize_glu_, input_dim=256, output_dim=256))}
+                             initialization_fns_1=initialization_fn,
+                             initialization_fns_2=initialization_fn)}
     else:
         raise ValueError(f'Unknown model_cls: {model_cls}')
     glu_kwargs.update(kwargs)

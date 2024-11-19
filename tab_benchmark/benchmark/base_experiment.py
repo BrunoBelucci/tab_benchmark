@@ -518,6 +518,7 @@ class BaseExperiment:
                 model.auto_early_stopping = False
         if log_to_mlflow:
             model_params = vars(model).copy()
+            model_params = flatten_dict(model_params)
             if hasattr(model, 'loss_fn'):
                 # will be logged after
                 del model_params['loss_fn']
@@ -530,7 +531,10 @@ class BaseExperiment:
             for param_name in model_params.keys():
                 if callable(model_params[param_name]):
                     # avoid serializing functions problems
-                    model_params[param_name] = model_params[param_name].__name__
+                    try:
+                        model_params[param_name] = model_params[param_name].__name__
+                    except AttributeError:
+                        model_params[param_name] = str(model_params[param_name])
             mlflow.log_params(model_params, run_id=run_id)
             # just to make it easier to filter after
             if model_nickname.find('TabBenchmark') != -1:
