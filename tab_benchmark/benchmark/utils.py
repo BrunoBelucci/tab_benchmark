@@ -1,3 +1,4 @@
+import json
 from copy import deepcopy
 import mlflow
 import numpy as np
@@ -119,26 +120,19 @@ def fit_model(model, X, y, cat_ind, att_names, cat_dims, n_classes, task_name, t
     return model, X_train, y_train, X_test, y_test, X_validation, y_validation
 
 
-def evaluate_model(model, eval_set, eval_name, metrics, report_metric=None, n_classes=None, error_score='raise',
-                   log_to_mlflow=False, run_id=None):
+def evaluate_model(model, eval_set, eval_name, metrics, report_metric=None, n_classes=None, error_score='raise'):
     results = evaluate_set(model, eval_set, metrics, n_classes, error_score)
     if report_metric is not None:
         results['reported'] = results[report_metric]
-        if log_to_mlflow:
-            log_params = {f'{eval_name}_report_metric': report_metric}
-            mlflow.log_params(log_params, run_id=run_id)
     results_dict = {f'{eval_name}_{metric}': value for metric, value in results.items()}
-    if log_to_mlflow:
-        mlflow.log_metrics(results_dict, run_id=run_id)
     return results_dict
 
 
 # just so we can reuse the same function for loading tasks from OpenML and from pandas
 def load_task_from_X_y_cat_ind_att_names(X, y, cat_ind, att_names, dataset_name, n_classes, task_name, seed_dataset,
-                                         resample_strategy, n_folds, pct_test, fold,
+                                         resample_strategy, k_folds, pct_test, fold,
                                          create_validation_set=False, validation_resample_strategy='next_fold',
-                                         pct_validation=0.1,
-                                         log_to_mlflow=False, run_id=None):
+                                         pct_validation=0.1):
     cat_features_names = [att_names[i] for i, value in enumerate(cat_ind) if value is True]
     cat_dims = [len(X[cat_feature].cat.categories) for cat_feature in cat_features_names]
     if resample_strategy == 'hold_out':
@@ -156,9 +150,9 @@ def load_task_from_X_y_cat_ind_att_names(X, y, cat_ind, att_names, dataset_name,
         folds = None
     elif resample_strategy == 'k-fold_cv':
         if task_name in ('classification', 'binary_classification'):
-            kf = StratifiedKFold(n_splits=n_folds, random_state=seed_dataset, shuffle=True)
+            kf = StratifiedKFold(n_splits=k_folds, random_state=seed_dataset, shuffle=True)
         elif task_name in ('regression', 'multi_regression'):
-            kf = KFold(n_splits=n_folds, random_state=seed_dataset, shuffle=True)
+            kf = KFold(n_splits=k_folds, random_state=seed_dataset, shuffle=True)
         else:
             raise NotImplementedError
         folds = list(kf.split(X, y))
@@ -168,7 +162,7 @@ def load_task_from_X_y_cat_ind_att_names(X, y, cat_ind, att_names, dataset_name,
     if create_validation_set:
         if validation_resample_strategy == 'next_fold':
             if resample_strategy == 'k-fold_cv':
-                next_fold = (fold + 1) % n_folds
+                next_fold = (fold + 1) % k_folds
                 _, validation_indices = folds[next_fold]
                 train_indices = np.setdiff1d(train_indices, validation_indices, assume_unique=True)
             else:
@@ -191,26 +185,21 @@ def load_task_from_X_y_cat_ind_att_names(X, y, cat_ind, att_names, dataset_name,
             raise NotImplementedError
     else:
         validation_indices = None
-    if log_to_mlflow:
-        log_params = {'task_name': task_name, 'dataset_name': dataset_name}
-        mlflow.log_params(log_params, run_id=run_id)
-    return (X, y, cat_ind, att_names, cat_features_names, cat_dims, task_name, n_classes, train_indices, test_indices,
-            validation_indices)
+    return (X, y, cat_ind, att_names, cat_features_names, cat_dims, task_name, dataset_name, n_classes, train_indices,
+            test_indices, validation_indices)
 
 
-def load_own_task(dataset_name_or_id, seed_dataset, resample_strategy, n_folds, pct_test, fold,
-                  create_validation_set=False, validation_resample_strategy='next_fold', pct_validation=0.1,
-                  log_to_mlflow=False, run_id=None):
+def load_own_task(dataset_name_or_id, seed_dataset, resample_strategy, k_folds, pct_test, fold,
+                  create_validation_set=False, validation_resample_strategy='next_fold', pct_validation=0.1):
     dataset, task_name, target, n_classes = get_dataset(dataset_name_or_id)
     X, y, cat_ind, att_names = dataset.get_data(target=target)
     return load_task_from_X_y_cat_ind_att_names(X, y, cat_ind, att_names, dataset.name, n_classes, task_name,
-                                                seed_dataset, resample_strategy, n_folds,
+                                                seed_dataset, resample_strategy, k_folds,
                                                 pct_test, fold, create_validation_set, validation_resample_strategy,
-                                                pct_validation, log_to_mlflow, run_id)
+                                                pct_validation)
 
 
-def load_openml_task(task_id, task_repeat, task_sample, task_fold, create_validation_set=False,
-                     log_to_mlflow=False, run_id=None):
+def load_openml_task(task_id, task_repeat, task_sample, task_fold, create_validation_set=False):
     task = openml.tasks.get_task(task_id)
     split = task.get_train_test_split_indices(task_fold, task_repeat, task_sample)
     train_indices = split.train
@@ -240,26 +229,26 @@ def load_openml_task(task_id, task_repeat, task_sample, task_fold, create_valida
         task_name = 'regression'
     else:
         raise NotImplementedError
-    if log_to_mlflow:
-        params_to_log = {'task_name': task_name, 'dataset_name': dataset.name}
-        mlflow.log_params(params_to_log, run_id=run_id)
-    return (X, y, cat_ind, att_names, cat_features_names, cat_dims, task_name, n_classes, train_indices, test_indices,
-            validation_indices)
+    dataset_name = dataset.name
+    return (X, y, cat_ind, att_names, cat_features_names, cat_dims, task_name, dataset_name, n_classes, train_indices,
+            test_indices, validation_indices)
 
 
-def load_pandas_task(dataframe, target, task, seed_dataset, resample_strategy, n_folds, pct_test, fold,
-                     dataset_name='pandas_task',
-                     create_validation_set=False, validation_resample_strategy='next_fold', pct_validation=0.1,
-                     log_to_mlflow=False, run_id=None):
-    X = dataframe.drop(columns=[target])
-    y = dataframe[target]
+def load_json_task(json_path, seed_dataset, resample_strategy, k_folds, pct_test, fold,
+                   create_validation_set=False, validation_resample_strategy='next_fold', pct_validation=0.1):
+    with open(json_path, 'r') as json_file:
+        json_content = json.load(json_file)
+    X = pd.read_csv(json_content['X'])
+    y = pd.read_csv(json_content['y'])
+    task = json_content['task']
+    dataset_name = json_content['dataset_name']
     cat_ind = [True if X[feature].dtype.name == 'category' else False for feature in X.columns]
     att_names = X.columns
     if task in ('classification', 'binary_classification'):
-        n_classes = len(dataframe[target].unique())
+        n_classes = len(y.unique())
     else:
         n_classes = 1
     return load_task_from_X_y_cat_ind_att_names(X, y, cat_ind, att_names, dataset_name, n_classes, task, seed_dataset,
-                                                resample_strategy, n_folds,
+                                                resample_strategy, k_folds,
                                                 pct_test, fold, create_validation_set, validation_resample_strategy,
-                                                pct_validation, log_to_mlflow, run_id)
+                                                pct_validation)
