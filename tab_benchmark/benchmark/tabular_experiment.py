@@ -1,3 +1,4 @@
+import argparse
 from itertools import product
 from pathlib import Path
 from typing import Optional
@@ -14,6 +15,7 @@ from tab_benchmark.benchmark.benchmarked_models import models_dict
 
 
 class TabularExperiment(BaseExperiment):
+    @property
     def models_dict(self):
         return models_dict
 
@@ -295,7 +297,7 @@ class TabularExperiment(BaseExperiment):
 
         unique_params.update(dict(create_validation_set=self.create_validation_set))
 
-        extra_params = dict(n_jobs=self.n_jobs)
+        extra_params = dict(n_jobs=self.n_jobs, return_results=False)
         return combinations, combination_names, unique_params, extra_params
 
     def _log_run_start_params(self, mlflow_run_id, **run_unique_params):
@@ -305,10 +307,12 @@ class TabularExperiment(BaseExperiment):
         )
         mlflow.log_params(params_to_log, run_id=mlflow_run_id)
 
-    def _log_run_results(self, mlflow_run_id=None, **kwargs):
+    def _log_run_results(self, combination: dict, unique_params: Optional[dict] = None, mlflow_run_id=None,
+                         **kwargs):
         if mlflow_run_id is None:
             return
-        super()._log_run_results(mlflow_run_id=mlflow_run_id, **kwargs)
+        super()._log_run_results(combination=combination, unique_params=unique_params, mlflow_run_id=mlflow_run_id,
+                                 **kwargs)
 
         log_params = {}
         log_metrics = {}
@@ -319,7 +323,7 @@ class TabularExperiment(BaseExperiment):
             log_metrics['max_cuda_memory_allocated'] = max_memory_allocated() / (1024 ** 2)  # in MB
 
         # model name to facilitate filtering
-        model_nickname = kwargs['model_nickname']
+        model_nickname = combination['model_nickname']
         if model_nickname.find('TabBenchmark') != -1:
             log_params.update({'model_name': model_nickname[len('TabBenchmark'):]})
 
@@ -629,3 +633,9 @@ class TabularExperiment(BaseExperiment):
                                                     **extra_params)
         return self._train_model(combination=combination, unique_params=unique_params, return_results=return_results,
                                  **extra_params)
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    experiment = TabularExperiment(parser=parser)
+    experiment.run()
