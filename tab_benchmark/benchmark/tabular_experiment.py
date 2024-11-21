@@ -337,7 +337,8 @@ class TabularExperiment(BaseExperiment):
         log_params.update({'report_metric': report_metric})
 
         # evaluation results
-        eval_results_dict = kwargs['evaluate_model_return']
+        eval_results_dict = kwargs['evaluate_model_return'].copy()
+        eval_results_dict.pop('elapsed_time', None)
         log_metrics.update(eval_results_dict)
 
         mlflow.log_params(log_params, run_id=mlflow_run_id)
