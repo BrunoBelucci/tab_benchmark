@@ -1,6 +1,5 @@
 from __future__ import annotations
 import gc
-import subprocess
 import time
 import warnings
 from copy import copy
@@ -281,13 +280,6 @@ def set_seeds(seed):
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
-
-
-def get_git_revision_hash() -> str:
-    try:
-        return subprocess.check_output(['git', 'rev-parse', 'HEAD']).decode('ascii').strip()
-    except Exception as e:
-        return 'Not a git repository'
 
 
 def extends(fn_being_extended, map_default_values_change=None, additional_params=None, exclude_params=None):

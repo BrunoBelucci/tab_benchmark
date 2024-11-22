@@ -11,22 +11,6 @@ from tab_benchmark.models.dnn_model import DNNModel
 from tab_benchmark.utils import set_seeds, evaluate_set, train_test_split_forced, flatten_dict
 
 
-def check_if_exists_mlflow(experiment_name, **kwargs):
-    filter_string = " AND ".join([f'params."{k}" = "{v}"' for k, v in flatten_dict(kwargs).items()])
-    runs = mlflow.search_runs(experiment_names=[experiment_name], filter_string=filter_string)
-    # remove ./mlruns if it is automatically created
-    # if os.path.exists('./mlruns'):
-    #     os.rmdir('./mlruns')
-    if 'tags.was_evaluated' in runs.columns:
-        runs = runs.loc[(runs['status'] == 'FINISHED') & (runs['tags.was_evaluated'])]
-        if not runs.empty:
-            return runs.iloc[0]
-        else:
-            return None
-    else:
-        return None
-
-
 def get_model(model_nickname, seed_model, model_params=None, models_dict=None, n_jobs=1, output_dir=None):
     model_params = model_params if model_params is not None else {}
     models_dict = models_dict if models_dict is not None else benchmarked_models_dict.copy()
@@ -48,18 +32,6 @@ def get_model(model_nickname, seed_model, model_params=None, models_dict=None, n
         if hasattr(model, 'output_dir'):
             setattr(model, 'output_dir', output_dir)
     return model
-
-
-def set_mlflow_tracking_uri_check_if_exists(experiment_name, mlflow_tracking_uri, check_if_exists, **kwargs):
-    mlflow.set_tracking_uri(mlflow_tracking_uri)
-    if check_if_exists:
-        run = check_if_exists_mlflow(experiment_name, **kwargs)
-    else:
-        run = None
-    if run is not None:
-        return run
-    else:
-        return None
 
 
 def fit_model(model, X, y, cat_ind, att_names, cat_dims, n_classes, task_name, train_indices, test_indices,
