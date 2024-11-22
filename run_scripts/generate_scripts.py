@@ -34,8 +34,8 @@ def generate_experiment_scripts(
         python_file_name='base_experiment.py',
         experiment_name='tab_benchmark_experiment',
         log_dir=Path(__file__).parent.parent / 'results' / 'logs',
-        work_dir=Path('/tmp'),
-        save_dir=Path(__file__).parent.parent / 'results' / 'outputs',
+        work_root_dir=Path('/tmp'),
+        save_root_dir=Path(__file__).parent.parent / 'results' / 'outputs',
         mlflow_tracking_uri='sqlite:///' + str(
             (Path(__file__).parent.parent / 'results').resolve()) + '/tab_benchmark.db',
         dask_cluster_type=None,
@@ -85,8 +85,9 @@ def generate_experiment_scripts(
     conda activate {conda_env}
     cd {python_file_dir}
     python {python_file_name}""")
-    base_sh_content += (f" --experiment_name {experiment_name} --log_dir {log_dir} --work_dir {work_dir} "
-                        f"--save_dir {save_dir} --mlflow_tracking_uri {mlflow_tracking_uri} --n_jobs {n_jobs}")
+    base_sh_content += (f" --experiment_name {experiment_name} --log_dir {log_dir} --work_root_dir {work_root_dir} "
+                        f"--save_root_dir {save_root_dir} --mlflow_tracking_uri {mlflow_tracking_uri} "
+                        f"--n_jobs {n_jobs}")
     if models_params is not None:
         base_sh_content += f" --models_params '{models_params}'"
     if fits_params is not None:
@@ -223,12 +224,12 @@ python_file_dir = '/home/users/belucci/adacap'
 python_file_name = '-m adacap.experiments.pruning'
 experiment_name = 'MLP_gpu'
 log_dir = '/home/users/belucci/adacap/results/logs'
-work_dir = '/tmp'
-save_dir = '/home/users/belucci/adacap/results/outputs'
+work_root_dir = '/tmp'
+save_root_dir = '/home/users/belucci/adacap/results/outputs'
 mlflow_tracking_uri = f'http://{clust_name}.ceremade.dauphine.lan:{mlflow_port}/'
 generate_sbatch = True
 sbatch_c = 2
-sbatch_G = 0
+sbatch_G = None
 sbatch_gres_mps = 25
 sbatch_w = None
 sbatch_output = '/home/users/belucci/adacap/results/sbatch_outputs/%x.%J.out'
@@ -239,7 +240,8 @@ n_gpus = 1
 generate_experiment_scripts(models_nickname=models_nickname, seeds_models=seeds_models, tasks_ids=tasks_ids,
                             task_folds=task_folds, n_jobs=n_jobs, scripts_dir=file_dir, python_file_dir=python_file_dir,
                             python_file_name=python_file_name,
-                            experiment_name=experiment_name, log_dir=log_dir, work_dir=work_dir, save_dir=save_dir,
+                            experiment_name=experiment_name,
+                            log_dir=log_dir, work_root_dir=work_root_dir, save_root_dir=save_root_dir,
                             mlflow_tracking_uri=mlflow_tracking_uri, generate_sbatch=generate_sbatch, sbatch_c=sbatch_c,
                             sbatch_w=sbatch_w, sbatch_output=sbatch_output, sbatch_error=sbatch_error,
                             sbatch_G=sbatch_G, sbatch_gres_mps=sbatch_gres_mps,
