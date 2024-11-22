@@ -87,15 +87,16 @@ class TabularExperiment(BaseExperiment):
         self.task_repeats = args.task_repeats
         self.task_folds = args.task_folds
         self.task_samples = args.task_samples
+        return args
 
-    def _on_train_start(self, combination: dict, unique_params: Optional[dict] = None, **kwargs):
-        result = super()._on_train_start(combination=combination, unique_params=unique_params, **kwargs)
+    def _on_train_start(self, combination: dict, unique_params: Optional[dict] = None,
+                        extra_params: Optional[dict] = None, **kwargs):
         if torch.cuda.is_available() or self.n_gpus > 0:
             reset_peak_memory_stats()
-        return result
+        return {}
 
-    def _load_data(self, combination: dict, unique_params: Optional[dict] = None, **kwargs):
-        result = super()._load_data(combination=combination, unique_params=unique_params, **kwargs)
+    def _load_data(self, combination: dict, unique_params: Optional[dict] = None,
+                   extra_params: Optional[dict] = None, **kwargs):
         create_validation_set = unique_params.get('create_validation_set', False)
         if 'task_id' in combination:
             task_id = combination['task_id']
@@ -144,7 +145,8 @@ class TabularExperiment(BaseExperiment):
         else:
             raise ValueError('Combination must have either task_id or dataset_name_or_id or json_path')
 
-        result.update({
+        return {
+
             'X': X,
             'y': y,
             'cat_ind': cat_ind,
@@ -157,23 +159,22 @@ class TabularExperiment(BaseExperiment):
             'train_indices': train_indices,
             'test_indices': test_indices,
             'validation_indices': validation_indices
-        })
-        return result
+        }
 
-    def _load_model(self, combination: dict, unique_params: Optional[dict] = None, **kwargs):
-        result = super()._load_model(combination=combination, unique_params=unique_params, **kwargs)
+    def _load_model(self, combination: dict, unique_params: Optional[dict] = None,
+                    extra_params: Optional[dict] = None, **kwargs):
         model_nickname = combination['model_nickname']
         seed_model = combination['seed_model']
         model_params = combination['model_params']
         create_validation_set = unique_params.get('create_validation_set', False)
-        mlflow_run_id = kwargs.get('mlflow_run_id', None)
+        mlflow_run_id = extra_params.get('mlflow_run_id', None)
         work_dir = self.get_local_work_dir(combination=combination, mlflow_run_id=mlflow_run_id,
                                            unique_params=unique_params)
-        n_jobs = kwargs.get('n_jobs', self.n_jobs)
+        n_jobs = extra_params.get('n_jobs', self.n_jobs)
         model = get_model(model_nickname=model_nickname, seed_model=seed_model, model_params=model_params,
                           models_dict=self.models_dict, n_jobs=n_jobs, output_dir=work_dir)
         if self.log_to_mlflow:
-            mlflow_run_id = kwargs.get('mlflow_run_id')
+            mlflow_run_id = extra_params.get('mlflow_run_id')
             if hasattr(model, 'mlflow_run_id'):
                 setattr(model, 'mlflow_run_id', mlflow_run_id)
         if create_validation_set:
@@ -181,13 +182,12 @@ class TabularExperiment(BaseExperiment):
             if hasattr(model, 'auto_early_stopping'):
                 model.auto_early_stopping = False
 
-        result.update({
+        return {
             'model': model
-        })
-        return result
+        }
 
-    def _get_metrics(self, combination: dict, unique_params: Optional[dict] = None, **kwargs):
-        result = super()._get_metrics(combination=combination, unique_params=unique_params, **kwargs)
+    def _get_metrics(self, combination: dict, unique_params: Optional[dict] = None,
+                     extra_params: Optional[dict] = None, **kwargs):
         task_name = kwargs['load_data_return']['task_name']
         if task_name in ('classification', 'binary_classification'):
             metrics = ['logloss', 'auc', 'auc_micro', 'auc_weighted', 'accuracy', 'balanced_accuracy',
@@ -198,14 +198,13 @@ class TabularExperiment(BaseExperiment):
             report_metric = 'rmse'
         else:
             raise NotImplementedError
-        result.update({
+        return {
             'metrics': metrics,
             'report_metric': report_metric
-        })
-        return result
+        }
 
-    def _fit_model(self, combination: dict, unique_params: Optional[dict] = None, **kwargs):
-        result = super()._fit_model(combination=combination, unique_params=unique_params, **kwargs)
+    def _fit_model(self, combination: dict, unique_params: Optional[dict] = None,
+                   extra_params: Optional[dict] = None, **kwargs):
         fit_params = combination['fit_params']
         model = kwargs['load_model_return']['model']
         cat_features_names = kwargs['load_data_return']['cat_features_names']
@@ -244,12 +243,12 @@ class TabularExperiment(BaseExperiment):
             validation_indices,
             **fit_params)
         # maybe do not return preprocessed data to avoid memory issues
-        result.update(dict(X_train=X_train, y_train=y_train, X_test=X_test, y_test=y_test,
-                           X_validation=X_validation, y_validation=y_validation))
-        return result
+        return dict(X_train=X_train, y_train=y_train, X_test=X_test, y_test=y_test,
+                    X_validation=X_validation, y_validation=y_validation)
 
-    def _evaluate_model(self, combination: dict, unique_params: Optional[dict] = None, **kwargs):
-        result = super()._evaluate_model(combination=combination, unique_params=unique_params, **kwargs)
+    def _evaluate_model(self, combination: dict, unique_params: Optional[dict] = None,
+                        extra_params: Optional[dict] = None, **kwargs):
+        result = {}
         create_validation_set = unique_params.get('create_validation_set', False)
         model = kwargs['load_model_return']['model']
         X_test = kwargs['fit_model_return']['X_test']
@@ -301,18 +300,18 @@ class TabularExperiment(BaseExperiment):
         return combinations, combination_names, unique_params, extra_params
 
     def _log_run_start_params(self, mlflow_run_id, **run_unique_params):
-        super()._log_run_start_params(mlflow_run_id=mlflow_run_id, **run_unique_params)
+        self._log_base_experiment_start_params(mlflow_run_id, **run_unique_params)
         params_to_log = dict(
             cuda_available=torch.cuda.is_available(),
         )
         mlflow.log_params(params_to_log, run_id=mlflow_run_id)
 
     def _log_run_results(self, combination: dict, unique_params: Optional[dict] = None, mlflow_run_id=None,
-                         **kwargs):
+                         extra_params: Optional[dict] = None, **kwargs):
         if mlflow_run_id is None:
             return
-        super()._log_run_results(combination=combination, unique_params=unique_params, mlflow_run_id=mlflow_run_id,
-                                 **kwargs)
+        self._log_base_experiment_run_results(combination=combination, unique_params=unique_params,
+                                              mlflow_run_id=mlflow_run_id, extra_params=extra_params, **kwargs)
 
         log_params = {}
         log_metrics = {}
@@ -328,16 +327,18 @@ class TabularExperiment(BaseExperiment):
             log_params.update({'model_name': model_nickname[len('TabBenchmark'):]})
 
         # task and dataset_name
-        task_name = kwargs['load_data_return']['task_name']
-        dataset_name = kwargs['load_data_return']['dataset_name']
+        load_data_return = kwargs['load_data_return']
+        task_name = load_data_return['task_name']
+        dataset_name = load_data_return['dataset_name']
         log_params.update({'task_name': task_name, 'dataset_name': dataset_name})
 
         # report metric
-        report_metric = kwargs['get_metrics_return']['report_metric']
+        get_metrics_return = kwargs.get('get_metrics_return', {})
+        report_metric = get_metrics_return.get('report_metric', None)
         log_params.update({'report_metric': report_metric})
 
         # evaluation results
-        eval_results_dict = kwargs['evaluate_model_return'].copy()
+        eval_results_dict = kwargs.get('evaluate_model_return', {}).copy()
         eval_results_dict.pop('elapsed_time', None)
         log_metrics.update(eval_results_dict)
 
@@ -427,10 +428,10 @@ class TabularExperiment(BaseExperiment):
         }
         if log_to_mlflow:
             return self._run_mlflow_and_train_model(combination=combination, mlflow_run_id=run_id,
-                                                    unique_params=unique_params, return_results=return_results,
-                                                    **extra_params)
+                                                    unique_params=unique_params,  return_results=return_results,
+                                                    extra_params=extra_params)
         return self._train_model(combination=combination, unique_params=unique_params, return_results=return_results,
-                                 **extra_params)
+                                 extra_params=extra_params)
 
     def run_openml_dataset_combination(self, model_nickname: str, seed_model: int, dataset_name_or_id: str | int,
                                        seed_dataset: int,
@@ -531,9 +532,9 @@ class TabularExperiment(BaseExperiment):
         if log_to_mlflow:
             return self._run_mlflow_and_train_model(combination=combination, mlflow_run_id=run_id,
                                                     unique_params=unique_params, return_results=return_results,
-                                                    **extra_params)
+                                                    extra_params=extra_params)
         return self._train_model(combination=combination, unique_params=unique_params, return_results=return_results,
-                                 **extra_params)
+                                 extra_params=extra_params)
 
     def run_json_combination(self, model_nickname: str, seed_model: int, seed_dataset: int, json_path: str | Path,
                              fold: int = 0, run_id: Optional[str] = None,
@@ -631,9 +632,9 @@ class TabularExperiment(BaseExperiment):
         if log_to_mlflow:
             return self._run_mlflow_and_train_model(combination=combination, mlflow_run_id=run_id,
                                                     unique_params=unique_params, return_results=return_results,
-                                                    **extra_params)
+                                                    extra_params=extra_params)
         return self._train_model(combination=combination, unique_params=unique_params, return_results=return_results,
-                                 **extra_params)
+                                 extra_params=extra_params)
 
 
 if __name__ == '__main__':
