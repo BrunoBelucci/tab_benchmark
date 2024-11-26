@@ -345,6 +345,31 @@ class TabularExperiment(BaseExperiment):
         mlflow.log_params(log_params, run_id=mlflow_run_id)
         mlflow.log_metrics(log_metrics, run_id=mlflow_run_id)
 
+    def _on_exception_or_train_end(self, combination: dict, unique_params: Optional[dict] = None,
+                                   extra_params: Optional[dict] = None, **kwargs):
+        mlflow_run_id = extra_params.get('mlflow_run_id', None)
+        self._log_run_results(combination=combination, unique_params=unique_params, extra_params=extra_params,
+                              mlflow_run_id=mlflow_run_id, **kwargs)
+
+        # save and/or clean work_dir
+        mlflow_run_id = extra_params.get('mlflow_run_id', None)
+        work_dir = self.get_local_work_dir(combination, mlflow_run_id, unique_params)
+        if self.clean_work_dir:
+            if work_dir.exists():
+                rmtree(work_dir)
+
+        if self.save_root_dir:
+            if mlflow_run_id is not None:
+                # will log the model to mlflow artifacts
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    temp_dir = Path(temp_dir)
+                    model.save_model(temp_dir)
+                    mlflow.log_artifacts(str(temp_dir.resolve()), artifact_path='model', run_id=mlflow_run_id)
+            else:
+                save_dir = self.save_root_dir / work_dir.name
+                model.save(save_dir)
+        return {}
+
     def run_openml_task_combination(self, model_nickname: str, seed_model: int, task_id: int,
                                     task_fold: int = 0, task_repeat: int = 0, task_sample: int = 0,
                                     run_id: Optional[str] = None,
