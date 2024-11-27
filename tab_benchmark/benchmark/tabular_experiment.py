@@ -354,13 +354,13 @@ class TabularExperiment(BaseExperiment):
                               mlflow_run_id=mlflow_run_id, **kwargs)
 
         # save and/or clean work_dir
-        model = kwargs['load_model_return']['model']
         work_dir = self.get_local_work_dir(combination, mlflow_run_id, unique_params)
         if self.clean_work_dir:
             if work_dir.exists():
                 rmtree(work_dir)
 
-        if self.save_root_dir:
+        model = kwargs['load_model_return'].get('model', None)
+        if self.save_root_dir and model is not None:
             if mlflow_run_id is not None:
                 # will log the model to mlflow artifacts
                 with tempfile.TemporaryDirectory() as temp_dir:
