@@ -11,7 +11,8 @@ from tab_benchmark.models.dnn_model import DNNModel
 from tab_benchmark.utils import set_seeds, evaluate_set, train_test_split_forced, flatten_dict
 
 
-def get_model(model_nickname, seed_model, model_params=None, models_dict=None, n_jobs=1, output_dir=None):
+def get_model(model_nickname, seed_model, model_params=None, models_dict=None, n_jobs=1, output_dir=None,
+              max_time=None):
     model_params = model_params if model_params is not None else {}
     models_dict = models_dict if models_dict is not None else benchmarked_models_dict.copy()
     set_seeds(seed_model)
@@ -27,6 +28,9 @@ def get_model(model_nickname, seed_model, model_params=None, models_dict=None, n
             setattr(model, 'n_jobs', 0)
         else:
             setattr(model, 'n_jobs', n_jobs)
+    if hasattr(model, 'max_time'):
+        max_time = model_params.get('max_time', max_time)
+        setattr(model, 'max_time', max_time)
     if output_dir is not None:
         output_dir = model_params.get('output_dir', output_dir)
         if hasattr(model, 'output_dir'):

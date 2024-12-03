@@ -23,6 +23,7 @@ class TabularExperiment(BaseExperiment):
 
     def __init__(
             self,
+            *args,
             # when performing our own resampling
             datasets_names_or_ids: Optional[list[int]] = None,
             seeds_datasets: Optional[list[int]] = None,
@@ -37,9 +38,11 @@ class TabularExperiment(BaseExperiment):
             task_repeats: Optional[list[int]] = None,
             task_folds: Optional[list[int]] = None,
             task_samples: Optional[list[int]] = None,
+            # custom for tab_benchmark models
+            max_time: Optional[int] = None,
             **kwargs
     ):
-        super().__init__(**kwargs)
+        super().__init__(*args, **kwargs)
         # when performing our own resampling
         self.datasets_names_or_ids = datasets_names_or_ids
         self.seeds_datasets = seeds_datasets if seeds_datasets else [0]
@@ -55,6 +58,8 @@ class TabularExperiment(BaseExperiment):
         self.task_repeats = task_repeats if task_repeats else [0]
         self.task_folds = task_folds if task_folds else [0]
         self.task_samples = task_samples if task_samples else [0]
+
+        self.max_time = max_time
 
     def _add_arguments_to_parser(self):
         super()._add_arguments_to_parser()
@@ -73,6 +78,8 @@ class TabularExperiment(BaseExperiment):
         self.parser.add_argument('--task_samples', nargs='*', type=int, default=self.task_samples)
         self.parser.add_argument('--task_folds', nargs='*', type=int, default=self.task_folds)
 
+        self.parser.add_argument('--max_time', type=int, default=self.max_time)
+
     def _unpack_parser(self):
         args = super()._unpack_parser()
         self.datasets_names_or_ids = args.datasets_names_or_ids
@@ -89,6 +96,8 @@ class TabularExperiment(BaseExperiment):
         self.task_repeats = args.task_repeats
         self.task_folds = args.task_folds
         self.task_samples = args.task_samples
+
+        self.max_time = args.max_time
         return args
 
     def _on_train_start(self, combination: dict, unique_params: Optional[dict] = None,
@@ -173,8 +182,9 @@ class TabularExperiment(BaseExperiment):
         work_dir = self.get_local_work_dir(combination=combination, mlflow_run_id=mlflow_run_id,
                                            unique_params=unique_params)
         n_jobs = extra_params.get('n_jobs', self.n_jobs)
+        max_time = extra_params.get('max_time', self.max_time)
         model = get_model(model_nickname=model_nickname, seed_model=seed_model, model_params=model_params,
-                          models_dict=self.models_dict, n_jobs=n_jobs, output_dir=work_dir)
+                          models_dict=self.models_dict, n_jobs=n_jobs, output_dir=work_dir, max_time=max_time)
         if self.log_to_mlflow:
             mlflow_run_id = extra_params.get('mlflow_run_id')
             if hasattr(model, 'mlflow_run_id'):
@@ -298,7 +308,8 @@ class TabularExperiment(BaseExperiment):
 
         unique_params.update(dict(create_validation_set=self.create_validation_set))
 
-        extra_params = dict(n_jobs=self.n_jobs, return_results=False)
+        extra_params = dict(n_jobs=self.n_jobs, return_results=False, max_time=self.max_time,
+                            timeout_combination=self.timeout_combination, timeout_fit=self.timeout_fit)
         return combinations, combination_names, unique_params, extra_params
 
     def _log_run_start_params(self, mlflow_run_id, **run_unique_params):
@@ -376,6 +387,8 @@ class TabularExperiment(BaseExperiment):
                                     task_fold: int = 0, task_repeat: int = 0, task_sample: int = 0,
                                     run_id: Optional[str] = None,
                                     n_jobs: int = 1, create_validation_set: bool = False,
+                                    max_time: Optional[int] = None, timeout_combination: Optional[int] = None,
+                                    timeout_fit: Optional[int] = None,
                                     model_params: Optional[dict] = None,
                                     fit_params: Optional[dict] = None, return_results: bool = True,
                                     log_to_mlflow: bool = False):
@@ -452,6 +465,9 @@ class TabularExperiment(BaseExperiment):
 
         extra_params = {
             'n_jobs': n_jobs,
+            'max_time': max_time,
+            'timeout_combination': timeout_combination,
+            'timeout_fit': timeout_fit,
         }
         if log_to_mlflow:
             return self._run_mlflow_and_train_model(combination=combination, mlflow_run_id=run_id,
@@ -466,6 +482,8 @@ class TabularExperiment(BaseExperiment):
                                        resample_strategy: str = 'k-fold_cv', k_folds: int = 10, pct_test: float = 0.2,
                                        validation_resample_strategy: str = 'next_fold', pct_validation: float = 0.1,
                                        n_jobs: int = 1, create_validation_set: bool = False,
+                                       max_time: Optional[int] = None,
+                                       timeout_combination: Optional[int] = None, timeout_fit: Optional[int] = None,
                                        model_params: Optional[dict] = None,
                                        fit_params: Optional[dict] = None, return_results: bool = False,
                                        log_to_mlflow: bool = False):
@@ -554,6 +572,9 @@ class TabularExperiment(BaseExperiment):
 
         extra_params = {
             'n_jobs': n_jobs,
+            'max_time': max_time,
+            'timeout_combination': timeout_combination,
+            'timeout_fit': timeout_fit,
         }
 
         if log_to_mlflow:
@@ -568,6 +589,8 @@ class TabularExperiment(BaseExperiment):
                              resample_strategy: str = 'k-fold_cv', k_folds: int = 10, pct_test: float = 0.2,
                              validation_resample_strategy: str = 'next_fold', pct_validation: float = 0.1,
                              n_jobs: int = 1, create_validation_set: bool = False,
+                             max_time: Optional[int] = None,
+                             timeout_combination: Optional[int] = None, timeout_fit: Optional[int] = None,
                              model_params: Optional[dict] = None,
                              fit_params: Optional[dict] = None, return_results: bool = False,
                              log_to_mlflow: bool = False):
@@ -654,6 +677,9 @@ class TabularExperiment(BaseExperiment):
 
         extra_params = {
             'n_jobs': n_jobs,
+            'max_time': max_time,
+            'timeout_combination': timeout_combination,
+            'timeout_fit': timeout_fit,
         }
 
         if log_to_mlflow:

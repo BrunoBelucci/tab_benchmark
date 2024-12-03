@@ -38,7 +38,7 @@ class TabularHPOExperiment(HPOExperiment, TabularExperiment):
             save_root_dir=self.save_root_dir, clean_work_dir=self.clean_work_dir,
             raise_on_fit_error=self.raise_on_fit_error, error_score=self.error_score,
             log_to_mlflow=self.log_to_mlflow, mlflow_tracking_uri=self.mlflow_tracking_uri,
-            check_if_exists=self.check_if_exists
+            check_if_exists=self.check_if_exists, max_time=self.max_time, timeout_combination=self.timeout_combination,
         )
         return tabular_experiment
 
@@ -50,7 +50,14 @@ class TabularHPOExperiment(HPOExperiment, TabularExperiment):
                                     **kwargs)
 
     def _get_tell_metric_from_results(self, results):
-        return results['evaluate_model_return']['final_validation_reported']
+        evaluate_model_return = results.get('evaluate_model_return', {})
+        if not evaluate_model_return:
+            if self.direction == 'maximize':
+                return -float('inf')
+            else:
+                return float('inf')
+        else:
+            return evaluate_model_return['final_validation_reported']
 
 
 if __name__ == '__main__':
