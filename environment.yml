@@ -27,7 +27,6 @@ dependencies:
   - pytest
   - ipykernel
   - ipywidgets
-  - dask
   - distributed
   - dask-jobqueue
   - pip

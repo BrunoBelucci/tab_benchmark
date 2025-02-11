@@ -58,10 +58,10 @@ dependencies = [
     "scipy",
     "xgboost",
     "lightgbm",
-    "dask",
     "catboost",
     "einops",
     "mlflow",
+    "psycopg2",
     "xlrd",
     "openpyxl",
     "ipykernel",
@@ -69,8 +69,14 @@ dependencies = [
     "dask",
     "distributed",
     "dask-jobqueue",
+    "pip",
     "openml",
-    "optuna"
+    "optuna",
+    "seaborn",
+    "plotly",
+    "tqdm",
+    "func-timeout",
+    "optuna-integration",
 ]
 
 [project.urls]
