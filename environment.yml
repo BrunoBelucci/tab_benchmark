@@ -32,6 +32,11 @@ dependencies:
   - dask-jobqueue
   - pip
   - optuna
+  - seaborn
+  - plotly
+  - tqdm
   - pip:
+    - func-timeout
+    - optuna-integration
     - openml
     - -e .
