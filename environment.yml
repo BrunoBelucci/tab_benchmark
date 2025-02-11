@@ -4,8 +4,6 @@ channels:
   - nvidia
 dependencies:
   - python=3.11
-  - pytorch::pytorch
-  - pytorch::pytorch-cuda=12.1
   - lightning
   - matplotlib
   - numpy<2.0
@@ -35,6 +33,7 @@ dependencies:
   - plotly
   - tqdm
   - pip:
+    - torch
     - func-timeout
     - optuna-integration
     - openml
