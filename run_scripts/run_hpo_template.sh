@@ -27,6 +27,16 @@ declare -A args_dict=(
 ["dask_job_extra_directives"]=""
 ["dask_address"]=""
 ["n_gpus"]=""
+# hpo
+["hpo_framework"]=""
+["n_trials"]=""
+["timeout_hpo"]=""
+["timeout_trial"]=""
+["max_concurrent_trials"]=""
+["sampler"]=""
+["pruner"]=""
+["direction"]=""
+["hpo_metric"]=""
 # tabular_experiment
 ["datasets_names_or_ids"]=""
 ["seeds_datasets"]=""
