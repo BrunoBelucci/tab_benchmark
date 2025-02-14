@@ -39,6 +39,7 @@ class TabularHPOExperiment(HPOExperiment, TabularExperiment):
             raise_on_fit_error=self.raise_on_fit_error, error_score=self.error_score,
             log_to_mlflow=self.log_to_mlflow, mlflow_tracking_uri=self.mlflow_tracking_uri,
             check_if_exists=self.check_if_exists, max_time=self.max_time, timeout_combination=self.timeout_combination,
+            verbose=0,
         )
         return tabular_experiment
 
