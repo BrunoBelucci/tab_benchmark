@@ -383,13 +383,15 @@ class TabBenchmarkLGBMClassifier(LGBMMixin, TabBenchmarkModel, LGBMClassifier):
     def __init__(
             self,
             *,
+            objective='default',
+            es_eval_metric='default',
             categorical_encoder='ordinal',
             categorical_type='category',
             data_scaler=None,
             **kwargs
     ):
         super().__init__(categorical_encoder=categorical_encoder, categorical_type=categorical_type,
-                         data_scaler=data_scaler, **kwargs)
+                         data_scaler=data_scaler, objective=objective, es_eval_metric=es_eval_metric, **kwargs)
 
 
 class TabBenchmarkLGBMRegressor(LGBMMixin, TabBenchmarkModel, LGBMRegressor):
@@ -397,10 +399,12 @@ class TabBenchmarkLGBMRegressor(LGBMMixin, TabBenchmarkModel, LGBMRegressor):
     def __init__(
             self,
             *,
+            objective='default',
+            es_eval_metric='default',
             categorical_encoder='ordinal',
             categorical_type='category',
             data_scaler=None,
             **kwargs
     ):
         super().__init__(categorical_encoder=categorical_encoder, categorical_type=categorical_type,
-                         data_scaler=data_scaler, **kwargs)
+                         data_scaler=data_scaler, objective=objective, es_eval_metric=es_eval_metric, **kwargs)
