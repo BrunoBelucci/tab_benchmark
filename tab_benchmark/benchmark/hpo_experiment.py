@@ -50,16 +50,6 @@ class TabularHPOExperiment(HPOExperiment, TabularExperiment):
                                     optuna_trial=optuna_trial, unique_params=unique_params, extra_params=extra_params,
                                     **kwargs)
 
-    def _get_tell_metric_from_results(self, results):
-        evaluate_model_return = results.get('evaluate_model_return', {})
-        if not evaluate_model_return:
-            if self.direction == 'maximize':
-                return -float('inf')
-            else:
-                return float('inf')
-        else:
-            return evaluate_model_return['final_validation_reported']
-
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
