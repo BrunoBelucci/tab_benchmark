@@ -201,18 +201,20 @@ class TabularExperiment(BaseExperiment):
     def _get_metrics(self, combination: dict, unique_params: Optional[dict] = None,
                      extra_params: Optional[dict] = None, **kwargs):
         task_name = kwargs['load_data_return']['task_name']
+        model = kwargs['load_model_return']['model']
         if task_name in ('classification', 'binary_classification'):
             metrics = ['logloss', 'auc', 'auc_micro', 'auc_weighted', 'accuracy', 'balanced_accuracy',
                        'balanced_accuracy_adjusted', 'f1_micro', 'f1_macro', 'f1_weighted']
-            report_metric = 'logloss'
+            if hasattr(model, 'es_eval_metric'):
+                setattr(model, 'es_eval_metric', 'logloss')
         elif task_name == 'regression':
             metrics = ['rmse', 'r2_score', 'mae', 'mape']
-            report_metric = 'rmse'
+            if hasattr(model, 'es_eval_metric'):
+                setattr(model, 'es_eval_metric', 'rmse')
         else:
             raise NotImplementedError
         return {
             'metrics': metrics,
-            'report_metric': report_metric
         }
 
     def _fit_model(self, combination: dict, unique_params: Optional[dict] = None,
@@ -269,7 +271,6 @@ class TabularExperiment(BaseExperiment):
         X_validation = kwargs['fit_model_return']['X_validation']
         y_validation = kwargs['fit_model_return']['y_validation']
         metrics = kwargs['get_metrics_return']['metrics']
-        report_metric = kwargs['get_metrics_return']['report_metric']
         test_results = evaluate_model(model=model, eval_set=(X_test, y_test), eval_name='final_test',
                                       metrics=metrics, n_classes=n_classes,
                                       error_score=self.error_score)
@@ -277,8 +278,7 @@ class TabularExperiment(BaseExperiment):
         if create_validation_set:
             validation_results = evaluate_model(model=model, eval_set=(X_validation, y_validation),
                                                 eval_name='final_validation', metrics=metrics,
-                                                report_metric=report_metric, n_classes=n_classes,
-                                                error_score=self.error_score)
+                                                n_classes=n_classes, error_score=self.error_score)
             result.update(validation_results)
         return result
 
@@ -344,11 +344,6 @@ class TabularExperiment(BaseExperiment):
         task_name = load_data_return['task_name']
         dataset_name = load_data_return['dataset_name']
         log_params.update({'task_name': task_name, 'dataset_name': dataset_name})
-
-        # report metric
-        get_metrics_return = kwargs.get('get_metrics_return', {})
-        report_metric = get_metrics_return.get('report_metric', None)
-        log_params.update({'report_metric': report_metric})
 
         # evaluation results
         eval_results_dict = kwargs.get('evaluate_model_return', {}).copy()
@@ -441,8 +436,6 @@ class TabularExperiment(BaseExperiment):
                 The model returned by the get_model method.
             metrics :
                 The metrics returned by the get_metrics method.
-            report_metric :
-                The report_metric returned by the get_metrics method.
             fit_return :
                 The data returned by the fit_model method.
             evaluate_return :
@@ -544,8 +537,6 @@ class TabularExperiment(BaseExperiment):
                 The model returned by the get_model method.
             metrics :
                 The metrics returned by the get_metrics method.
-            report_metric :
-                The report_metric returned by the get_metrics method.
             fit_return :
                 The data returned by the fit_model method.
             evaluate_return :
@@ -649,8 +640,6 @@ class TabularExperiment(BaseExperiment):
                 The model returned by the get_model method.
             metrics :
                 The metrics returned by the get_metrics method.
-            report_metric :
-                The report_metric returned by the get_metrics method.
             fit_return :
                 The data returned by the fit_model method.
             evaluate_return :

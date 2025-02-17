@@ -96,10 +96,8 @@ def fit_model(model, X, y, cat_ind, att_names, cat_dims, n_classes, task_name, t
     return model, X_train, y_train, X_test, y_test, X_validation, y_validation
 
 
-def evaluate_model(model, eval_set, eval_name, metrics, report_metric=None, n_classes=None, error_score='raise'):
+def evaluate_model(model, eval_set, eval_name, metrics, n_classes=None, error_score='raise'):
     results = evaluate_set(model, eval_set, metrics, n_classes, error_score)
-    if report_metric is not None:
-        results['reported'] = results[report_metric]
     results_dict = {f'{eval_name}_{metric}': value for metric, value in results.items()}
     return results_dict
 
