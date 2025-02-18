@@ -4,16 +4,15 @@ from pathlib import Path
 from typing import Optional
 from shutil import rmtree
 import tempfile
-
 import mlflow
 import numpy as np
 from ml_experiments.base_experiment import BaseExperiment
 import torch
 from torch.cuda import reset_peak_memory_stats, max_memory_reserved, max_memory_allocated
-
 from tab_benchmark.benchmark.utils import load_openml_task, load_own_task, load_json_task, get_model, fit_model, \
     evaluate_model
 from tab_benchmark.benchmark.benchmarked_models import models_dict
+from tab_benchmark.models.dnn_models import DNNMixin
 
 
 class TabularExperiment(BaseExperiment):
@@ -206,11 +205,17 @@ class TabularExperiment(BaseExperiment):
             metrics = ['logloss', 'auc', 'auc_micro', 'auc_weighted', 'accuracy', 'balanced_accuracy',
                        'balanced_accuracy_adjusted', 'f1_micro', 'f1_macro', 'f1_weighted']
             if hasattr(model, 'es_eval_metric'):
-                setattr(model, 'es_eval_metric', 'logloss')
+                if isinstance(model, DNNMixin):
+                    setattr(model, 'es_eval_metric', 'loss')
+                else:
+                    setattr(model, 'es_eval_metric', 'logloss')
         elif task_name == 'regression':
             metrics = ['rmse', 'r2_score', 'mae', 'mape']
             if hasattr(model, 'es_eval_metric'):
-                setattr(model, 'es_eval_metric', 'rmse')
+                if isinstance(model, DNNMixin):
+                    setattr(model, 'es_eval_metric', 'loss')
+                else:
+                    setattr(model, 'es_eval_metric', 'rmse')
         else:
             raise NotImplementedError
         return {
