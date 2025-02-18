@@ -5,3 +5,9 @@
 *.idea/
 *ipynb_checkpoints/
 *catboost_info/
+*output/
+*run_scripts/
+*__pycache__/
+*results/
+tab_benchmark_pip_download/
+tab_benchmark_build.tar.gz
