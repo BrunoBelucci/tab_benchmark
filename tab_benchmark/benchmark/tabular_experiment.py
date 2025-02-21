@@ -8,7 +8,6 @@ import mlflow
 import numpy as np
 from ml_experiments.base_experiment import BaseExperiment
 import torch
-from torch.cuda import reset_peak_memory_stats, max_memory_reserved, max_memory_allocated
 from tab_benchmark.benchmark.utils import load_openml_task, load_own_task, load_json_task, get_model, fit_model, \
     evaluate_model
 from tab_benchmark.benchmark.benchmarked_models import models_dict
@@ -98,12 +97,6 @@ class TabularExperiment(BaseExperiment):
 
         self.max_time = args.max_time
         return args
-
-    def _on_train_start(self, combination: dict, unique_params: Optional[dict] = None,
-                        extra_params: Optional[dict] = None, **kwargs):
-        if torch.cuda.is_available() or self.n_gpus > 0:
-            reset_peak_memory_stats()
-        return {}
 
     def _load_data(self, combination: dict, unique_params: Optional[dict] = None,
                    extra_params: Optional[dict] = None, **kwargs):
@@ -333,11 +326,6 @@ class TabularExperiment(BaseExperiment):
 
         log_params = {}
         log_metrics = {}
-
-        # cuda memory
-        if torch.cuda.is_available() or self.n_gpus > 0:
-            log_metrics['max_cuda_memory_reserved'] = max_memory_reserved() / (1024 ** 2)  # in MB
-            log_metrics['max_cuda_memory_allocated'] = max_memory_allocated() / (1024 ** 2)  # in MB
 
         # model name to facilitate filtering
         model_nickname = combination['model_nickname']
