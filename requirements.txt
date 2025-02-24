@@ -142,7 +142,6 @@ sqlparse==0.5.3
 stack-data==0.6.3
 statsmodels==0.14.4
 sympy==1.13.1
--e git+ssh://git@github.com/BrunoBelucci/tab_benchmark.git@9e4825a4dfa89a463ca1514ffb246aacecab522c#egg=tab_benchmark
 tblib==3.0.0
 threadpoolctl==3.5.0
 toolz==1.0.0
