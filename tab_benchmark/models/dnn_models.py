@@ -172,7 +172,9 @@ class DNNMixin(EarlyStoppingMixin, PreprocessingMixin, TaskDependentParametersMi
 
         callbacks_tuples = []
         if self.es_eval_metric:
-            callbacks_tuples.append((EvaluateMetric, dict(eval_metric=self.es_eval_metric)))
+            # if it is loss, it will already be logged by DefaultLogs with log_interval > 0
+            if self.es_eval_metric != 'loss':
+                callbacks_tuples.append((EvaluateMetric, dict(eval_metric=self.es_eval_metric)))
 
         if self.log_interval > 0:
             callbacks_tuples.append((DefaultLogs, dict(log_interval_epoch=self.log_interval)))
