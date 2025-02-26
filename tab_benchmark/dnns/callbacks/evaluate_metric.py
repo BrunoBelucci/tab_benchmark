@@ -30,7 +30,7 @@ class EvaluateMetric(Callback):
         dict_to_log = {}
         for name, predictions in self.validation_predictions.items():
             y_pred = torch.vstack(predictions)
-            y_true = trainer.datamodule.valid_datasets[name].y
+            y_true = trainer.datamodule.validation_datasets[name].y
             scores = {}
             for metric in self.eval_metric:
                 if metric == 'auc':
