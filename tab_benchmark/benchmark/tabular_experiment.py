@@ -362,7 +362,7 @@ class TabularExperiment(BaseExperiment):
         if self.save_root_dir and model is not None:
             if mlflow_run_id is not None:
                 # will log the model to mlflow artifacts
-                with tempfile.TemporaryDirectory() as temp_dir:
+                with tempfile.TemporaryDirectory(dir=str((work_dir/'tmp').resolve())) as temp_dir:
                     temp_dir = Path(temp_dir)
                     model.save_model(temp_dir)
                     mlflow.log_artifacts(str(temp_dir.resolve()), artifact_path='model', run_id=mlflow_run_id)
