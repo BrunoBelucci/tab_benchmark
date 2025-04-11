@@ -196,7 +196,7 @@ db_port = 5001
 mlflow_port = 5002
 generate_sbatch = True
 n_cores = 6
-clust_name = 'clust9'
+clust_name = 'clust10'
 job_name = 'adacap_db'
 output_job_file = '/home/users/belucci/adacap/results/sbatch_outputs/%x.%J.out'
 error_job_file = '/home/users/belucci/adacap/results/sbatch_errors/%x.%J.err'
@@ -211,32 +211,33 @@ db_file = generate_postgres_db_script(file_dir=file_dir, file_name=file_name, co
 datasets_characteristics = pd.read_csv(datasets_characteristics_path)
 
 # create the experiment scripts
-models_nickname = ['TabBenchmarkMLP', 'TabBenchmarkMLP_Deeper', 'TabBenchmarkMLP_Wider', 'TabBenchmarkMLP_GLU',
-                   'TabBenchmarkMLP_SNN', 'TabBenchmarkMLP_GReLUOneCycleLR', 'TabBenchmarkMLP_GReLUAutoOneCycleLR']
+models_nickname = ['TabBenchmarkMLP_Adacap']
 models_params = '{"n_jobs":0}'  #,"auto_reduce_batch_size":1}'
-seeds_models = [0]
-tasks_ids = list({361091, 359942, 361097, 361101, 361103, 361104, 361241, 361242, 361252, 361253, 361268, 361287, 361291, 361292, 361293, 362089, 362091, 362093, 362094, 361072, 361077, 362110})
+seeds_models = [0]  # 361097 after
+tasks_ids = [361293, 361292, 361099, 361097, 362091, 359942, 361291, 361257, 362089, 4774, 362110, 362117, 362093,
+             362094]
 task_folds = [i for i in range(10)]
 n_jobs = 1
-create_validation_set = True
+create_validation_set = False
 # scripts_dir = Path() / 'scripts'
 python_file_dir = '/home/users/belucci/adacap'
-python_file_name = '-m adacap.experiments.pruning'
-experiment_name = 'MLP_gpu'
+python_file_name = '-m adacap.experiments.adacap_experiment'
+experiment_name = 'permutation'
 log_dir = '/home/users/belucci/adacap/results/logs'
 work_root_dir = '/tmp'
 save_root_dir = '/home/users/belucci/adacap/results/outputs'
 mlflow_tracking_uri = f'http://{clust_name}.ceremade.dauphine.lan:{mlflow_port}/'
 generate_sbatch = True
 sbatch_c = 2
-sbatch_G = None
-sbatch_gres_mps = 25
+sbatch_G = 1
+sbatch_gres_mps = None
 sbatch_w = None
 sbatch_output = '/home/users/belucci/adacap/results/sbatch_outputs/%x.%J.out'
 sbatch_error = '/home/users/belucci/adacap/results/sbatch_errors/%x.%J.err'
 sbatch_time = '364-23:59:59'
 sbatch_exclude = 'clust1,clust2,clust11,clust12'
 n_gpus = 1
+kwargs = {'n_y_permuted': '1 2 5 10 20'}
 generate_experiment_scripts(models_nickname=models_nickname, seeds_models=seeds_models, tasks_ids=tasks_ids,
                             task_folds=task_folds, n_jobs=n_jobs, scripts_dir=file_dir, python_file_dir=python_file_dir,
                             python_file_name=python_file_name,
@@ -246,4 +247,4 @@ generate_experiment_scripts(models_nickname=models_nickname, seeds_models=seeds_
                             sbatch_w=sbatch_w, sbatch_output=sbatch_output, sbatch_error=sbatch_error,
                             sbatch_G=sbatch_G, sbatch_gres_mps=sbatch_gres_mps,
                             sbatch_time=sbatch_time, n_gpus=n_gpus, models_params=models_params,
-                            sbatch_exclude=sbatch_exclude, create_validation_set=create_validation_set)
+                            sbatch_exclude=sbatch_exclude, create_validation_set=create_validation_set, **kwargs)

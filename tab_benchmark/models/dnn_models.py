@@ -249,24 +249,6 @@ def dnn_factory(architecture_cls, create_search_space_fn, get_recommended_params
         def get_recommended_params():
             return get_recommended_params_fn()
 
-        def save_model(self, save_dir: [Path | str] = None, tag: Optional[str] = None) -> Path:
-            prefix = self.__class__.__name__ + '_dnn'
-            ext = 'pt'
-            if tag is None:
-                tag = get_default_tag()
-            file_path = get_formated_file_path(save_dir, prefix, ext, tag)
-            torch.save(self, file_path, pickle_module=cloudpickle)
-            return super().save_model(save_dir, tag)
-
-        def load_model(self, save_dir: Path | str = None, tag: Optional[str] = None):
-            prefix = self.__class__.__name__ + '_dnn'
-            ext = 'pt'
-            if tag is None:
-                tag = get_default_tag()
-            file_path = get_most_recent_file_path(save_dir, prefix, ext, tag)
-            self = torch.load(file_path)
-            return super().load_model(save_dir, tag)
-
     TabBenchmarkDNN.__name__ = f'TabBenchmark{architecture_cls.__name__}'
     return TabBenchmarkDNN
 
