@@ -405,11 +405,9 @@ class TabularExperiment(BaseExperiment):
         create_validation_set :
             If True, create a validation set.
         model_params :
-            Dictionary with the parameters of the model. Defaults models_params defined at the initialization of the
-            class if None.
+            Dictionary with the parameters of the model.
         fit_params :
-            Dictionary with the parameters of the fit. Defaults fits_params defined at the initialization of the
-            class if None.
+            Dictionary with the parameters of the fit.
         return_results :
             If True, return the results of the experiment.
         log_to_mlflow :
@@ -440,8 +438,8 @@ class TabularExperiment(BaseExperiment):
             'task_fold': task_fold,
             'task_repeat': task_repeat,
             'task_sample': task_sample,
-            'model_params': model_params,
-            'fit_params': fit_params,
+            'model_params': model_params if model_params else dict(),
+            'fit_params': fit_params if fit_params else dict(),
         }
 
         unique_params = {
@@ -506,11 +504,9 @@ class TabularExperiment(BaseExperiment):
         create_validation_set :
             If True, create a validation set.
         model_params :
-            Dictionary with the parameters of the model. Defaults models_params defined at the initialization of the
-            class if None.
+            Dictionary with the parameters of the model.
         fit_params :
-            Dictionary with the parameters of the fit. Defaults fits_params defined at the initialization of the
-            class if None.
+            Dictionary with the parameters of the fit.
         return_results :
             If True, return the results of the experiment.
         log_to_mlflow :
@@ -540,8 +536,8 @@ class TabularExperiment(BaseExperiment):
             'dataset_name_or_id': dataset_name_or_id,
             'seed_dataset': seed_dataset,
             'fold': fold,
-            'model_params': model_params,
-            'fit_params': fit_params,
+            'model_params': model_params if model_params else dict(),
+            'fit_params': fit_params if fit_params else dict(),
         }
 
         unique_params = {
@@ -609,11 +605,9 @@ class TabularExperiment(BaseExperiment):
         create_validation_set :
             If True, create a validation set.
         model_params :
-            Dictionary with the parameters of the model. Defaults models_params defined at the initialization of the
-            class if None.
+            Dictionary with the parameters of the model.
         fit_params :
-            Dictionary with the parameters of the fit. Defaults fits_params defined at the initialization of the
-            class if None.
+            Dictionary with the parameters of the fit.
         return_results :
             If True, return the results of the experiment.
         log_to_mlflow :
@@ -643,8 +637,8 @@ class TabularExperiment(BaseExperiment):
             'json_path': json_path,
             'seed_dataset': seed_dataset,
             'fold': fold,
-            'model_params': model_params,
-            'fit_params': fit_params,
+            'model_params': model_params if model_params else dict(),
+            'fit_params': fit_params if fit_params else dict(),
         }
 
         unique_params = {
