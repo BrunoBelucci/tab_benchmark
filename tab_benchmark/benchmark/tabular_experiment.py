@@ -310,13 +310,6 @@ class TabularExperiment(BaseExperiment):
                             timeout_combination=self.timeout_combination, timeout_fit=self.timeout_fit)
         return combinations, combination_names, unique_params, extra_params
 
-    def _log_run_start_params(self, mlflow_run_id, **run_unique_params):
-        self._log_base_experiment_start_params(mlflow_run_id, **run_unique_params)
-        params_to_log = dict(
-            cuda_available=torch.cuda.is_available(),
-        )
-        mlflow.log_params(params_to_log, run_id=mlflow_run_id)
-
     def _log_run_results(self, combination: dict, unique_params: Optional[dict] = None, mlflow_run_id=None,
                          extra_params: Optional[dict] = None, **kwargs):
         if mlflow_run_id is None:
@@ -325,7 +318,6 @@ class TabularExperiment(BaseExperiment):
                                               mlflow_run_id=mlflow_run_id, extra_params=extra_params, **kwargs)
 
         log_params = {}
-        log_metrics = {}
 
         # model name to facilitate filtering
         model_nickname = combination['model_nickname']
@@ -338,23 +330,18 @@ class TabularExperiment(BaseExperiment):
         dataset_name = load_data_return['dataset_name']
         log_params.update({'task_name': task_name, 'dataset_name': dataset_name})
 
-        # evaluation results
-        eval_results_dict = kwargs.get('evaluate_model_return', {}).copy()
-        eval_results_dict.pop('elapsed_time', None)
-        log_metrics.update(eval_results_dict)
-
         mlflow.log_params(log_params, run_id=mlflow_run_id)
-        mlflow.log_metrics(log_metrics, run_id=mlflow_run_id)
 
-    def _on_train_end(self, combination: dict, unique_params: Optional[dict] = None,
-                      extra_params: Optional[dict] = None, **kwargs):
+    def _on_exception_or_train_end(self, combination: dict, unique_params: Optional[dict] = None,
+                                   extra_params: Optional[dict] = None, **kwargs):
         mlflow_run_id = extra_params.get('mlflow_run_id', None)
         self._log_run_results(combination=combination, unique_params=unique_params, extra_params=extra_params,
                               mlflow_run_id=mlflow_run_id, **kwargs)
 
         # save and/or clean work_dir
         work_dir = self.get_local_work_dir(combination, mlflow_run_id, unique_params)
-        model = kwargs['load_model_return'].get('model', None)
+        load_model_return = kwargs.get('load_model_return', dict())
+        model = load_model_return.get('model', None)
         if self.save_root_dir and model is not None:
             if mlflow_run_id is not None:
                 # will log the model to mlflow artifacts
