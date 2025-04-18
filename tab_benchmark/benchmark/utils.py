@@ -1,6 +1,5 @@
 import json
 from copy import deepcopy
-import mlflow
 import numpy as np
 import openml
 import pandas as pd

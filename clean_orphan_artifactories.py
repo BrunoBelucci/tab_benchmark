@@ -1,0 +1,56 @@
+import mlflow
+from sqlalchemy import create_engine
+import pandas as pd
+from pathlib import Path
+from shutil import rmtree
+import argparse
+from tqdm import tqdm
+
+
+def clean_orphan_artifactory(tracking_url, artifactory_root_dir, use_sql=True):
+    # get all experiments artifactories location
+    if not use_sql:
+        mlflow.set_tracking_uri(tracking_url)
+        experiments = mlflow.search_experiments()
+        experiment_artifactories = {Path(exp.artifact_location).resolve() for exp in experiments}
+    else:
+        engine = create_engine(tracking_url)
+        query = 'SELECT experiments.artifact_location from experiments'
+        experiment_artifactories = set(pd.read_sql(query, engine)['artifact_location'].apply(
+            lambda x: Path(x).resolve()).tolist())
+    # get all dir that should represent an artifactory location
+    experiment_existent_artifactories = {list((Path(art_dir).resolve() / 'save').iterdir())[0] for art_dir in artifactory_root_dir.iterdir() if art_dir.name != 'default_db' and art_dir.is_dir()}
+    # get what exists in the filesystem but not in the mlflow tracking server
+    orphan_artifactories = experiment_existent_artifactories - experiment_artifactories
+    # remove orphan artifactories
+    print('Removing orphan experiment artifactories')
+    for orphan_artifactory in tqdm(orphan_artifactories):
+        rmtree(orphan_artifactory)
+
+    # now do the same for runs inside the experiments
+    if not use_sql:
+        runs = mlflow.search_runs(search_all_experiments=True)
+        # get all runs artifactories location
+        runs_artifactories = {Path(run.artifact_uri).parent.resolve() for run in runs.itertuples()}
+    else:
+        query = 'SELECT runs.artifact_uri from runs'
+        runs_artifactories = set(pd.read_sql(query, engine)['artifact_uri'].apply(
+            lambda x: Path(x).parent.resolve()).tolist())
+
+    runs_existent_artifactories = {run_dir.resolve()
+                                   for experiment_dir in artifactory_root_dir.iterdir() if experiment_dir.name != 'default_db' and experiment_dir.is_dir()
+                                   for run_dir in list((experiment_dir / 'save').iterdir())[0].iterdir()}
+    orphan_runs_artifactories = runs_existent_artifactories - runs_artifactories
+    print('Removing orphan runs artifactories')
+    for orphan_run_artifactory in tqdm(orphan_runs_artifactories):
+        rmtree(orphan_run_artifactory)
+    return True
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Clean orphan artifactories from mlflow tracking server')
+    parser.add_argument('--tracking_uri', type=str, required=True, help='mlflow or mlflow-sql tracking uri')
+    parser.add_argument('--artifactory_root_dir', type=str, required=True, help='root dir of the artifactories')
+    args = parser.parse_args()
+    artifactory_root_dir = Path(args.artifactory_root_dir)
+    clean_orphan_artifactory(args.tracking_uri, artifactory_root_dir)
