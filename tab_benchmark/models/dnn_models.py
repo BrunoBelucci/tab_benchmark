@@ -206,6 +206,24 @@ class DNNMixin(EarlyStoppingMixin, PreprocessingMixin, TaskDependentParametersMi
             dict(X=X, y=y, task=task, cat_features=cat_features, cat_dims=cat_dims, n_classes=n_classes,
                  eval_set=eval_set, eval_name=eval_name, init_model=init_model))
         return super().before_fit(**fit_arguments)
+    
+    # we save and load with torch
+    def save_model(self, save_dir: Path | str = None, tag: Optional[str] = None) -> Path:
+        prefix = self.__class__.__name__
+        ext = 'pt'
+        if tag is None:
+            tag = get_default_tag()
+        file_path = get_formated_file_path(save_dir, prefix, ext, tag)
+        torch.save(self, file_path, pickle_module=cloudpickle)
+        return file_path
+
+    @classmethod
+    def load_model(cls, save_dir: Path | str = None, tag: Optional[str] = None) -> None:
+        prefix = cls.__name__
+        ext = 'cpkl'
+        file_path = get_most_recent_file_path(save_dir, prefix, ext, tag)
+        model = torch.load(file_path)
+        return model
 
 
 def dnn_factory(architecture_cls, create_search_space_fn, get_recommended_params_fn, dnn_mixin=DNNMixin):
