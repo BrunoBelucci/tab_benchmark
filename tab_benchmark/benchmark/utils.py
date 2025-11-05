@@ -1,6 +1,5 @@
 import json
 from copy import deepcopy
-import mlflow
 import numpy as np
 import openml
 import pandas as pd
@@ -8,19 +7,25 @@ from sklearn.model_selection import StratifiedKFold, KFold
 from tab_benchmark.benchmark.benchmarked_models import models_dict as benchmarked_models_dict
 from tab_benchmark.datasets import get_dataset
 from tab_benchmark.models.dnn_model import DNNModel
-from tab_benchmark.utils import set_seeds, evaluate_set, train_test_split_forced, flatten_dict
+from tab_benchmark.utils import set_seeds, evaluate_set, train_test_split_forced
 
 
-def get_model(model_nickname, seed_model, model_params=None, models_dict=None, n_jobs=1, output_dir=None,
+def get_model(model, seed_model, model_params=None, models_dict=None, n_jobs=1, output_dir=None,
               max_time=None):
     model_params = model_params if model_params is not None else {}
     models_dict = models_dict if models_dict is not None else benchmarked_models_dict.copy()
     set_seeds(seed_model)
-    model_class, model_default_params = deepcopy(models_dict[model_nickname])
-    if callable(model_default_params):
-        model_default_params = model_default_params(model_class)
-    model_default_params.update(model_params)
-    model = model_class(**model_default_params)
+    if isinstance(model, str):
+        model_class, model_default_params = deepcopy(models_dict[model])
+        if callable(model_default_params):
+            model_default_params = model_default_params(model_class)
+        model_default_params.update(model_params)
+        model = model_class(**model_default_params)
+    elif isinstance(model, type):
+            model = model(**model_params)
+    else:
+        model = deepcopy(model)
+        model.set_params(**model_params)
     if hasattr(model, 'n_jobs'):
         n_jobs = model_params.get('n_jobs', n_jobs)
         if isinstance(model, DNNModel) and n_jobs == 1:

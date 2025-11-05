@@ -7,11 +7,12 @@ import tempfile
 import mlflow
 import numpy as np
 from ml_experiments.base_experiment import BaseExperiment
-import torch
 from tab_benchmark.benchmark.utils import load_openml_task, load_own_task, load_json_task, get_model, fit_model, \
     evaluate_model
 from tab_benchmark.benchmark.benchmarked_models import models_dict
 from tab_benchmark.models.dnn_models import DNNMixin
+from sklearn.base import BaseEstimator
+import json
 
 
 class TabularExperiment(BaseExperiment):
@@ -20,86 +21,113 @@ class TabularExperiment(BaseExperiment):
         return models_dict
 
     def __init__(
-            self,
-            *args,
-            # when performing our own resampling
-            datasets_names_or_ids: Optional[list[int]] = None,
-            seeds_datasets: Optional[list[int]] = None,
-            resample_strategy: str = 'k-fold_cv',
-            k_folds: int = 10,
-            folds: Optional[list[int]] = None,
-            pct_test: float = 0.2,
-            validation_resample_strategy: str = 'next_fold',
-            pct_validation: float = 0.1,
-            # when using openml tasks
-            tasks_ids: Optional[list[int]] = None,
-            task_repeats: Optional[list[int]] = None,
-            task_folds: Optional[list[int]] = None,
-            task_samples: Optional[list[int]] = None,
-            # custom for tab_benchmark models
-            max_time: Optional[int] = None,
-            **kwargs
+        self,
+        *args,
+        # model
+        model: Optional[str | BaseEstimator | type[BaseEstimator] | list[str]] = None,
+        model_params: Optional[dict] = None,
+        fit_params: Optional[dict] = None,
+        seed_model: int | list[int] = 0,
+        n_jobs: int = 1,
+        # when performing our own resampling
+        dataset_name_or_id: Optional[list[int]] = None,
+        seed_dataset: Optional[list[int]] = None,
+        resample_strategy: str = "k-fold_cv",
+        k_fold: int = 10,
+        fold: Optional[list[int]] = None,
+        pct_test: float = 0.2,
+        validation_resample_strategy: str = "next_fold",
+        pct_validation: float = 0.1,
+        # when using openml tasks
+        task_id: Optional[list[int]] = None,
+        task_repeat: Optional[list[int]] = None,
+        task_fold: Optional[list[int]] = None,
+        task_sample: Optional[list[int]] = None,
+        create_validation_set: bool = False,
+        # custom for tab_benchmark models
+        max_time: Optional[int] = None,
+        **kwargs,
     ):
         super().__init__(*args, **kwargs)
+        # model
+        self.model = model
+        self.model_params = model_params if model_params else dict()
+        self.fit_params = fit_params if fit_params else dict()
+        self.seed_model = seed_model if isinstance(seed_model, list) else [seed_model]
+        self.n_jobs = n_jobs
+
         # when performing our own resampling
-        self.datasets_names_or_ids = datasets_names_or_ids
-        self.seeds_datasets = seeds_datasets if seeds_datasets else [0]
+        self.dataset_name_or_id = dataset_name_or_id
+        self.seed_dataset = seed_dataset if seed_dataset else [0]
         self.resample_strategy = resample_strategy
-        self.k_folds = k_folds
-        self.folds = folds if folds else [0]
+        self.k_fold = k_fold
+        self.fold = fold if fold else [0]
         self.pct_test = pct_test
         self.validation_resample_strategy = validation_resample_strategy
         self.pct_validation = pct_validation
 
         # when using openml tasks
-        self.tasks_ids = tasks_ids
-        self.task_repeats = task_repeats if task_repeats else [0]
-        self.task_folds = task_folds if task_folds else [0]
-        self.task_samples = task_samples if task_samples else [0]
+        self.task_id = task_id
+        self.task_repeat = task_repeat if task_repeat else [0]
+        self.task_fold = task_fold if task_fold else [0]
+        self.task_sample = task_sample if task_sample else [0]
+        self.create_validation_set = create_validation_set
 
         self.max_time = max_time
 
     def _add_arguments_to_parser(self):
         super()._add_arguments_to_parser()
-        self.parser.add_argument('--datasets_names_or_ids', nargs='*', choices=self.datasets_names_or_ids,
-                                 type=str, default=self.datasets_names_or_ids)
-        self.parser.add_argument('--seeds_datasets', nargs='*', type=int, default=self.seeds_datasets)
+        self.parser.add_argument('--model', default=self.model, type=str)
+        self.parser.add_argument("--model_params", default=self.model_params, type=json.loads)
+        self.parser.add_argument("--fit_params", default=self.fit_params, type=json.loads)
+        self.parser.add_argument('--seed_model', nargs='*', type=int, default=self.seed_model)
+        self.parser.add_argument('--n_jobs', type=int, default=self.n_jobs)
+        self.parser.add_argument('--dataset_name_or_id', nargs='*', choices=self.dataset_name_or_id,
+                                 type=str, default=self.dataset_name_or_id)
+        self.parser.add_argument('--seed_dataset', nargs='*', type=int, default=self.seed_dataset)
         self.parser.add_argument('--resample_strategy', default=self.resample_strategy, type=str)
-        self.parser.add_argument('--k_folds', default=self.k_folds, type=int)
-        self.parser.add_argument('--folds', nargs='*', type=int, default=self.folds)
+        self.parser.add_argument('--k_fold', default=self.k_fold, type=int)
+        self.parser.add_argument('--fold', nargs='*', type=int, default=self.fold)
         self.parser.add_argument('--pct_test', type=float, default=self.pct_test)
         self.parser.add_argument('--validation_resample_strategy', type=str, default=self.validation_resample_strategy)
         self.parser.add_argument('--pct_validation', type=float, default=self.pct_validation)
+        self.parser.add_argument('--create_validation_set', type=bool, default=self.create_validation_set)
 
-        self.parser.add_argument('--tasks_ids', nargs='*', type=int, default=self.tasks_ids)
-        self.parser.add_argument('--task_repeats', nargs='*', type=int, default=self.task_repeats)
-        self.parser.add_argument('--task_samples', nargs='*', type=int, default=self.task_samples)
-        self.parser.add_argument('--task_folds', nargs='*', type=int, default=self.task_folds)
+        self.parser.add_argument('--task_id', nargs='*', type=int, default=self.task_id)
+        self.parser.add_argument('--task_repeat', nargs='*', type=int, default=self.task_repeat)
+        self.parser.add_argument('--task_sample', nargs='*', type=int, default=self.task_sample)
+        self.parser.add_argument('--task_fold', nargs='*', type=int, default=self.task_fold)
 
         self.parser.add_argument('--max_time', type=int, default=self.max_time)
 
     def _unpack_parser(self):
         args = super()._unpack_parser()
-        self.datasets_names_or_ids = args.datasets_names_or_ids
-        self.seeds_datasets = args.seeds_datasets
-        self.seeds_models = args.seeds_models
+        self.model = args.model
+        self.model_params = args.model_params
+        self.fit_params = args.fit_params
+        self.seed_model = args.seed_model
+        self.n_jobs = args.n_jobs
+        self.dataset_name_or_id = args.dataset_name_or_id
+        self.seed_dataset = args.seed_dataset
         self.resample_strategy = args.resample_strategy
-        self.k_folds = args.k_folds
-        self.folds = args.folds
+        self.k_fold = args.k_fold
+        self.fold = args.fold
         self.pct_test = args.pct_test
         self.validation_resample_strategy = args.validation_resample_strategy
         self.pct_validation = args.pct_validation
 
-        self.tasks_ids = args.tasks_ids
-        self.task_repeats = args.task_repeats
-        self.task_folds = args.task_folds
-        self.task_samples = args.task_samples
+        self.task_id = args.task_id
+        self.task_repeat = args.task_repeat
+        self.task_fold = args.task_fold
+        self.task_sample = args.task_sample
+        self.create_validation_set = args.create_validation_set
 
         self.max_time = args.max_time
         return args
 
-    def _load_data(self, combination: dict, unique_params: Optional[dict] = None,
-                   extra_params: Optional[dict] = None, **kwargs):
+    def _load_data(
+        self, combination: dict, unique_params: dict, extra_params: dict, mlflow_run_id: Optional[str] = None, **kwargs
+    ):
         create_validation_set = unique_params.get('create_validation_set', False)
         if 'task_id' in combination:
             task_id = combination['task_id']
@@ -115,7 +143,7 @@ class TabularExperiment(BaseExperiment):
             seed_dataset = combination['seed_dataset']
             fold = combination['fold']
             resample_strategy = unique_params.get('resample_strategy', self.resample_strategy)
-            k_folds = unique_params.get('k_folds', self.k_folds)
+            k_folds = unique_params.get('k_folds', self.k_fold)
             pct_test = unique_params.get('pct_test', self.pct_test)
             validation_resample_strategy = unique_params.get('validation_resample_strategy',
                                                              self.validation_resample_strategy)
@@ -133,7 +161,7 @@ class TabularExperiment(BaseExperiment):
             seed_dataset = combination['seed_dataset']
             fold = combination['fold']
             resample_strategy = unique_params.get('resample_strategy', self.resample_strategy)
-            k_folds = unique_params.get('k_folds', self.k_folds)
+            k_folds = unique_params.get('k_folds', self.k_fold)
             pct_test = unique_params.get('pct_test', self.pct_test)
             validation_resample_strategy = unique_params.get('validation_resample_strategy',
                                                              self.validation_resample_strategy)
@@ -164,34 +192,40 @@ class TabularExperiment(BaseExperiment):
             'validation_indices': validation_indices
         }
 
-    def _load_model(self, combination: dict, unique_params: Optional[dict] = None,
-                    extra_params: Optional[dict] = None, **kwargs):
-        model_nickname = combination['model_nickname']
+    def _load_model(
+        self, combination: dict, unique_params: dict, extra_params: dict, mlflow_run_id: Optional[str] = None, **kwargs
+    ):
+        model = combination["model"]
         seed_model = combination['seed_model']
-        model_params = combination['model_params']
-        create_validation_set = unique_params.get('create_validation_set', False)
-        mlflow_run_id = extra_params.get('mlflow_run_id', None)
+        model_params = unique_params['model_params']
+        create_validation_set = unique_params.get("create_validation_set", False)
         work_dir = self.get_local_work_dir(combination=combination, mlflow_run_id=mlflow_run_id,
                                            unique_params=unique_params)
-        n_jobs = extra_params.get('n_jobs', self.n_jobs)
-        max_time = extra_params.get('max_time', self.max_time)
-        model = get_model(model_nickname=model_nickname, seed_model=seed_model, model_params=model_params,
-                          models_dict=self.models_dict, n_jobs=n_jobs, output_dir=work_dir, max_time=max_time)
-        if self.log_to_mlflow:
-            mlflow_run_id = extra_params.get('mlflow_run_id')
+        n_jobs = unique_params.get("n_jobs", self.n_jobs)
+        max_time = unique_params.get("max_time", self.max_time)
+        model = get_model(
+            model=model,
+            seed_model=seed_model,
+            model_params=model_params,
+            models_dict=self.models_dict,
+            n_jobs=n_jobs,
+            output_dir=work_dir,
+            max_time=max_time,
+        )
+        if mlflow_run_id is not None:
             if hasattr(model, 'mlflow_run_id'):
                 setattr(model, 'mlflow_run_id', mlflow_run_id)
         if create_validation_set:
             # we disable auto early stopping when creating a validation set, because we will use it to validate
             if hasattr(model, 'auto_early_stopping'):
-                model.auto_early_stopping = False
-
+                setattr(model, 'auto_early_stopping', False)
         return {
             'model': model
         }
 
-    def _get_metrics(self, combination: dict, unique_params: Optional[dict] = None,
-                     extra_params: Optional[dict] = None, **kwargs):
+    def _get_metrics(
+        self, combination: dict, unique_params: dict, extra_params: dict, mlflow_run_id: Optional[str] = None, **kwargs
+    ):
         task_name = kwargs['load_data_return']['task_name']
         model = kwargs['load_model_return']['model']
         if task_name in ('classification', 'binary_classification'):
@@ -215,9 +249,10 @@ class TabularExperiment(BaseExperiment):
             'metrics': metrics,
         }
 
-    def _fit_model(self, combination: dict, unique_params: Optional[dict] = None,
-                   extra_params: Optional[dict] = None, **kwargs):
-        fit_params = combination['fit_params']
+    def _fit_model(
+        self, combination: dict, unique_params: dict, extra_params: dict, mlflow_run_id: Optional[str] = None, **kwargs
+    ):
+        fit_params = unique_params["fit_params"]
         model = kwargs['load_model_return']['model']
         cat_features_names = kwargs['load_data_return']['cat_features_names']
         X = kwargs['load_data_return']['X']
@@ -258,8 +293,9 @@ class TabularExperiment(BaseExperiment):
         return dict(X_train=X_train, y_train=y_train, X_test=X_test, y_test=y_test,
                     X_validation=X_validation, y_validation=y_validation)
 
-    def _evaluate_model(self, combination: dict, unique_params: Optional[dict] = None,
-                        extra_params: Optional[dict] = None, **kwargs):
+    def _evaluate_model(
+        self, combination: dict, unique_params: dict, extra_params: dict, mlflow_run_id: Optional[str] = None, **kwargs
+    ):
         result = {}
         create_validation_set = unique_params.get('create_validation_set', False)
         model = kwargs['load_model_return']['model']
@@ -271,47 +307,42 @@ class TabularExperiment(BaseExperiment):
         metrics = kwargs['get_metrics_return']['metrics']
         test_results = evaluate_model(model=model, eval_set=(X_test, y_test), eval_name='final_test',
                                       metrics=metrics, n_classes=n_classes,
-                                      error_score=self.error_score)
+                                      error_score='raise')
         result.update(test_results)
         if create_validation_set:
             validation_results = evaluate_model(model=model, eval_set=(X_validation, y_validation),
                                                 eval_name='final_validation', metrics=metrics,
-                                                n_classes=n_classes, error_score=self.error_score)
+                                                n_classes=n_classes, error_score='raise')
             result.update(validation_results)
         return result
 
-    def _get_combinations(self):
-        if self.datasets_names_or_ids is not None and self.tasks_ids is None:
-            self.using_own_resampling = True
-        elif self.datasets_names_or_ids is None and self.tasks_ids is not None:
-            self.using_own_resampling = False
+    def _get_combinations_names(self):
+        combination_names = super()._get_combinations_names()
+        if self.dataset_name_or_id is not None and self.task_id is None:
+            combination_names += ['model', 'seed_model', 'dataset_name_or_id', 'seed_dataset', 'fold']
+        elif self.dataset_name_or_id is None and self.task_id is not None:
+           combination_names += ['model', 'seed_model', 'task_id', 'task_repeat', 'task_sample', 'task_fold']
         else:
             raise ValueError("You must provide either datasets_names_or_ids or tasks_ids, but not both.")
-        if self.using_own_resampling:
-            combinations = list(product(self.models_nickname, self.seeds_models, self.datasets_names_or_ids,
-                                        self.seeds_datasets, self.folds))
-            combination_names = ['model_nickname', 'seed_model', 'dataset_name_or_id', 'seed_dataset', 'fold']
-            unique_params = dict(resample_strategy=self.resample_strategy, k_folds=self.k_folds, pct_test=self.pct_test,
-                                 validation_resample_strategy=self.validation_resample_strategy,
-                                 pct_validation=self.pct_validation)
-        else:
-            combinations = list(product(self.models_nickname, self.seeds_models, self.tasks_ids, self.task_folds,
-                                        self.task_repeats, self.task_samples))
-            combination_names = ['model_nickname', 'seed_model', 'task_id', 'task_fold', 'task_repeat', 'task_sample']
-            unique_params = dict()
+        return combination_names
 
-        combinations = [list(combination) + [self.models_params[combination[0]]] + [self.fits_params[combination[0]]]
-                        for combination in combinations]
-        combination_names += ['model_params', 'fit_params']
+    def _get_unique_params(self):
+        unique_params = super()._get_unique_params()
+        unique_params.update(dict(
+            create_validation_set=self.create_validation_set,
+            model_params=self.model_params,
+            fit_params=self.fit_params,
+            n_jobs=self.n_jobs,
+        ))
+        return unique_params
 
-        unique_params.update(dict(create_validation_set=self.create_validation_set))
+    def _get_extra_params(self):
+        extra_params = super()._get_extra_params()
+        return extra_params
 
-        extra_params = dict(n_jobs=self.n_jobs, return_results=False, max_time=self.max_time,
-                            timeout_combination=self.timeout_combination, timeout_fit=self.timeout_fit)
-        return combinations, combination_names, unique_params, extra_params
-
-    def _log_run_results(self, combination: dict, unique_params: Optional[dict] = None, mlflow_run_id=None,
-                         extra_params: Optional[dict] = None, **kwargs):
+    def _log_run_results(
+        self, combination: dict, unique_params: dict, extra_params: dict, mlflow_run_id: Optional[str] = None, **kwargs
+    ):
         if mlflow_run_id is None:
             return
         self._log_base_experiment_run_results(combination=combination, unique_params=unique_params,
@@ -332,8 +363,9 @@ class TabularExperiment(BaseExperiment):
 
         mlflow.log_params(log_params, run_id=mlflow_run_id)
 
-    def _on_exception_or_train_end(self, combination: dict, unique_params: Optional[dict] = None,
-                                   extra_params: Optional[dict] = None, **kwargs):
+    def _on_exception_or_train_end(
+        self, combination: dict, unique_params: dict, extra_params: dict, mlflow_run_id: Optional[str] = None, **kwargs
+    ):
         mlflow_run_id = extra_params.get('mlflow_run_id', None)
         self._log_run_results(combination=combination, unique_params=unique_params, extra_params=extra_params,
                               mlflow_run_id=mlflow_run_id, **kwargs)
@@ -357,302 +389,7 @@ class TabularExperiment(BaseExperiment):
                 rmtree(work_dir)
         return {}
 
-    def run_openml_task_combination(self, model_nickname: str, seed_model: int, task_id: int,
-                                    task_fold: int = 0, task_repeat: int = 0, task_sample: int = 0,
-                                    run_id: Optional[str] = None,
-                                    n_jobs: int = 1, create_validation_set: bool = False,
-                                    max_time: Optional[int] = None, timeout_combination: Optional[int] = None,
-                                    timeout_fit: Optional[int] = None,
-                                    model_params: Optional[dict] = None,
-                                    fit_params: Optional[dict] = None, return_results: bool = True,
-                                    log_to_mlflow: bool = False):
-        """Run the experiment using an OpenML task.
-
-        This function can be used to run the experiment using an OpenML task in an interactive way, without the need to
-        run the experiment.
-
-        Parameters
-        ----------
-        model_nickname :
-            The nickname of the model to be used in the experiment. It must be a key of the models_dict attribute.
-        seed_model :
-            The seed of the model to be used in the experiment.
-        task_id :
-            The id of the OpenML task.
-        task_fold :
-            The fold of the OpenML task.
-        task_repeat :
-            The repeat of the OpenML task.
-        task_sample :
-            The sample of the OpenML task.
-        run_id :
-            The run_id of the mlflow run.
-        n_jobs :
-            Number of threads/cores to be used by the model if it supports it.
-        create_validation_set :
-            If True, create a validation set.
-        model_params :
-            Dictionary with the parameters of the model.
-        fit_params :
-            Dictionary with the parameters of the fit.
-        return_results :
-            If True, return the results of the experiment.
-        log_to_mlflow :
-            If True, log the results to mlflow.
-
-        Returns
-        -------
-        results :
-            If return_results is True, return a dictionary with the results of the experiment, otherwise return True
-            if the experiment was successful and False otherwise. It still tries to return the results when
-            return_results is true and an exception is raised. The dictionary contains the following
-            keys:
-            data_return :
-                The data returned by the load_data method.
-            model :
-                The model returned by the get_model method.
-            metrics :
-                The metrics returned by the get_metrics method.
-            fit_return :
-                The data returned by the fit_model method.
-            evaluate_return :
-                The data returned by the evaluate_model method.
-        """
-        combination = {
-            'model_nickname': model_nickname,
-            'seed_model': seed_model,
-            'task_id': task_id,
-            'task_fold': task_fold,
-            'task_repeat': task_repeat,
-            'task_sample': task_sample,
-            'model_params': model_params if model_params else dict(),
-            'fit_params': fit_params if fit_params else dict(),
-        }
-
-        unique_params = {
-            'create_validation_set': create_validation_set,
-        }
-
-        extra_params = {
-            'n_jobs': n_jobs,
-            'max_time': max_time,
-            'timeout_combination': timeout_combination,
-            'timeout_fit': timeout_fit,
-        }
-        if log_to_mlflow:
-            return self._run_mlflow_and_train_model(combination=combination, mlflow_run_id=run_id,
-                                                    unique_params=unique_params, return_results=return_results,
-                                                    extra_params=extra_params)
-        return self._train_model(combination=combination, unique_params=unique_params, return_results=return_results,
-                                 extra_params=extra_params)
-
-    def run_openml_dataset_combination(self, model_nickname: str, seed_model: int, dataset_name_or_id: str | int,
-                                       seed_dataset: int,
-                                       fold: int = 0, run_id: Optional[str] = None,
-                                       resample_strategy: str = 'k-fold_cv', k_folds: int = 10, pct_test: float = 0.2,
-                                       validation_resample_strategy: str = 'next_fold', pct_validation: float = 0.1,
-                                       n_jobs: int = 1, create_validation_set: bool = False,
-                                       max_time: Optional[int] = None,
-                                       timeout_combination: Optional[int] = None, timeout_fit: Optional[int] = None,
-                                       model_params: Optional[dict] = None,
-                                       fit_params: Optional[dict] = None, return_results: bool = False,
-                                       log_to_mlflow: bool = False):
-        """Run the experiment using an OpenML dataset.
-
-        This function can be used to run the experiment using an OpenML dataset in an interactive way, without the need
-        to run the experiment.
-
-        Parameters
-        ----------
-        model_nickname :
-            The nickname of the model to be used in the experiment. It must be a key of the models_dict attribute.
-        seed_model :
-            The seed of the model to be used in the experiment.
-        dataset_name_or_id :
-            The name or id of the OpenML dataset. If it is the name, it must be defined in our openml_tasks.csv file.
-        seed_dataset :
-            The seed of the dataset to be used in the experiment.
-        fold :
-            The fold of the OpenML dataset.
-        run_id :
-            The run_id of the mlflow run.
-        resample_strategy :
-            The resample strategy to be used in the experiment, it can be 'k-fold_cv' or 'hold_out'.
-        k_folds :
-            The number of folds to be used in the experiment.
-        pct_test :
-            The percentage of the test set.
-        validation_resample_strategy :
-            The resample strategy to be used in the validation set, it can be 'next_fold' or 'hold_out'.
-        pct_validation :
-            The percentage of the validation set.
-        n_jobs :
-            Number of threads/cores to be used by the model if it supports it.
-        create_validation_set :
-            If True, create a validation set.
-        model_params :
-            Dictionary with the parameters of the model.
-        fit_params :
-            Dictionary with the parameters of the fit.
-        return_results :
-            If True, return the results of the experiment.
-        log_to_mlflow :
-            If True, log the results to mlflow.
-
-        Returns
-        -------
-        results :
-            If return_results is True, return a dictionary with the results of the experiment, otherwise return True
-            if the experiment was successful and False otherwise. It still tries to return the results when
-            return_results is true and an exception is raised. The dictionary contains the following
-            keys:
-            data_return :
-                The data returned by the load_data method.
-            model :
-                The model returned by the get_model method.
-            metrics :
-                The metrics returned by the get_metrics method.
-            fit_return :
-                The data returned by the fit_model method.
-            evaluate_return :
-                The data returned by the evaluate_model method.
-        """
-        combination = {
-            'model_nickname': model_nickname,
-            'seed_model': seed_model,
-            'dataset_name_or_id': dataset_name_or_id,
-            'seed_dataset': seed_dataset,
-            'fold': fold,
-            'model_params': model_params if model_params else dict(),
-            'fit_params': fit_params if fit_params else dict(),
-        }
-
-        unique_params = {
-            'resample_strategy': resample_strategy,
-            'k_folds': k_folds,
-            'pct_test': pct_test,
-            'validation_resample_strategy': validation_resample_strategy,
-            'pct_validation': pct_validation,
-            'create_validation_set': create_validation_set,
-        }
-
-        extra_params = {
-            'n_jobs': n_jobs,
-            'max_time': max_time,
-            'timeout_combination': timeout_combination,
-            'timeout_fit': timeout_fit,
-        }
-
-        if log_to_mlflow:
-            return self._run_mlflow_and_train_model(combination=combination, mlflow_run_id=run_id,
-                                                    unique_params=unique_params, return_results=return_results,
-                                                    extra_params=extra_params)
-        return self._train_model(combination=combination, unique_params=unique_params, return_results=return_results,
-                                 extra_params=extra_params)
-
-    def run_json_combination(self, model_nickname: str, seed_model: int, seed_dataset: int, json_path: str | Path,
-                             fold: int = 0, run_id: Optional[str] = None,
-                             resample_strategy: str = 'k-fold_cv', k_folds: int = 10, pct_test: float = 0.2,
-                             validation_resample_strategy: str = 'next_fold', pct_validation: float = 0.1,
-                             n_jobs: int = 1, create_validation_set: bool = False,
-                             max_time: Optional[int] = None,
-                             timeout_combination: Optional[int] = None, timeout_fit: Optional[int] = None,
-                             model_params: Optional[dict] = None,
-                             fit_params: Optional[dict] = None, return_results: bool = False,
-                             log_to_mlflow: bool = False):
-        """Run the experiment using an OpenML dataset.
-
-        This function can be used to run the experiment using an OpenML dataset in an interactive way, without the need
-        to run the experiment.
-
-        Parameters
-        ----------
-        model_nickname :
-            The nickname of the model to be used in the experiment. It must be a key of the models_dict attribute.
-        seed_model :
-            The seed of the model to be used in the experiment.
-        seed_dataset :
-            The seed of the dataset to be used in the experiment.
-        fold :
-            The fold of the OpenML dataset.
-        run_id :
-            The run_id of the mlflow run.
-        resample_strategy :
-            The resample strategy to be used in the experiment, it can be 'k-fold_cv' or 'hold_out'.
-        k_folds :
-            The number of folds to be used in the experiment.
-        pct_test :
-            The percentage of the test set.
-        validation_resample_strategy :
-            The resample strategy to be used in the validation set, it can be 'next_fold' or 'hold_out'.
-        pct_validation :
-            The percentage of the validation set.
-        n_jobs :
-            Number of threads/cores to be used by the model if it supports it.
-        create_validation_set :
-            If True, create a validation set.
-        model_params :
-            Dictionary with the parameters of the model.
-        fit_params :
-            Dictionary with the parameters of the fit.
-        return_results :
-            If True, return the results of the experiment.
-        log_to_mlflow :
-            If True, log the results to mlflow.
-
-        Returns
-        -------
-        results :
-            If return_results is True, return a dictionary with the results of the experiment, otherwise return True
-            if the experiment was successful and False otherwise. It still tries to return the results when
-            return_results is true and an exception is raised. The dictionary contains the following
-            keys:
-            data_return :
-                The data returned by the load_data method.
-            model :
-                The model returned by the get_model method.
-            metrics :
-                The metrics returned by the get_metrics method.
-            fit_return :
-                The data returned by the fit_model method.
-            evaluate_return :
-                The data returned by the evaluate_model method.
-        """
-        combination = {
-            'model_nickname': model_nickname,
-            'seed_model': seed_model,
-            'json_path': json_path,
-            'seed_dataset': seed_dataset,
-            'fold': fold,
-            'model_params': model_params if model_params else dict(),
-            'fit_params': fit_params if fit_params else dict(),
-        }
-
-        unique_params = {
-            'resample_strategy': resample_strategy,
-            'k_folds': k_folds,
-            'pct_test': pct_test,
-            'validation_resample_strategy': validation_resample_strategy,
-            'pct_validation': pct_validation,
-            'create_validation_set': create_validation_set,
-        }
-
-        extra_params = {
-            'n_jobs': n_jobs,
-            'max_time': max_time,
-            'timeout_combination': timeout_combination,
-            'timeout_fit': timeout_fit,
-        }
-
-        if log_to_mlflow:
-            return self._run_mlflow_and_train_model(combination=combination, mlflow_run_id=run_id,
-                                                    unique_params=unique_params, return_results=return_results,
-                                                    extra_params=extra_params)
-        return self._train_model(combination=combination, unique_params=unique_params, return_results=return_results,
-                                 extra_params=extra_params)
-
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    experiment = TabularExperiment(parser=parser)
-    experiment.run()
+    experiment = TabularExperiment()
+    experiment.run_from_cli()
