@@ -220,9 +220,9 @@ class DNNMixin(EarlyStoppingMixin, PreprocessingMixin, TaskDependentParametersMi
     @classmethod
     def load_model(cls, save_dir: Path | str = None, tag: Optional[str] = None) -> None:
         prefix = cls.__name__
-        ext = 'cpkl'
+        ext = 'pt'
         file_path = get_most_recent_file_path(save_dir, prefix, ext, tag)
-        model = torch.load(file_path)
+        model = torch.load(file_path, weights_only=False)
         return model
 
 
