@@ -321,7 +321,7 @@ class TabularExperiment(BaseExperiment):
         if self.dataset_name_or_id is not None and self.task_id is None:
             combination_names += ['model', 'seed_model', 'dataset_name_or_id', 'seed_dataset', 'fold']
         elif self.dataset_name_or_id is None and self.task_id is not None:
-           combination_names += ['model', 'seed_model', 'task_id', 'task_repeat', 'task_sample', 'task_fold']
+            combination_names += ['model', 'seed_model', 'task_id', 'task_repeat', 'task_sample', 'task_fold']
         else:
             raise ValueError("You must provide either datasets_names_or_ids or tasks_ids, but not both.")
         return combination_names
@@ -383,7 +383,7 @@ class TabularExperiment(BaseExperiment):
                     mlflow.log_artifacts(str(temp_dir.resolve()), artifact_path='model', run_id=mlflow_run_id)
             else:
                 save_dir = self.save_root_dir / work_dir.name
-                model.save(save_dir)
+                model.save_model(save_dir)
         if self.clean_work_dir:
             if work_dir.exists():
                 rmtree(work_dir)
