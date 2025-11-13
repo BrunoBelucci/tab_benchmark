@@ -199,9 +199,8 @@ class TabularExperiment(BaseExperiment):
         seed_model = combination['seed_model']
         model_params = unique_params['model_params']
         create_validation_set = unique_params.get("create_validation_set", False)
-        work_dir = self.get_local_work_dir(combination=combination, mlflow_run_id=mlflow_run_id,
-                                           unique_params=unique_params)
-        n_jobs = unique_params.get("n_jobs", self.n_jobs)
+        work_dir = kwargs['work_dir']
+        n_jobs = unique_params.get("n_jobs_", self.n_jobs)
         max_time = unique_params.get("max_time", self.max_time)
         model = get_model(
             model=model,
@@ -332,7 +331,7 @@ class TabularExperiment(BaseExperiment):
             create_validation_set=self.create_validation_set,
             model_params=self.model_params,
             fit_params=self.fit_params,
-            n_jobs=self.n_jobs,
+            n_jobs_=self.n_jobs,
         ))
         return unique_params
 
@@ -351,7 +350,7 @@ class TabularExperiment(BaseExperiment):
         log_params = {}
 
         # model name to facilitate filtering
-        model_nickname = combination['model_nickname']
+        model_nickname = combination['model']
         if model_nickname.find('TabBenchmark') != -1:
             log_params.update({'model_name': model_nickname[len('TabBenchmark'):]})
 
@@ -366,15 +365,15 @@ class TabularExperiment(BaseExperiment):
     def _on_exception_or_train_end(
         self, combination: dict, unique_params: dict, extra_params: dict, mlflow_run_id: Optional[str] = None, **kwargs
     ):
-        mlflow_run_id = extra_params.get('mlflow_run_id', None)
         self._log_run_results(combination=combination, unique_params=unique_params, extra_params=extra_params,
                               mlflow_run_id=mlflow_run_id, **kwargs)
 
         # save and/or clean work_dir
-        work_dir = self.get_local_work_dir(combination, mlflow_run_id, unique_params)
+        work_dir = kwargs['work_dir']
+        save_dir = kwargs["save_dir"]
         load_model_return = kwargs.get('load_model_return', dict())
         model = load_model_return.get('model', None)
-        if self.save_root_dir and model is not None:
+        if save_dir and model is not None:
             if mlflow_run_id is not None:
                 # will log the model to mlflow artifacts
                 with tempfile.TemporaryDirectory(dir=str(work_dir.resolve())) as temp_dir:
@@ -382,7 +381,6 @@ class TabularExperiment(BaseExperiment):
                     model.save_model(temp_dir)
                     mlflow.log_artifacts(str(temp_dir.resolve()), artifact_path='model', run_id=mlflow_run_id)
             else:
-                save_dir = self.save_root_dir / work_dir.name
                 model.save_model(save_dir)
         if self.clean_work_dir:
             if work_dir.exists():
