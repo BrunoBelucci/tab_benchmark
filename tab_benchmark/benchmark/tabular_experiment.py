@@ -91,7 +91,7 @@ class TabularExperiment(BaseExperiment):
         self.parser.add_argument('--pct_test', type=float, default=self.pct_test)
         self.parser.add_argument('--validation_resample_strategy', type=str, default=self.validation_resample_strategy)
         self.parser.add_argument('--pct_validation', type=float, default=self.pct_validation)
-        self.parser.add_argument('--create_validation_set', type=bool, default=self.create_validation_set)
+        self.parser.add_argument('--create_validation_set', action='store_true', default=self.create_validation_set)
 
         self.parser.add_argument('--task_id', nargs='*', type=int, default=self.task_id)
         self.parser.add_argument('--task_repeat', nargs='*', type=int, default=self.task_repeat)
