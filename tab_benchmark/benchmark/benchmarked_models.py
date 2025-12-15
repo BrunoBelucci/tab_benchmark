@@ -11,6 +11,8 @@ from tab_benchmark.models.dnn_models import (TabBenchmarkMLP, TabBenchmarkResNet
 from torch import nn
 
 models_dict = {model_cls.__name__: (model_cls, {}) for model_cls in all_sklearn_models}
+# enable probability in TabBenchmarkNuSVC
+models_dict['TabBenchmarkNuSVC'] = (models_dict['TabBenchmarkNuSVC'][0], {'probability': True})
 
 models_dict.update({
     TabBenchmarkXGBClassifier.__name__: (TabBenchmarkXGBClassifier, TabBenchmarkXGBClassifier.get_recommended_params()),
