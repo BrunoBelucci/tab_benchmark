@@ -392,5 +392,5 @@ class TabBenchmarkModel(ABC):
         ext = 'cpkl'
         file_path = get_most_recent_file_path(save_dir, prefix, ext, tag)
         with open(file_path, 'rb') as file:
-            model = pickle.load(file)
+            model = cloudpickle.load(file)
         return model

@@ -208,6 +208,15 @@ class LGBMMixin(GBDTMixin):
             'multi_regression': {'objective': 'regression', 'es_eval_metric': 'rmse'},
         }
 
+    def get_params(self, deep=True):
+        """Get parameters. Override to avoid __class__ assignment issues with multiple inheritance."""
+        from sklearn.base import BaseEstimator
+        params = BaseEstimator.get_params(self, deep)
+        # if kwargs is a dict, update params accordingly
+        if hasattr(self, "kwargs") and isinstance(self.kwargs, dict):
+            params.update(self.kwargs)
+        return params
+
     def fit(
             self,
             X: pd.DataFrame,
