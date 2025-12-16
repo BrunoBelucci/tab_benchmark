@@ -250,8 +250,12 @@ def evaluate_set(model, eval_set: Sequence[pd.DataFrame], metrics: str | list[st
     for metric in metrics:
         func, need_proba, _ = get_metric_fn(metric, n_classes)
         if need_proba:
-            if y_pred_proba is None:
+            if y_pred_proba is None and hasattr(model, 'predict_proba'):
                 y_pred_proba = model.predict_proba(X)
+            else:
+                # model does not have predict_proba
+                scores[metric] = np.nan
+                continue
             y_pred_ = y_pred_proba.copy()
         else:
             if y_pred is None:
@@ -259,7 +263,7 @@ def evaluate_set(model, eval_set: Sequence[pd.DataFrame], metrics: str | list[st
             y_pred_ = y_pred.copy()
         if metric in ('auc', 'auc_micro', 'auc_weighted'):
             y_true = y.copy()
-            if y.shape[1] == 1:
+            if y.shape[1] == 1 and n_classes == 2:
                 y_true = y_true.to_numpy().reshape(-1)
             # in the case of a binary classifier we will evaluate both cases as the positive class
             if n_classes == 2:
