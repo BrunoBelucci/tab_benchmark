@@ -196,7 +196,7 @@ def load_openml_task(task_id, task_repeat, task_sample, task_fold, create_valida
     cat_features_names = [att_names[i] for i, value in enumerate(cat_ind) if value is True]
     cat_dims = [len(X[cat_feature].cat.categories) for cat_feature in cat_features_names]
     if task.task_type == 'Supervised Classification':
-        n_classes = len(task.class_labels)
+        n_classes = len(y.unique())
         if n_classes == 2:
             task_name = 'binary_classification'
         elif n_classes > 2:
