@@ -36,6 +36,9 @@ def get_model(model, seed_model, model_params=None, models_dict=None, n_jobs=1, 
     if hasattr(model, 'max_time'):
         max_time = model_params.get('max_time', max_time)
         setattr(model, 'max_time', max_time)
+    if hasattr(model, "seed_auto_early_stopping"):
+        seed_auto_early_stopping = model_params.get('seed_auto_early_stopping', seed_model)
+        setattr(model, 'seed_auto_early_stopping', seed_auto_early_stopping)
     if output_dir is not None:
         output_dir = model_params.get('output_dir', output_dir)
         if hasattr(model, 'output_dir'):

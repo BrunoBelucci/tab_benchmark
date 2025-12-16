@@ -139,6 +139,7 @@ class EarlyStoppingMixin:
             output_dir: Optional[str | Path] = None,
             es_eval_metric: Optional[str] = None,
             max_time: Optional[int | dict] = None,
+            seed_auto_early_stopping: Optional[int] = None,
             **kwargs
     ):
         self.auto_early_stopping = auto_early_stopping
@@ -151,6 +152,7 @@ class EarlyStoppingMixin:
         self.output_dir = output_dir
         self.es_eval_metric = es_eval_metric
         self.max_time = max_time
+        self.seed_auto_early_stopping = seed_auto_early_stopping
         super().__init__(**kwargs)
 
     def fit(
@@ -175,7 +177,7 @@ class EarlyStoppingMixin:
             X, X_valid, y, y_valid = train_test_split_forced(
                 X, y,
                 test_size_pct=self.auto_early_stopping_validation_size,
-                # random_state=random_seed,  this will be ensured by set_seeds
+                random_state=self.seed_auto_early_stopping,
                 stratify=stratify
             )
             eval_set = eval_set if eval_set else []
