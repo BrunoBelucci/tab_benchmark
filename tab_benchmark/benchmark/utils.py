@@ -171,10 +171,36 @@ def load_task_from_X_y_cat_ind_att_names(X, y, cat_ind, att_names, dataset_name,
             test_indices, validation_indices)
 
 
+def ensure_no_prefix_columns(att_names):
+    """
+    Ensure no column name is a prefix of another column name.
+    Appends '_col' to any column that is a prefix of another.
+
+    Args:
+        att_names: List or array of column names
+
+    Returns:
+        List of modified column names
+    """
+    att_names = list(att_names)
+    modified_names = att_names.copy()
+
+    for i, name in enumerate(att_names):
+        for j, other_name in enumerate(att_names):
+            if i != j and other_name.startswith(name):
+                # Current name is a prefix of another, modify it
+                modified_names[i] = name + "_col"
+                break
+
+    return modified_names
+
+
 def load_own_task(dataset_name_or_id, seed_dataset, resample_strategy, k_folds, pct_test, fold,
                   create_validation_set=False, validation_resample_strategy='next_fold', pct_validation=0.1):
     dataset, task_name, target, n_classes = get_dataset(dataset_name_or_id)
     X, y, cat_ind, att_names = dataset.get_data(target=target)
+    att_names = ensure_no_prefix_columns(att_names)
+    X.columns = att_names
     return load_task_from_X_y_cat_ind_att_names(X, y, cat_ind, att_names, dataset.name, n_classes, task_name,
                                                 seed_dataset, resample_strategy, k_folds,
                                                 pct_test, fold, create_validation_set, validation_resample_strategy,
@@ -196,6 +222,9 @@ def load_openml_task(task_id, task_repeat, task_sample, task_fold, create_valida
         validation_indices = None
     dataset = task.get_dataset()
     X, y, cat_ind, att_names = dataset.get_data(target=task.target_name)
+    # for preprocessing reasons we have to ensure that no att_name/column_name starts with the name of another att_name/column_name
+    att_names = ensure_no_prefix_columns(att_names)
+    X.columns = att_names
     cat_features_names = [att_names[i] for i, value in enumerate(cat_ind) if value is True]
     cat_dims = [len(X[cat_feature].cat.categories) for cat_feature in cat_features_names]
     if task.task_type == 'Supervised Classification':
