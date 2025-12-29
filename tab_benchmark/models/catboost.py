@@ -195,6 +195,10 @@ class CatBoostMixin(GBDTMixin):
 
         if self.max_time:
             callbacks.append(TimerCatboost(duration=self.max_time))
+            
+		# if callbacks are empty we set to None to avoid catboost complaining
+        if not callbacks:
+            callbacks = None
 
         fit_arguments['callbacks'] = callbacks
         self.callbacks = callbacks

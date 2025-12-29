@@ -213,7 +213,7 @@ class TabularExperiment(BaseExperiment):
             max_time=max_time,
         )
         if mlflow_run_id is not None:
-            if hasattr(model, 'mlflow_run_id') and mlflow_run_id not in model_params:
+            if hasattr(model, 'mlflow_run_id') and "mlflow_run_id" not in model_params:
                 setattr(model, 'mlflow_run_id', mlflow_run_id)
         if create_validation_set:
             # we disable auto early stopping when creating a validation set, because we will use it to validate
