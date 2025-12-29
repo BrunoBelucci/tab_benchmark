@@ -398,8 +398,9 @@ def create_search_space_node():
     return search_space, default_values
 
 
-TabBenchmarkNode = dnn_factory(Node, create_search_space_transformer,
-                               partial(get_recommended_params_dnn, create_search_space_node), NodeMixin)
+TabBenchmarkNode = dnn_factory(
+    Node, create_search_space_node, partial(get_recommended_params_dnn, create_search_space_node), NodeMixin
+)
 
 
 class TabTransformetSaintMixin(DNNMixin):
