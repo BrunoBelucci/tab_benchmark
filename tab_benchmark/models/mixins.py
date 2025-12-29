@@ -132,7 +132,7 @@ class EarlyStoppingMixin:
             auto_early_stopping: bool = True,
             auto_early_stopping_validation_size=0.1,
             early_stopping_patience: int = 0,
-            mlflow_run_id=None,
+            mlflow_run_id: Optional[str | bool] = None,
             log_interval: int = 50,
             save_checkpoint: bool = False,
             checkpoint_interval: int = 100,
@@ -145,7 +145,7 @@ class EarlyStoppingMixin:
         self.auto_early_stopping = auto_early_stopping
         self.auto_early_stopping_validation_size = auto_early_stopping_validation_size
         self.early_stopping_patience = early_stopping_patience
-        self.mlflow_run_id = mlflow_run_id
+        self.mlflow_run_id = mlflow_run_id if mlflow_run_id is not False else None
         self.log_interval = log_interval
         self.save_checkpoint = save_checkpoint
         self.checkpoint_interval = checkpoint_interval

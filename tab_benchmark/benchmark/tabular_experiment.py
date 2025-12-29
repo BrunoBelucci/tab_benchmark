@@ -198,6 +198,7 @@ class TabularExperiment(BaseExperiment):
         model = combination["model"]
         seed_model = combination['seed_model']
         model_params = unique_params['model_params']
+        model_params = model_params if model_params is not None else {}
         create_validation_set = unique_params.get("create_validation_set", False)
         work_dir = kwargs['work_dir']
         n_jobs = unique_params.get("n_jobs_", self.n_jobs)
@@ -212,7 +213,7 @@ class TabularExperiment(BaseExperiment):
             max_time=max_time,
         )
         if mlflow_run_id is not None:
-            if hasattr(model, 'mlflow_run_id'):
+            if hasattr(model, 'mlflow_run_id') and mlflow_run_id not in model_params:
                 setattr(model, 'mlflow_run_id', mlflow_run_id)
         if create_validation_set:
             # we disable auto early stopping when creating a validation set, because we will use it to validate
