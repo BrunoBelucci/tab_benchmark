@@ -115,17 +115,18 @@ class CatBoostMixin(GBDTMixin):
         fit_return = super().fit(X, y, task=task, cat_features=cat_features, cat_dims=cat_dims, n_classes=n_classes,
                                  eval_set=eval_set, eval_name=eval_name, init_model=init_model, optuna_trial=optuna_trial,
                                  **kwargs)
-        for callback in self.callbacks:
-            if isinstance(callback, ReportToOptunaCatboost):
-                self.pruned_trial = callback.pruned_trial
-                if self.mlflow_run_id:
-                    log_metrics = {'pruned': int(callback.pruned_trial)}
-                    mlflow.log_metrics(log_metrics, run_id=self.mlflow_run_id)
-            elif isinstance(callback, TimerCatboost):
-                self.reached_timeout = callback.reached_timeout
-                if self.mlflow_run_id:
-                    log_metrics = {'reached_timeout': int(callback.reached_timeout)}
-                    mlflow.log_metrics(log_metrics, run_id=self.mlflow_run_id)
+        if self.callbacks is not None:
+            for callback in self.callbacks:
+                if isinstance(callback, ReportToOptunaCatboost):
+                    self.pruned_trial = callback.pruned_trial
+                    if self.mlflow_run_id:
+                        log_metrics = {'pruned': int(callback.pruned_trial)}
+                        mlflow.log_metrics(log_metrics, run_id=self.mlflow_run_id)
+                elif isinstance(callback, TimerCatboost):
+                    self.reached_timeout = callback.reached_timeout
+                    if self.mlflow_run_id:
+                        log_metrics = {'reached_timeout': int(callback.reached_timeout)}
+                        mlflow.log_metrics(log_metrics, run_id=self.mlflow_run_id)
         return fit_return
 
     def before_fit(
