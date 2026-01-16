@@ -1,119 +1,196 @@
-import argparse
-from shutil import copytree, rmtree
 from typing import Optional
 import mlflow
-import optuna
-from pathlib import Path
+from optuna import Trial
 from ml_experiments.base_experiment import BaseExperiment
 from ml_experiments.hpo_experiment import HPOExperiment
+from ml_experiments.utils import flatten_any, unflatten_any, update_recursively
 from tab_benchmark.benchmark.tabular_experiment import TabularExperiment
 from tab_benchmark.models.dnn_model import DNNModel
 from tab_benchmark.models.dnn_models import max_epochs_dnn
 from tab_benchmark.models.xgboost import n_estimators_gbdt
+import numpy as np
+from copy import deepcopy
 
 
 class TabularHPOExperiment(HPOExperiment, TabularExperiment):
-    def _load_data(self, combination: dict, unique_params: Optional[dict] = None,
-                   extra_params: Optional[dict] = None, **kwargs):
+
+    def __init__(
+        self,
+        *args,
+        search_space: Optional[dict] = None,
+        default_values: Optional[list] = None,
+        **kwargs,
+    ):
+        """
+        Initialize the TabularHPOExperiment.
+
+        Args:
+            *args: Variable length argument list passed to parent class.
+            search_space (Optional[dict], optional): Custom hyperparameter search space definition
+                using Optuna distributions (e.g., FloatDistribution, IntDistribution).
+                Required when using custom models not in the models dictionary.
+                Defaults to None (uses model-specific search space).
+            default_values (Optional[list], optional): List of default parameter configurations
+                to try before starting the optimization search. Useful for providing good
+                starting points or baseline configurations. Required when using custom models.
+                Defaults to None (uses model-specific defaults).
+            **kwargs: Additional keyword arguments passed to parent class.
+        """
+        super().__init__(*args, **kwargs)
+        self.search_space = search_space if search_space is not None else {}
+        self.default_values = default_values if default_values is not None else []
+
+    def get_search_space(
+        self, combination: dict, unique_params: dict, extra_params: dict, mlflow_run_id: str | None = None, **kwargs
+    ) -> dict:
+        model = combination["model"]
+        if isinstance(model, str):
+            models_dict = deepcopy(self.models_dict)
+            search_space = models_dict[model]["search_space"]
+        else:
+            search_space = self.search_space
+            if search_space is None:
+                raise ValueError("Search space must be defined if model is not defined as a string.")
+        return search_space
+
+    def get_default_values(
+        self, combination: dict, unique_params: dict, extra_params: dict, mlflow_run_id: str | None = None, **kwargs
+    ) -> list:
+        model = combination["model"]
+        if isinstance(model, str):
+            models_dict = deepcopy(self.models_dict)
+            default_values = models_dict[model]["default_values"]
+        else:
+            default_values = self.default_values
+            if default_values is None:
+                raise ValueError("Default values must be defined if model is not defined as a string.")
+        return default_values
+
+    def get_hyperband_max_resources(
+        self, combination: dict, unique_params: dict, extra_params: dict, mlflow_run_id: Optional[str] = None, **kwargs
+    ) -> Optional[int]:
+        model = combination["model"]
+        if isinstance(model, str):
+            models_dict = deepcopy(self.models_dict)
+            model_class = models_dict[model]["model_class"]
+        elif isinstance(model, type):
+            model_class = model
+        else:
+            model_class = type(model)
+        if issubclass(model_class, DNNModel):
+            return max_epochs_dnn
+        else:
+            return n_estimators_gbdt
+
+    def _load_data(
+        self, combination: dict, unique_params: dict, extra_params: dict, mlflow_run_id: Optional[str] = None, **kwargs
+    ):
         result = super()._load_data(combination=combination, unique_params=unique_params,
                                     extra_params=extra_params, **kwargs)
         # we do not need to keep the data, we will only keep the dataset_name and task_name for logging
         keep_results = {'dataset_name': result['dataset_name'], 'task_name': result['task_name']}
         return keep_results
 
-    def get_hyperband_max_resources(self, combination: dict, unique_params: Optional[dict] = None,
-                                    extra_params: Optional[dict] = None, **kwargs):
-        model_nickname = combination['model_nickname']
-        model_cls = self.models_dict[model_nickname][0]
-        if issubclass(model_cls, DNNModel):
-            return max_epochs_dnn
-        else:
-            return n_estimators_gbdt
-
-    def _load_single_experiment(self, combination: dict, unique_params: Optional[dict] = None,
-                                extra_params: Optional[dict] = None, **kwargs):
-        tabular_experiment = TabularExperiment(
-            resample_strategy=self.resample_strategy, k_folds=self.k_folds,
-            pct_test=self.pct_test, validation_resample_strategy=self.validation_resample_strategy,
-            pct_validation=self.pct_validation, experiment_name=self.experiment_name,
-            create_validation_set=self.create_validation_set, log_dir=self.log_dir,
-            log_file_name=self.log_file_name, work_root_dir=self.work_root_dir,
-            save_root_dir=self.save_root_dir, clean_work_dir=self.clean_work_dir,
-            raise_on_fit_error=self.raise_on_fit_error, error_score=self.error_score,
-            log_to_mlflow=self.log_to_mlflow, mlflow_tracking_uri=self.mlflow_tracking_uri,
-            check_if_exists=self.check_if_exists, max_time=self.max_time, timeout_combination=self.timeout_combination,
+    def _before_fit_model(
+        self, combination: dict, unique_params: dict, extra_params: dict, mlflow_run_id: str | None = None, **kwargs
+    ):
+        hpo_seed = unique_params["hpo_seed"]
+        ret = super()._before_fit_model(combination, unique_params, extra_params, mlflow_run_id, **kwargs)
+        simple_experiment = TabularExperiment(
+            # experiment parameters
+            experiment_name=self.experiment_name,
+            log_dir=self.log_dir,
+            log_file_name=self.log_file_name,
+            work_root_dir=self.work_root_dir,
+            save_root_dir=self.save_root_dir,
+            clean_work_dir=self.clean_work_dir,
+            raise_on_error=self.raise_on_error,
+            mlflow_tracking_uri=self.mlflow_tracking_uri,
+            check_if_exists=self.check_if_exists,
+            profile_memory=self.profile_memory,
+            profile_time=self.profile_time,
             verbose=0,
+            # other parameters will be directly passed to _run_mlflow_and_train_model or _train_model
         )
-        return tabular_experiment
+        random_generator = np.random.default_rng(hpo_seed)
+        ret["simple_experiment"] = simple_experiment
+        ret["random_generator"] = random_generator
+        return ret
 
-    def _training_fn(self, single_experiment: BaseExperiment, trial_combination: dict, optuna_trial: optuna.Trial,
-                     unique_params: Optional[dict] = None, extra_params: Optional[dict] = None, **kwargs):
-        trial_combination['fit_params']['optuna_trial'] = optuna_trial
-        return super()._training_fn(single_experiment=single_experiment, trial_combination=trial_combination,
-                                    optuna_trial=optuna_trial, unique_params=unique_params, extra_params=extra_params,
-                                    **kwargs)
+    def training_fn(
+        self,
+        trial_dict: dict,
+        combination: dict,
+        unique_params: dict,
+        extra_params: dict,
+        mlflow_run_id: Optional[str] = None,
+        **kwargs,
+    ) -> dict:
+        trial: Trial = trial_dict["trial"]
+        child_run_id = trial_dict["child_run_id"]
+        seed_model = trial_dict["random_seed"]
+        simple_experiment: BaseExperiment = kwargs["before_fit_model_return"]["simple_experiment"]
 
-    def _on_exception_or_train_end(self, combination: dict, unique_params: Optional[dict] = None,
-                                   extra_params: Optional[dict] = None, **kwargs):
-        mlflow_run_id = extra_params.get('mlflow_run_id', None)
-        self._log_run_results(combination=combination, unique_params=unique_params, extra_params=extra_params,
-                              mlflow_run_id=mlflow_run_id, **kwargs)
+        # update the model parameters in unique_params
+        trial_params = deepcopy(trial.params)
+        unique_params = deepcopy(unique_params)
+        model_params = unique_params["model_params"]
+        model_params = flatten_any(model_params)
+        model_params = update_recursively(model_params, trial_params)
+        model_params = unflatten_any(model_params)
+        unique_params["model_params"] = model_params
 
-        # save and/or clean work_dir
-        load_model_return = kwargs.get('load_model_return', dict())
-        study = load_model_return.get('study', None)
-        if study is not None:
-            best_trial_result = study.best_trial.user_attrs.get('result', dict())
-            best_trial_combination = best_trial_result.get('trial_combination', dict())
-            best_child_run_id = best_trial_combination.get('mlflow_run_id', None)
-            best_work_dir = best_trial_result.get('work_dir', None)
-            work_dir = self.get_local_work_dir(combination, mlflow_run_id, unique_params)
-            if self.save_root_dir:
-                if best_child_run_id is not None:
-                    runs = mlflow.search_runs(experiment_names=[self.experiment_name],
-                                              filter_string=f'attributes.run_id = "{best_child_run_id}"', output_format='list')
-                    if len(runs) != 1:
-                        raise ValueError(f'Found {len(runs)} runs with run_id {best_child_run_id}.')
-                    run = runs[0]
-                    artifact_uri = run.info.artifact_uri
-                    model_dir = Path(artifact_uri) / 'model'
-                    if model_dir.exists():
-                        mlflow.log_artifacts(model_dir, artifact_path='best_model', run_id=mlflow_run_id)
-                else:
-                    save_dir = self.save_root_dir / work_dir.name
-                    best_save_dir = self.save_root_dir / best_work_dir.name
-                    if best_save_dir.exists():
-                        copytree(best_save_dir, save_dir, dirs_exist_ok=True)
-            trials = study.trials
-            for trial in trials:
-                trial_result = trial.user_attrs.get('result', None)
-                trial_combination = trial_result.get('trial_combination', dict())
-                trial_child_run_id = trial_combination.get('mlflow_run_id', None)
-                trial_work_dir = trial_result.get('work_dir', None)
-                if trial_child_run_id is not None:
-                    runs = mlflow.search_runs(experiment_names=[self.experiment_name],
-                                              filter_string=f'attributes.run_id = "{trial_child_run_id}"',
-                                              output_format='list')
-                    if len(runs) != 1:
-                        raise ValueError(f'Found {len(runs)} runs with run_id {trial_child_run_id}.')
-                    run = runs[0]
-                    artifact_uri = run.info.artifact_uri
-                    run_path = Path(artifact_uri).parent
-                    if run_path.exists():
-                        rmtree(run_path)
-                else:
-                    trial_save_dir = self.save_root_dir / trial_work_dir.name
-                    if trial_save_dir.exists():
-                        rmtree(trial_save_dir)
+        # update the fit_params in unique_params
+        fit_params = unique_params["fit_params"]
+        fit_params["optuna_trial"] = trial
 
-        if self.clean_work_dir:
-            if work_dir.exists():
-                rmtree(work_dir)
+        # update the seed_model in combination
+        combination = deepcopy(combination)
+        combination["seed_model"] = seed_model
 
-        return {}
+        if mlflow_run_id is not None:
+            results = simple_experiment._run_mlflow_and_train_model(
+                combination=combination,
+                unique_params=unique_params,
+                extra_params=extra_params,
+                mlflow_run_id=child_run_id,
+                return_results=True,
+            )
+        else:
+            results = simple_experiment._train_model(
+                combination=combination,
+                unique_params=unique_params,
+                extra_params=extra_params,
+                mlflow_run_id=child_run_id,
+                return_results=True,
+            )
+
+        if not isinstance(results, dict):
+            results = dict()
+
+        if (
+            "evaluate_model_return" not in results
+        ):  # maybe we already have the run this run and we are getting the stored run result
+            keep_results = {
+                metric[len("metrics.") :]: value for metric, value in results.items() if metric.startswith("metrics.")
+            }
+        else:
+            keep_results = results.get("evaluate_model_return", {})
+        if "fit_model_return" not in results:
+            fit_model_return_elapsed_time = results.get("metrics.fit_model_return_elapsed_time", 0)
+        else:
+            fit_model_return_elapsed_time = results.get("fit_model_return", {}).get("elapsed_time", 0)
+        keep_results["elapsed_time"] = fit_model_return_elapsed_time
+        keep_results["seed_model"] = seed_model
+
+        if mlflow_run_id is not None:
+            log_metrics = keep_results.copy()
+            log_metrics.pop("elapsed_time", None)
+            log_metrics.pop("max_memory_used", None)
+            mlflow.log_metrics(log_metrics, run_id=mlflow_run_id, step=trial.number)
+        return keep_results
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    experiment = TabularHPOExperiment(parser=parser)
-    experiment.run()
+    experiment = TabularHPOExperiment()
+    experiment.run_from_cli()

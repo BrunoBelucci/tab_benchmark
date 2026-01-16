@@ -8,21 +8,23 @@ from tab_benchmark.benchmark.benchmarked_models import models_dict as benchmarke
 from tab_benchmark.datasets import get_dataset
 from tab_benchmark.models.dnn_model import DNNModel
 from tab_benchmark.utils import set_seeds, evaluate_set, train_test_split_forced
+from copy import deepcopy
 
 
 def get_model(model, seed_model, model_params=None, models_dict=None, n_jobs=1, output_dir=None,
               max_time=None):
     model_params = model_params if model_params is not None else {}
-    models_dict = models_dict if models_dict is not None else benchmarked_models_dict.copy()
+    models_dict = models_dict if models_dict is not None else deepcopy(benchmarked_models_dict)
     set_seeds(seed_model)
     if isinstance(model, str):
-        model_class, model_default_params = deepcopy(models_dict[model])
+        model_class = models_dict[model]["model_class"]
+        model_default_params = models_dict[model]["model_params"]
         if callable(model_default_params):
             model_default_params = model_default_params(model_class)
         model_default_params.update(model_params)
         model = model_class(**model_default_params)
     elif isinstance(model, type):
-            model = model(**model_params)
+        model = model(**model_params)
     else:
         model = deepcopy(model)
         model.set_params(**model_params)
